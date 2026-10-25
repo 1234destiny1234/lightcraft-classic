@@ -6,6 +6,7 @@ Select photos in Photo Grid or Square Grid, then use:
 |---|---|
 | `Enter` | Open the active photo in Detail from Photo Grid or Square Grid |
 | `Cmd+Shift+D` (macOS) / `Ctrl+Shift+D` (Windows/Linux) | Select only the active photo |
+| ⌘⇧K / Ctrl+Shift+K | Edit Keywords: show the Keywords panel and open the keyword picked in its Keyword List in Edit Keyword Tag |
 | `0` | Clear the star rating |
 | `1`–`5` | Set the star rating |
 | `[` / `]` | Decrease / increase each selected photo's rating by one, within 0–5 |
@@ -18,6 +19,8 @@ Select photos in Photo Grid or Square Grid, then use:
 | `Shift` + `0`–`9`, `P`, `X` or `U` | Apply the action and select the next photo |
 | `\` (backslash) | Show / hide the Filter Bar |
 | ⌘L / Ctrl+L | Enable Filters: switch the filter off and on |
+| ⌘⌥⇧C / Ctrl+Alt+Shift+C | Copy Metadata: copy the active photo's metadata |
+| ⌘⌥⇧V / Ctrl+Alt+Shift+V | Paste Metadata: paste the copied metadata on the selected photos |
 
 Enter opens the active photo without changing the selection. Text fields, dialogs and open popups keep the key; a custom Enter binding takes precedence. Enter has no additional action in Detail.
 
@@ -87,7 +90,18 @@ Survey and Reference, and leave text fields alone, so the search box still types
 commands (`view.thumbSizeUp`, `view.thumbSizeDown`, reachable from the control channel and MCP, which
 return `{"size"}`); the size is saved with the other interface settings.
 
-Public behaviour references, checked 2026-10-08 (thumbnail size: 2026-10-13):
+## Keyword sets
+
+`⌥1`–`⌥9` (`Alt+1`–`Alt+9` on Windows and Linux) add or remove the current keyword set's keywords on
+the selected photos. `⌥0` makes the next keyword set current and `⌥⇧0` the previous one (`Alt+0` /
+`Alt+Shift+0`), in the order of the Keywords panel's Keyword Set menu: Recent Keywords, then the saved
+sets. After the last set comes Recent Keywords again, and before Recent Keywords comes the last set;
+with no saved sets the keys leave Recent Keywords current. The shortcut list does not say what happens
+past either end; wrapping around is the app's choice. The same steps are the Next / Previous
+Keyword Set commands (`keyword.nextSet`, `keyword.previousSet`), which return what `keyword.sets`
+returns, and both keys can be reassigned in Help → Keyboard Shortcuts.
+
+Public behavior references, checked 2026-10-08 (thumbnail size: 2026-10-13; keyword sets: 2026-10-24):
 
 - [Lightroom Classic keyboard shortcuts](https://helpx.adobe.com/lightroom-classic/help/keyboard-shortcuts.html)
 - [Lightroom Classic flagging, labelling and rating](https://helpx.adobe.com/lightroom-classic/help/flag-label-rate-photos.html)

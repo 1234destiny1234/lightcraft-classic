@@ -401,7 +401,8 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     if let Some(w) = lcc_immich::client::plain_http_warning(&app.immich.url) {
         ui.horizontal_wrapped(|ui| {
             control_indent(ui);
-            ui.label(RichText::new(crate::i18n::tr(w)).size(11.0).color(t.caution));
+            let l = ui.label(RichText::new(crate::i18n::tr(w)).size(11.0).color(t.caution));
+            register(ui.ctx(), "label:immichUrlInsecure", l.rect);
         });
     }
     row(ui, t, "API key", |ui| {

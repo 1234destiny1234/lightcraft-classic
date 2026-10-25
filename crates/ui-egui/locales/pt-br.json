@@ -884,6 +884,7 @@
   "New name": "Novo nome",
   "New time": "Novo horário",
   "New…": "Novo…",
+  "Next Keyword Set": "Próximo conjunto de palavras-chave",
   "Next Photo": "Próxima foto",
   "Night Blue": "Azul noturno",
   "No": "Não",
@@ -1033,6 +1034,7 @@
   "Preview only: editing the camera's embedded JPEG": "Somente prévia: editando o JPEG incorporado da câmera",
   "Preview size": "Tamanho da pré-visualização",
   "Previews": "Pré-visualizações",
+  "Previous Keyword Set": "Conjunto de palavras-chave anterior",
   "Previous Photo": "Foto anterior",
   "Print": "Imprimir",
   "Print…": "Imprimir…",
@@ -1254,7 +1256,7 @@
   "Scale": "Escala",
   "Scan failed": "Falha na verificação",
   "Scanning": "Examinando",
-  "Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.": "As pontuações ficam nas fotos: filtre ou crie álbuns inteligentes com Foco e Melhor de fotos semelhantes.",
+  "Scores stay on the photos: filter or make smart albums with Focus, Eyes Open, Aesthetic and Cull Score.": "As pontuações ficam nas fotos: filtre ou crie álbuns inteligentes com Foco, Olhos abertos, Estética e Pontuação de seleção.",
   "Screen": "Tela",
   "Scroll menu down": "Rolar o menu para baixo",
   "Scroll menu up": "Rolar o menu para cima",
@@ -1833,6 +1835,7 @@
   "& Containing": "e as que as contêm",
   "Edit Set…": "Editar conjunto…",
   "Edit Keyword Set": "Editar conjunto de palavras-chave",
+  "Edit Keywords": "Editar palavras-chave",
   "Keywords (⌥1–⌥9)": "Palavras-chave (⌥1–⌥9)",
   "A keyword set needs a name": "Um conjunto de palavras-chave precisa de um nome",
   "Save as a new set": "Salvar como novo conjunto",
@@ -2236,5 +2239,9 @@
   "Import dropped files without review": "Importar arquivos soltos sem revisão",
   "An import is running": "Uma importação está em andamento",
   "An import is running. Drop photos when it has finished": "Uma importação está em andamento. Solte as fotos quando ela terminar",
-  "Finish Lightroom catalog import before adding photos": "Conclua a importação do catálogo do Lightroom antes de adicionar fotos"
+  "Finish Lightroom catalog import before adding photos": "Conclua a importação do catálogo do Lightroom antes de adicionar fotos",
+  "Aesthetic": "Estética",
+  "Clipped (assisted culling)": "Recortado (seleção assistida)",
+  "Cull Score": "Pontuação de seleção",
+  "Eyes Open": "Olhos abertos"
 }

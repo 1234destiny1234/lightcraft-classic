@@ -258,6 +258,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
                     as_shot_wb: None,
                     content_hash,
                     xmp: lcc_meta::embedded(bytes).xmp,
+                    orientation: m.orientation,
                     preview_only: Some(why),
                     sha1,
                     ..Default::default()
@@ -300,6 +301,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             as_shot_wb,
             content_hash,
             xmp: lcc_meta::embedded(bytes).xmp,
+            orientation: Some(raw.orientation),
             preview_only: None,
             sha1,
             video: None,
@@ -317,6 +319,17 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
     let (mut w, mut h) = (header.width, header.height);
     if o.swaps_axes() {
         std::mem::swap(&mut w, &mut h);
+    }
+    // regions another app drew on the photo as stored: `extract` could only tell by the size the metadata states, which
+    // can be missing or wrong; the header's is the size as stored, so the boxes as written are turned by it (#2674)
+    if o.swaps_axes()
+        && !meta.regions.is_empty()
+        && let Some(xmp) = lcc_meta::embedded(bytes).xmp.and_then(|x| lcc_meta::parse_xmp(&x).ok())
+        && let Some(drawn_on) = xmp.regions_drawn_on()
+        && !xmp.metadata.regions.is_empty()
+    {
+        meta.regions = xmp.metadata.regions;
+        lcc_meta::upright_regions(&mut meta.regions, drawn_on, o, (header.width, header.height));
     }
     let format = match ext_upper(name).as_str() {
         "JPG" | "JPEG" => "JPEG".to_string(),
@@ -342,6 +355,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         embedded_lens: None,
         lens_from_file: false,
         xmp: None,
+        orientation: m.orientation,
         preview_only: None,
         sha1,
         video: None,
@@ -3052,15 +3066,15 @@ pub(crate) mod tests {
         assert_eq!((plain.kind, plain.preview_only, plain.width, plain.height), (MediaKind::Image, None, 16, 12));
     }
 
-    /// A GoPro GPR (DNG with VC-5 coded data, no preview anywhere) still imports, described from its
-    /// headers; loading it says what is wrong instead of naming a bare TIFF compression number.
+    /// A GoPro GPR (DNG with VC-5 coded data, no preview anywhere) imports, described from its headers, and
+    /// develops from its sensor data.
     #[test]
-    fn gopro_vc5_dng_imports_and_fails_to_load_with_a_clear_reason() {
+    fn gopro_vc5_dng_imports_and_loads() {
         use lcc_tiff::{IfdBuilder, ImageData, TiffWriter, Value, tags as t};
         let mut ifd = IfdBuilder::new();
         ifd.set(t::NEW_SUBFILE_TYPE, Value::Long(vec![0]));
-        ifd.set(t::IMAGE_WIDTH, Value::Long(vec![32]));
-        ifd.set(t::IMAGE_LENGTH, Value::Long(vec![16]));
+        ifd.set(t::IMAGE_WIDTH, Value::Long(vec![64]));
+        ifd.set(t::IMAGE_LENGTH, Value::Long(vec![48]));
         ifd.set(t::BITS_PER_SAMPLE, Value::Short(vec![16]));
         ifd.set(t::SAMPLES_PER_PIXEL, Value::Short(vec![1]));
         ifd.set(t::PHOTOMETRIC, Value::Short(vec![32803]));
@@ -3068,12 +3082,15 @@ pub(crate) mod tests {
         ifd.set(t::DNG_VERSION, Value::Byte(vec![1, 4, 0, 0]));
         ifd.set(t::CFA_REPEAT_PATTERN_DIM, Value::Short(vec![2, 2]));
         ifd.set(t::CFA_PATTERN_EP, Value::Byte(vec![0, 1, 1, 2]));
-        ifd.set_image(ImageData::Tiles { tile_width: 32, tile_height: 16, tiles: vec![vec![0x5au8; 400]] });
+        ifd.set(t::WHITE_LEVEL, Value::Short(vec![16383]));
+        let tile = lcc_raw::testdata::vc5_stream(64, 48, [4000, 8192, 8192, 8192], 0);
+        ifd.set_image(ImageData::Tiles { tile_width: 64, tile_height: 48, tiles: vec![tile] });
         let f = TiffWriter::default().write(&[ifd]).unwrap();
+        assert!(crate::import::EXTENSIONS.contains(&"gpr"), "folder imports find .GPR files");
         let p = probe_bytes("GOPR0001.GPR", &f).unwrap();
-        assert_eq!((p.kind, p.preview_only, p.width, p.height), (MediaKind::Raw, None, 32, 16));
-        let e = load_bytes(&f, 16).unwrap_err();
-        assert!(e.contains("GoPro VC-5") && e.contains("not decoded yet"), "{e}");
+        assert_eq!((p.kind, p.preview_only, p.width, p.height), (MediaKind::Raw, None, 64, 48));
+        let (img, src) = load_bytes(&f, 64).unwrap();
+        assert_eq!((img.width, img.height, src.raw), (64, 48, true));
     }
 
     /// Any failure of a recognised raw (not only an unsupported variant) can fall back to its preview;
@@ -3253,5 +3270,41 @@ pub(crate) mod tests {
         assert!(!s.catalog.photo(old).unwrap().is_edited(), "still as imported");
         drop(s);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An ILCE-7CR frame at ISO 50 (the sensor at ISO 100 with a stop more light) develops at half the level of the
+    /// same sensor data at ISO 100: the decoder's baseline exposure reaches the render.
+    #[test]
+    fn a7cr_iso_50_develops_a_stop_darker_than_iso_100() {
+        use lcc_tiff::{IfdBuilder, ImageData, TiffWriter, Value, tags as t};
+        let arw = |iso: u16| {
+            let (w, h) = (64u32, 48u32);
+            let mut raw = IfdBuilder::new();
+            raw.set(t::MAKE, Value::Ascii("SONY".into()));
+            raw.set(t::MODEL, Value::Ascii("ILCE-7CR".into()));
+            raw.set(t::IMAGE_WIDTH, Value::Long(vec![w]));
+            raw.set(t::IMAGE_LENGTH, Value::Long(vec![h]));
+            raw.set(t::SAMPLES_PER_PIXEL, Value::Short(vec![1]));
+            raw.set(t::PHOTOMETRIC, Value::Short(vec![t::photometric::CFA]));
+            raw.set(t::BITS_PER_SAMPLE, Value::Short(vec![16]));
+            raw.set(t::COMPRESSION, Value::Short(vec![1]));
+            raw.set(t::WHITE_LEVEL, Value::Long(vec![16383]));
+            // a mid grey, far from clipping at either exposure
+            let samples: Vec<u8> = (0..w * h).flat_map(|_| 3000u16.to_le_bytes()).collect();
+            raw.set_image(ImageData::Strips { rows_per_strip: h, strips: vec![samples] });
+            let mut exif = IfdBuilder::new();
+            exif.set(t::ISO_SPEED, Value::Short(vec![iso]));
+            raw.set_child(t::EXIF_IFD, exif);
+            TiffWriter::default().write(&[raw]).expect("the fixture writes")
+        };
+        let mean = |iso| {
+            let (img, _) = load_bytes(&arw(iso), 64).expect("the fixture develops");
+            let sum: f64 = img.data.iter().map(|p| p.iter().map(|v| f64::from(*v)).sum::<f64>()).sum();
+            sum / (img.data.len() * 3) as f64
+        };
+        let (at_50, at_100) = (mean(50), mean(100));
+        assert!(at_100 > 0.01, "the fixture develops to a visible level: {at_100}");
+        let ratio = at_50 / at_100;
+        assert!((ratio - 0.5).abs() < 0.01, "ISO 50 / ISO 100 = {ratio}");
     }
 }

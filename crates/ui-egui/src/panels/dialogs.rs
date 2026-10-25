@@ -453,7 +453,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     crate::widgets::register(ui.ctx(), "field:cullSimilar", r.rect);
                     clamp_cull_burst(burst_gap, similarity);
                     crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Lower it when a panning or moving burst splits into several groups.")).color(t.text_dim));
-                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus, Eyes Open, Aesthetic and Cull Score.")).color(t.text_dim));
                 }
                 Dialog::WhatsNew => {
                     ui.scope(|ui| {
@@ -2086,10 +2086,13 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
             if *library != app.session.library_generation() {
                 return Err(crate::i18n::tr("Another library was opened since the photos were dropped: nothing was moved").to_string());
             }
-            if *dont_ask {
+            let moved = crate::panels::left::move_photos(app, Some(ids), folder)?;
+            // only a move that began turns the question off: one refused, or that found the photos there already,
+            // leaves it as it was
+            if *dont_ask && moved > 0 {
                 app.ui.settings.ask_before_move = false;
             }
-            crate::panels::left::move_photos(app, Some(ids), folder).map(|n| json!({"moved": n}))
+            Ok(json!({"moved": moved}))
         }
         // the catalog found: no file dialog; none: File ▸ Import Lightroom Catalog… asks for it
         Dialog::LightroomCatalog { catalog, .. } => {
@@ -2397,7 +2400,9 @@ pub(crate) fn export_screen(app: &mut LccApp, ctx: &egui::Context) {
     let tops: Vec<(String, f32, String)> = ctx.data_mut(|d| d.remove_temp(egui::Id::new(EXPORT_TOPS))).unwrap_or_default();
     // the dialog's own id and the modal layer: popups opened in it (dropdowns) stay open
     let shown = egui::Area::new(egui::Id::new("app-export-dialog")).movable(false).order(egui::Order::Middle).fixed_pos(screen.min).show(ctx, |ui| {
-        let (bg, _) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
+        // (hover only: the area on top already keeps clicks from the window below, and a
+        // nameless clickable backdrop would be an unnamed control to a screen reader)
+        let (bg, _) = ui.allocate_exact_size(screen.size(), egui::Sense::hover());
         ui.painter().rect_filled(bg, 0.0, t.chrome);
         // (the dialog's id, as the window had)
         crate::widgets::register(ui.ctx(), "dialog:window", bg);
@@ -2823,6 +2828,15 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
                 &[(Z::None, "None"), (Z::Lzw, "LZW"), (Z::Deflate, "ZIP")],
                 &mut opts.tiff_compression,
             );
+            // upstream #2890 (issue #2882 there): LZW stays as picked, with a note on what it costs
+            if opts.tiff_compression == Z::Lzw {
+                let note = if opts.effective_depth() == lcc_engine::export::OutputDepth::U16 {
+                    "At 16 bit, LZW is often larger than no compression, and larger and slower than ZIP. Use it only if other software needs LZW."
+                } else {
+                    "LZW is usually larger and slower than ZIP, and can be larger than no compression. Use it only if other software needs LZW."
+                };
+                crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
+            }
         }
         if opts.format == F::Dng {
             use lcc_engine::export::DngCompression as Z;

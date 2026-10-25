@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use lcc_develop::DevelopSettings;
+use serde_json::json;
 
 use super::*;
 
@@ -10,6 +11,41 @@ fn photo(c: &mut Catalog, name: &str, date: &str) -> PhotoId {
     p.captured = Some(date.to_string());
     c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     id
+}
+
+/// An edit built in code with more masks than the limit (a script adding one a command at a time)
+/// is stored cut to the limit: every edit goes through `apply` (issue #2121).
+#[test]
+fn edits_are_stored_within_list_limits() {
+    let mut c = Catalog::new();
+    let a = photo(&mut c, "a.jpg", "2026-04-01T10:00:00");
+    let many = DevelopSettings { masks: vec![Default::default(); lcc_develop::MAX_MASKS + 50], ..Default::default() };
+    c.apply(Op::SetDevelop { id: a, settings: Arc::new(many), label: "Masks".into(), edited: None }).unwrap();
+    assert_eq!(c.photo(a).unwrap().develop.masks.len(), lcc_develop::MAX_MASKS);
+    // within the limits the same settings are kept, not copied
+    let few = Arc::new(DevelopSettings { masks: vec![Default::default(); 3], ..Default::default() });
+    c.apply(Op::SetDevelop { id: a, settings: few.clone(), label: "Masks".into(), edited: None }).unwrap();
+    assert!(Arc::ptr_eq(&c.photo(a).unwrap().develop, &few));
+}
+
+#[cfg(test)]
+mod filter_deserialize_tests {
+    use super::*;
+
+    /// #2241: a filter key that is not one of `Filter`'s fields (a typo or a guessed name such as
+    /// `cameraModel` instead of `camera`) is rejected, not silently dropped: an agent or script that
+    /// filters by `cameraModel` must not be handed the whole library and told the filter worked.
+    #[test]
+    fn unknown_filter_key_is_rejected_not_ignored() {
+        let e = serde_json::from_value::<Filter>(json!({ "cameraModel": "X2" })).unwrap_err().to_string();
+        assert!(e.contains("cameraModel"), "the unknown key is named: {e}");
+
+        let e = serde_json::from_value::<Filter>(json!({ "foo": 1 })).unwrap_err().to_string();
+        assert!(e.contains("foo"), "the unknown key is named: {e}");
+
+        // the valid key is still accepted; `camera` is the field `cameraModel` was close to.
+        serde_json::from_value::<Filter>(json!({ "camera": "X2" })).unwrap();
+    }
 }
 
 #[test]

@@ -277,7 +277,7 @@ pub fn lookup_with(
     };
     let aperture = aperture.filter(|a| valid(*a));
     // the crop factor: the camera's, else what the 35 mm equivalent focal length implies
-    let crop = frame_crop_factor(camera.map(|c| c.crop_factor), focal, m.focal_length_35mm);
+    let crop = frame_crop_factor(camera.and_then(|c| c.crop_factor), focal, m.focal_length_35mm);
     let shot = Shot { focal, aperture, distance: None, crop_factor: crop, width: w, height: h };
     let corr = lens.correction(&shot)?;
     Some((lcc_pipeline::optics::reorient_lens(&corr, orientation, w, h), applied))
@@ -330,7 +330,7 @@ pub struct ListedLens {
     /// Every name the lens goes by.
     pub models: Vec<String>,
     pub mounts: Vec<String>,
-    pub crop_factor: f64,
+    pub crop_factor: Option<f64>,
     /// Calibrated focal lengths, mm (`[min, max]`; none when the profile has no calibration points).
     pub focal: Option<[f64; 2]>,
     pub distortion: bool,
@@ -360,7 +360,7 @@ pub fn list(db: &LensDb, filter: &ListFilter, offset: usize, limit: usize) -> (u
         .lenses
         .iter()
         .filter(|l| mount.is_none_or(|m| l.mounts.is_empty() || l.mounts.iter().any(|x| x.trim().eq_ignore_ascii_case(m))))
-        .filter(|l| crop.is_none_or(|c| !l.crop_factor.is_finite() || l.crop_factor <= 0.0 || l.crop_factor <= c * 1.02))
+        .filter(|l| crop.is_none_or(|c| l.crop_factor.is_none_or(|f| !f.is_finite() || f <= 0.0 || f <= c * 1.02)))
         .filter(|l| {
             let hay = format!("{} {}", l.maker, l.models.join(" ")).to_lowercase();
             words.iter().all(|w| hay.contains(w.as_str()))
@@ -611,6 +611,32 @@ mod tests {
         }
         assert_eq!(frame_crop_factor(None, 70.0, Some(105.0)), Some(1.5), "no body in the database: the 35 mm equivalent's");
         assert_eq!(frame_crop_factor(Some(1.0), 0.0, Some(105.0)), Some(1.0), "a hostile focal length is ignored");
+    }
+
+    #[test]
+    fn unknown_camera_crop_uses_exif_equivalent_without_full_frame_assumption() {
+        for crop in [
+            "",
+            "<cropfactor/>",
+            "<cropfactor>bad</cropfactor>",
+            "<cropfactor>NaN</cropfactor>",
+            "<cropfactor>inf</cropfactor>",
+            "<cropfactor>0.049</cropfactor>",
+            "<cropfactor>21</cropfactor>",
+        ] {
+            let xml = DB.replacen("<cropfactor>1.5</cropfactor>", crop, 1).replace("-0.03", "-0.003").replace("-0.4", "-0.04");
+            let db = LensDb::parse(&xml).unwrap();
+            // A below-1 crop exposes the old synthetic 1.0 body: the 10% crop-mode policy would keep it.
+            let m = lcc_meta::Metadata { focal_length_35mm: Some(17.1), ..meta() };
+            let expected = db.lenses[0]
+                .correction(&Shot { focal: 18.0, aperture: Some(3.5), distance: None, crop_factor: Some(17.1 / 18.0), width: 6000.0, height: 4000.0 })
+                .unwrap();
+            assert_eq!(lookup(&db, &m, 6000.0, 4000.0, Orientation::Normal).unwrap(), expected, "{crop}");
+            let fallback = db.lenses[0]
+                .correction(&Shot { focal: 18.0, aperture: Some(3.5), distance: None, crop_factor: None, width: 6000.0, height: 4000.0 })
+                .unwrap();
+            assert_eq!(lookup(&db, &meta(), 6000.0, 4000.0, Orientation::Normal).unwrap(), fallback, "no equivalent: {crop}");
+        }
     }
 
     /// A synthetic grid recorded through the profile's barrel distortion comes out of the pipeline's geometry

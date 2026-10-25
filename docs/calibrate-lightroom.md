@@ -180,7 +180,38 @@ Before committing, try a contribution in a debug build without adding it: point
 `LIGHTCRAFT_CLASSIC_CAMERA_CALIBRATIONS` at a folder holding the JSON and open that camera's raws. `lightcraft-classic-cli calibrate-lightroom
 list` prints the calibrations built into a binary, their looks (`cal:<id>`) and their held-out ΔE00.
 
-`lightcraft-classic-cli calibrate-lightroom verify --catalog X.lrcat --exports DIR` (whole-pipeline error between the app's render of
-an *edited* catalogue and its edited exports) is planned and not available yet.
+### Checking edited photos: `verify`
+
+`lightcraft-classic-cli calibrate-lightroom verify --raws DIR… --exports DIR…` answers "will my edited photos look the same
+after the move?". Export your *edited* photos from Lightroom as 16-bit TIFFs (any profile, crop or slider settings,
+**Include: All Metadata** so the export carries its develop settings). Point `verify` at the raws and at those
+exports. For each pair (matched by camera model and capture time, else by file name) it does three things:
+
+1. Imports the raw as the app would: it reads the raw's XMP sidecar, or, when the export carries its own `crs:`
+   settings, uses those instead, since they are exactly what was exported.
+2. Renders it in the colour space the export was written in (sRGB, Adobe RGB, Display P3, ProPhoto…), so both are
+   clipped to the same gamut.
+3. Measures the render against the export with `compare` (CIEDE2000).
+
+It prints one line per photo, then a table by **group of controls** the edits used: light, tone curve, presence,
+colour mixer, colour grading, white balance, profile, effects, lens, crop, masks, black & white, or default. A group
+whose error stands out is the part of the import to look at. `--report DIR` writes `verify.json` and a ΔE00 map per
+photo; `--json` prints the report; `--max N` checks the first N pairs; `--size N` sets the long edge compared. The
+exports are only read, never changed or sent anywhere.
+
+### Measuring a render against another editor: `compare`
+
+`lightcraft-classic-cli compare REFERENCE TEST` measures how far one render of a photo is from another, from any editor or
+camera (JPEG, TIFF, PNG, … read through their embedded colour profiles). It lines the two up (scale and shift, so a
+small lens-correction or crop difference is fine), then prints CIEDE2000 mean, median, p95 and p99 overall, by tone
+band (by the reference's L*) and by hue sector, with the test's mean lightness, chroma and hue bias. `--diff MAP.png`
+writes a false-colour ΔE00 map, `--json` the full report, `--size N` sets the long edge compared (default 512) and
+`--no-align` compares pixel for pixel. Use it to check a calibration on photos it did not see, or the app's render of
+an edited photo against the edited export from the editor you are moving from:
+
+```
+lightcraft-classic-cli render IMG_0001.CR3 -o ours.tif
+lightcraft-classic-cli compare lightroom/IMG_0001.tif ours.tif --diff map.png
+```
 
 Sources: own design; DNG specification 1.7 chapter 6 (profile model); CIEDE2000 (Sharma, Wu, Dalal 2005).

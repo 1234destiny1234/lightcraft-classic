@@ -113,6 +113,12 @@ impl eframe::App for App {
         if !self.0.shutdown(EXIT_WAIT) {
             log::warn!("quit: background work was still running after {EXIT_WAIT:?}");
         }
+        // macOS only: the process ends below without running destructors, and only the lock's
+        // `Drop` removes `catalog.lock.owner` (the OS frees the lock, not the note), so let go of
+        // the library's lock here, saved or not (we leave either way). Elsewhere eframe drops the
+        // app after this and the session's last writes (face data) still go out under the lock.
+        #[cfg(target_os = "macos")]
+        self.0.session.release_library_lock();
         // macOS (#1331): end the process here, before eframe tears the window down, as Quit from
         // the menu bar already does (PR #444). AccessKit's macOS adapter subclasses the window's
         // content view and restores its class on teardown; AppKit's Touch Bar support observes
@@ -779,6 +785,24 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .save_file()
                 .map(|p| p.to_string_lossy().to_string())
         })),
+        pick_print_templates: Some(Box::new(|| {
+            file_dialog()
+                .set_title(lcc_ui_egui::i18n::tr("Import Print Templates"))
+                .add_filter_nocase(lcc_ui_egui::i18n::tr("Print Templates"), &[lcc_engine::print::template::FILE_EXT])
+                .pick_files()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect()
+        })),
+        save_print_template: Some(Box::new(|name: &str| {
+            file_dialog()
+                .set_title(lcc_ui_egui::i18n::tr("Export Print Template"))
+                .add_filter_nocase(lcc_ui_egui::i18n::tr("Print Templates"), &[lcc_engine::print::template::FILE_EXT])
+                .set_file_name(name)
+                .save_file()
+                .map(|p| p.to_string_lossy().to_string())
+        })),
         // atomic (temp file + sync + rename): a failed write never leaves a truncated file
         write_shared: Some(std::sync::Arc::new(lcc_engine::export::write_file)),
         write: Some(Box::new(lcc_engine::export::write_file)),
@@ -1108,6 +1132,9 @@ fn main() -> eframe::Result {
     }
     let gpu_on = prefs.as_ref().is_none_or(|u| u.settings.gpu) && gpu_crash.is_none();
     lcc_engine::gpu::set_enabled(gpu_on);
+    if let Some(u) = &prefs {
+        lcc_engine::gpu::backend::set_compute_preference(u.settings.gpu_backend.name());
+    }
     // the window's renderer: probed (Windows) and with a fallback chain, so a driver that can't
     // build egui's pipeline never kills the start-up
     let compose_window = prefs.as_ref().is_some_and(|ui| ui.settings.compose_window) && std::env::var_os("WGPU_BACKEND").is_none();
@@ -1884,6 +1911,41 @@ mod tests {
         assert!(out.status.success(), "{stdout}");
         assert!(stdout.contains("calling on_exit"), "the child didn't run the test: {stdout}");
         assert_eq!(stdout.contains("on_exit returned"), !cfg!(target_os = "macos"), "{stdout}");
+    }
+
+    /// Quitting leaves no `catalog.lock.owner` behind, though the process ends without running
+    /// destructors (macOS): `on_exit` releases the library's lock itself. The child opens a library
+    /// and calls `on_exit` (on macOS that ends it); the parent looks at the folder afterwards. Other
+    /// systems drop the app after `on_exit`, which removes the note anyway.
+    #[test]
+    fn on_exit_removes_the_lock_owner_note() {
+        if let Some(dir) = std::env::var_os(lcc_brand::env_var("TEST_LOCK_DIR")) {
+            let mut session = lcc_engine::Session::new();
+            session.open_library(&dir, false).unwrap();
+            let mut app = App(
+                LccApp::new(session, Services::default()),
+                PrefsWriter::default(),
+                #[cfg(target_os = "macos")]
+                None,
+            );
+            eframe::App::on_exit(&mut app, None);
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("lc-app-lock-owner-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "tests::on_exit_removes_the_lock_owner_note", "--nocapture"])
+            .env(lcc_brand::env_var("TEST_LOCK_DIR"), &dir)
+            .env(lcc_brand::env_var("NO_PREFS"), "1")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{stdout}");
+        assert!(dir.join("catalog.snap").exists(), "the child didn't open and save the library: {stdout}");
+        assert!(!dir.join("catalog.lock.owner").exists(), "the owner note was left behind");
+        assert!(lcc_engine::Session::new().open_library(&dir, false).is_ok(), "the library is still locked");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
