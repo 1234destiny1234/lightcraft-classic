@@ -269,20 +269,33 @@ is recorded here yet. Whether they should come before the file-local fit for the
 
 `crates/camdb` (`lcc-camdb`) gathers per-model camera data with its provenance: two-illuminant colour matrices
 (and forward matrices when known), white-balance presets, black/white level overrides, and a `provenance` naming the
-source (`native-dng`, `chart`, `manufacturer-doc`, `maker-note`, `spectral-sensitivities`, `estimated`), its detail
-and contributor. Entries live in human-editable TOML, one file per maker in `crates/camdb/data/cameras/`, embedded at
-build time; the 52 spectral rows above are exposed through it with `spectral-sensitivities` provenance rather than
-copied. `camdb::find` prefers TOML entries by source rank, then the spectral table. The raw's matrices are written
+source (`native-dng`, `chart`, `manufacturer-doc`, `maker-note`, `spectral-sensitivities`, `dcraw`, `estimated`), its
+detail and contributor. Entries live in human-editable TOML, one file per maker in `crates/camdb/data/cameras/`,
+embedded at build time; the 52 spectral rows above are exposed through it with `spectral-sensitivities` provenance
+rather than copied. `camdb::find` ranks TOML entries and the spectral table together by source, so measured data
+comes first, then the spectral matrices, then dcraw's table. The raw's matrices are written
 into its DNG colour data, so the input transform interpolates them by the inverse CCT of the white, as for a DNG.
-Measured entries (`native-dng`, `chart`, `manufacturer-doc`) come before the JPEG fit (step 2); spectral ones keep
-their place (step 5); level overrides apply in every case.
+Measured entries (`native-dng`, `chart`, `manufacturer-doc`) come before the JPEG fit (step 2); spectral and dcraw
+ones keep the spectral place (step 5), after a failed or missing JPEG fit; level overrides apply in every case.
 
-Data rules: no Adobe DCP/LCP data, no matrices from Adobe-converted DNGs, no Adobe-rendered pixels, no tables from GPL projects (dcraw's
-`adobe_coeff` and its descendants, darktable, RawTherapee). `<cli> camdb extract NATIVE.dng…` prints entries from DNGs
+**dcraw's table** (`crates/camdb/data/cameras/dcraw.toml`, 611 rows for about 550 models up to mid-2018) is generated
+by `tools/dcraw_adobe_coeff.py` from dcraw.c 9.28 (Debian's `dcraw_9.28.orig.tar.gz`). dcraw.c says its non-Foveon
+code is "free for all uses", and its `adobe_coeff` table is not Foveon code. Each row is one XYZ (D65) → camera
+matrix. Most were read from Adobe DNG Converter, and the rows marked DJC were measured by Dave Coffin; the provenance
+detail says which. dcraw's black and white levels are left out. The table gives colorimetric colour, not a camera's
+or Lightroom's look. It replaces the neutral fallback when a JPEG fit fails or a raw has no usable JPEG, and the
+Colorimetric camera colour starts from it for models without spectral data (maintainer decision 2026-10-26). dcraw
+matched names by prefix; the database matches exact models, so a body dcraw only covered through a shorter name (its
+"Minolta DYNAX 5" row for the DYNAX 5D, say) isn't matched. White balance stays on the relative scale for these
+models: absolute Kelvin through dcraw's matrices is a follow-up.
+
+Data rules: what ships must be legal to redistribute, with its source named. No Adobe DCP/LCP files, no matrices
+harvested from Adobe-converted DNGs, no Adobe-rendered pixels, and no tables from GPL or other copyleft projects
+(darktable, RawTherapee, LibRaw's updated copies of dcraw's table). `<cli> camdb extract NATIVE.dng…` prints entries from DNGs
 a camera wrote itself and refuses DNGs whose `Software` tag names Adobe software (DNG Converter, Lightroom, Camera Raw,
 Photoshop), the app's own DNG export, or is missing. `<cli> camdb show MAKE MODEL` prints the entry a camera resolves
 to. A native DNG's matrices help that model's other raw format (a Pentax body's PEF files, say), whose files carry
-none. The database has no TOML entries yet.
+none. Besides dcraw's table, the database has no TOML entries yet.
 
 Calibrations matched to Lightroom (`crates/camdb/data/calibrations/`, maintainer decision 2026-10-25) are the one
 place Lightroom informs the numbers: black-box fits to Lightroom's *output images* of a contributor's own photos,
