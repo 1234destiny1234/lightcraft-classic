@@ -489,3 +489,90 @@ fn a_parade_beside_a_waveform_keeps_its_own_pictures() {
     assert!(parade.is_some() && wave.is_some(), "both scopes drew ({parade:?}, {wave:?})");
     assert_ne!(parade, wave, "a texture each");
 }
+
+/// Where the curves inside widget `id` reached last frame: the points of its meshes and lines.
+fn curve_points(h: &Headless, id: &str) -> Vec<egui::Pos2> {
+    let r = rect(h, id);
+    let mut out = Vec::new();
+    for shape in h.view.painted_shapes() {
+        match shape {
+            egui::Shape::Mesh(mesh) => out.extend(mesh.vertices.iter().map(|v| v.pos).filter(|p| r.contains(*p))),
+            egui::Shape::Path(path) => out.extend(path.points.iter().copied().filter(|p| r.contains(*p))),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// A slider drag of an HDR edit: both histograms follow the drag's live HDR histogram, and the
+/// release goes from the drag's last one to the released render's. On an HDR display the loupe's
+/// float drafts leave its 8-bit render (and that render's histogram) as it was before the drag: the
+/// second histogram once drew only that one, standing still until the release.
+#[test]
+fn both_histograms_follow_an_hdr_drag_and_hold_on_release() {
+    struct Hdr;
+    impl crate::HdrOutput for Hdr {
+        fn headroom(&mut self) -> Option<f32> {
+            Some(4.0)
+        }
+        fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+            Ok(egui::TextureId::User(700 + u64::from(view)))
+        }
+    }
+    for (hdr_display, hq) in [(false, false), (true, false), (true, true)] {
+        let what = format!("HDR display {hdr_display}, high quality previews {hq}");
+        let hdr_output: Option<Box<dyn crate::HdrOutput>> = if hdr_display { Some(Box::new(Hdr)) } else { None };
+        let services = Services { png: None, hdr_output, ..Default::default() };
+        let app = LccApp::new(lcc_engine::Session::with_demo(), services);
+        let mut h = Headless::new(app, [1400.0, 1000.0], 1.0);
+        h.app.ui.settings.high_quality_adjustment_previews = hq;
+        let id = h.app.session.visible_cloned()[0].0;
+        for (command, params) in [("library.select", json!({"ids": [id]})), ("develop.hdr", json!({"enabled": true}))] {
+            let r = h.request("engine.execute", json!({"command": command, "params": params}), T);
+            assert_eq!(r["ok"], true, "{r}");
+        }
+        let r = h.request("ui.set", json!({"view": "detail", "right": "edit", "histogram": true}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        set(&mut h, "view.histogram.mode", "mode", "luminance");
+        set(&mut h, "view.histogram.second", "mode", "luminance");
+        let hdr_shown = |h: &Headless| h.app.loupe_shown.is_some_and(|(_, s)| s == "hdr");
+        if hdr_display {
+            assert!(h.step_until(SETTLE, hdr_shown), "the loupe shows the HDR texture");
+        }
+        h.settle(SETTLE);
+        assert_eq!(hdr_shown(&h), hdr_display);
+        let plots = |h: &Headless| [curve_points(h, "histogram:plot"), curve_points(h, "histogram2")];
+        let before = plots(&h);
+        assert!(!before[1].is_empty(), "the second histogram is drawn");
+        h.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
+        for value in [1.5, 3.0] {
+            let [first, second] = plots(&h);
+            h.app.run("develop.set", json!({"values": {"light.exposure": value}})).unwrap();
+            assert!(
+                h.step_until(SETTLE, |h| curve_points(h, "histogram:plot") != first),
+                "{what}, exposure {value}: the first histogram follows the drag"
+            );
+            assert!(h.app.session.interaction.is_some());
+            assert!(curve_points(&h, "histogram2") != second, "{what}, exposure {value}: the second histogram follows it too");
+        }
+        let last = plots(&h);
+        h.app.run("develop.endInteraction", json!({})).unwrap();
+        // every frame until the released render has landed and nothing is left to do
+        let mut released = Vec::new();
+        let (t0, mut quiet) = (std::time::Instant::now(), 0);
+        while quiet < 12 && t0.elapsed() < SETTLE {
+            h.step();
+            released.push(plots(&h));
+            quiet = if h.busy() { 0 } else { quiet + 1 };
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let settled = plots(&h);
+        for k in 0..2 {
+            assert!(settled[k] != before[k], "{what}: plot {k} settles on the new exposure");
+            for (i, frame) in released.iter().enumerate() {
+                assert!(frame[k] != before[k], "{what}: plot {k}, frame {i} after the release shows the histogram from before the drag");
+                assert!(frame[k] == last[k] || frame[k] == settled[k], "{what}: plot {k}, frame {i} after the release shows a third histogram");
+            }
+        }
+    }
+}
