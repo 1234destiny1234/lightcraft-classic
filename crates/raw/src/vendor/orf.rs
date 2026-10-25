@@ -30,8 +30,11 @@
 //!   and PEN-F files were only checked for smoothness, not for CFA anchoring or black level.
 //! - Olympus's compressed ORF (most bodies since ~2008): IFD0 says uncompressed, 12 bits, one strip, but the strip
 //!   holds fewer than 12 bits per sample. See [`decode_compressed`]: a per-sample adaptive Golomb-style code with a
-//!   median-edge predictor over same-colour neighbours (the method of Olympus patents US7333035B2 / US7715639B2;
-//!   constants and bit layout established with existing open decoders read as a reference, no code copied).
+//!   median-edge predictor over same-colour neighbours (the method of Olympus patents US7333035B2 / US7715639B2).
+//!   Sources: translated from dcraw's `olympus_load_raw` (revision 1.478, outside its RESTRICTED block) under the
+//!   dcraw reference policy; the bit reader and the bounds checks are our own. rawspeed's `OlympusDecompressor`
+//!   was also read when this was written, before the policy; a side-by-side audit (2026-10-24) found the code
+//!   follows dcraw's structure (its predictor test and `(ushort)` bit-count loop), not rawspeed's.
 //! - The colour-filter layout is the file's Exif `CFAPattern`: GRBG on the E-1 and E-400, RGGB on the XZ-2, where
 //!   the colours of the decoded mosaic follow the embedded JPEG best with exactly that layout
 //!   (`corpus_orf_cfa_patterns`). The samples' active areas start at even offsets, so they can't tell whether the

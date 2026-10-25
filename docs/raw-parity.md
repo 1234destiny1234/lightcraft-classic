@@ -1,6 +1,6 @@
 # RAW parity: cameras, formats, demosaic, colour and lens profiles
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-18 · **Change:** minor (Kelvin white balance for Canon ColorData presets and the Nikon Z5II; upstream: integration batch 36 and the camera-coverage sweep #1327, 545 models verified upstream; re-measured after the merge: 596 verified; Canon EOS R6 verified: 315 verified, use-weighted ~90%; Canon CRW decoded, 15 bodies verified; Epson ERF and Mamiya MEF decoded, 4 bodies verified: 314 verified, use-weighted ~90%; compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked; Minolta MRW decoded, 6 bodies verified; ARW version 1 and the Z 6II's packed NEF decode, 31 popular bodies verified: use-weighted 87% → 89%, 57% on verified bodies; Z 8 and Z 9 lossless verified: 280 verified, 59% on verified bodies; pre-X FinePix SuperCCD RAF decoded (`raf_superccd.rs`), 15 FinePix bodies verified: 295 verified, Fujifilm 93% → 99%, 60% on verified bodies); upstream: lossy JPEG XL DNG tiles with a non-linear declared transfer curve decode; X-Trans CMOS 4 bodies take the X-T3's spectral matrices · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-24 · **Change:** patch (compressed ORF provenance: translated from dcraw under the dcraw reference policy); minor (Kelvin white balance for Canon ColorData presets and the Nikon Z5II; upstream: integration batch 36 and the camera-coverage sweep #1327, 545 models verified upstream; re-measured after the merge: 596 verified; Canon EOS R6 verified: 315 verified, use-weighted ~90%; Canon CRW decoded, 15 bodies verified; Epson ERF and Mamiya MEF decoded, 4 bodies verified: 314 verified, use-weighted ~90%; compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked; Minolta MRW decoded, 6 bodies verified; ARW version 1 and the Z 6II's packed NEF decode, 31 popular bodies verified: use-weighted 87% → 89%, 57% on verified bodies; Z 8 and Z 9 lossless verified: 280 verified, 59% on verified bodies; pre-X FinePix SuperCCD RAF decoded (`raf_superccd.rs`), 15 FinePix bodies verified: 295 verified, Fujifilm 93% → 99%, 60% on verified bodies); upstream: lossy JPEG XL DNG tiles with a non-linear declared transfer curve decode; X-Trans CMOS 4 bodies take the X-T3's spectral matrices · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
 
 Raw processing is the deepest single dimension of Lightroom parity: a photographer whose camera
 does not decode, or decodes with the wrong colour, cannot switch. This document measures it model by
@@ -180,8 +180,9 @@ largest gap left.
 
 ### Compressed ORF: a clean-room starting point
 
-Decoded since 2026-10-13 (`decode_compressed` in `crates/raw/src/vendor/orf.rs`, Chromaforge-only under the decoder
-reference policy); kept for the method's background.
+Decoded since 2026-10-13 (`decode_compressed` in `crates/raw/src/vendor/orf.rs`, Chromaforge-only): translated from
+dcraw's `olympus_load_raw` under the dcraw reference policy (`AGENTS.md`, Clean-room sources), not derived from the
+patents below; kept for the method's background.
 
 Two Olympus patents by Takashi Ishikawa describe the *method* of lossless RAW compression in prose; neither names ORF
 and neither gives the file layout. See the closed #240 and the open #360 for why a decoder has to be derived from the
@@ -299,6 +300,7 @@ Beyond decoding:
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-24 | patch | Compressed ORF provenance corrected: translated from dcraw's `olympus_load_raw` under the new dcraw reference policy, not derived from the patents; no coverage change |
 | 2026-10-16 | minor | Kelvin white balance from Canon CR2 `ColorData` presets (PowerShot G1 X Mark III) and a built-in preset table for the Nikon Z5II |
 | 2026-10-15 | minor | Upstream batch 40 merged: action 3 (verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies) was already done here and the fork's tables stay ahead; `coverage.py --check` passes, numbers unchanged (596 verified, use-weighted ~98%, 87% on verified bodies) |
 | 2026-10-15 | minor | Upstream merge: both sides' evidence combined and re-measured with `docs/raw/coverage.py`: 596 verified, 724 unverified, 89 preview, 37 unsupported; use-weighted ~98% (87% on verified bodies); decoding 88%, RAW readiness ~63% |
