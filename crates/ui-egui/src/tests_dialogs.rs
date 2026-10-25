@@ -138,10 +138,11 @@ fn a_click_outside_an_open_dropdown_keeps_the_dialog() {
     h.app.run("dialog.export", json!({})).unwrap();
     h.step();
     h.step();
-    let r = h.request("ui.clickWidget", json!({"id": "combo:exportPreset"}), T);
+    // (a wide window lists the presets beside the settings: the destination dropdown)
+    let r = h.request("ui.clickWidget", json!({"id": "combo:exportDestinationMode"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert!(egui::Popup::is_any_open(&h.view.ctx), "the preset dropdown is open");
+    assert!(egui::Popup::is_any_open(&h.view.ctx), "the dropdown is open");
     let at = egui::pos2(10.0, 990.0);
     let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
     h.events.extend([egui::Event::PointerMoved(at), press(true), press(false)]);

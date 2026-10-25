@@ -301,7 +301,6 @@
   "{} photos · {} aligned": "{} zdjęć · wyrównano {}",
   "{} photos · {} aligned · {} left out": "{} zdjęć · wyrównano {} · pominięto {}",
   "Listing folders — folders: {folders}, files: {files}": "Przeglądanie folderów — foldery: {folders}, pliki: {files}",
-  "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.": "MIT lub Apache-2.0. Czcionki: {} (OFL). Ikony: oryginalne.",
   "Drop to review {n} item{} for import": "Upuść, aby przejrzeć przed importem (elementy: {n}){:.0}",
   "Drop to import {n} item{}": "Upuść, aby zaimportować (elementy: {n}){:.0}",
   "Drop to import {n} preset{}": "Upuść, aby zaimportować ustawienia wstępne: {n}{:.0}",

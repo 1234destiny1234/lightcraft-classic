@@ -378,14 +378,14 @@ fn remove_from_list_forgets_one_library_and_deletes_nothing() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// File ▸ Open Recent Library's items.
+/// File ▸ Libraries' items (the recent libraries; upstream's Open Recent Library).
 fn open_recent(app: &LccApp) -> Vec<crate::menubar::MenuNode> {
     use crate::menubar::MenuNode;
     let bar = crate::menubar::menu_bar(app);
     let file = &bar.iter().find(|(t, _)| t == "File").unwrap().1;
-    match file.iter().find(|n| matches!(n, MenuNode::Submenu { label, .. } if label == "Open Recent Library")) {
+    match file.iter().find(|n| matches!(n, MenuNode::Submenu { label, .. } if label == "Libraries")) {
         Some(MenuNode::Submenu { children, .. }) => children.clone(),
-        _ => panic!("no Open Recent Library submenu in {file:?}"),
+        _ => panic!("no Libraries submenu in {file:?}"),
     }
 }
 

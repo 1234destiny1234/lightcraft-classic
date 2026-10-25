@@ -301,7 +301,6 @@
   "{} photos · {} aligned": "{} fotek · zarovnáno {}",
   "{} photos · {} aligned · {} left out": "{} fotek · zarovnáno {} · vynecháno {}",
   "Listing folders — folders: {folders}, files: {files}": "Procházení složek – složky: {folders}, soubory: {files}",
-  "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.": "MIT NEBO Apache-2.0. Písma: {} (OFL). Ikony: původní tvorba.",
   "Inside: {names}": "Uvnitř: {names}",
   "Drop to review {n} item{} for import": "Pusťte pro kontrolu před importem (položek: {n}){:.0}",
   "Drop to import {n} item{}": "Pusťte pro import (položek: {n}){:.0}",

@@ -298,7 +298,6 @@
   "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "{n} Foto{0} nach „{1}“ verschoben. Bearbeiten → Rückgängig holt sie zurück.",
   "{app} could not open its window: {e}": "{app} konnte sein Fenster nicht öffnen: {e}",
   "{app} could not open its window: {e}\n\nThe log file has the details: {path}": "{app} konnte sein Fenster nicht öffnen: {e}\n\nEinzelheiten stehen in der Protokolldatei: {path}",
-  "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.": "MIT ODER Apache-2.0. Schriften: {} (OFL). Symbole: eigene Gestaltung.",
   "{n} change{} saved in memory but not written to disk: {e}\n{app} retries automatically; quitting now would lose {}.": "{n} Änderung(en) nur im Arbeitsspeicher, nicht auf dem Datenträger gespeichert{0:.0}: {e}\n{app} versucht es automatisch erneut; wenn du jetzt beendest, gehen sie verloren.{1:.0}",
   "{n} change{} saved in memory but not written to disk: {e} — {app} will retry": "{n} Änderung(en) nur im Arbeitsspeicher gespeichert{:.0}: {e} – {app} versucht es erneut",
   "{app} can't decode this raw variant yet ({}). You're editing the camera's embedded JPEG preview, which already includes the camera's picture style (e.g. Monochrome) and white balance.": "{app} kann diese RAW-Variante noch nicht dekodieren ({}). Du bearbeitest die eingebettete JPEG-Vorschau der Kamera. Sie enthält bereits deren Bildstil (z. B. Monochrom) und Weißabgleich.",
