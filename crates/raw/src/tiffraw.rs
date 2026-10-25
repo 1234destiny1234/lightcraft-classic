@@ -195,8 +195,14 @@ fn decode_chunk(data: &[u8], info: &ImageInfo, c: &Chunk, order: ByteOrder, pack
             Ok(ChunkPx::U16(v))
         }
         comp::LOSSY_JPEG => {
-            // lossy DNG: each chunk is a baseline (DCT) JPEG of 8-bit samples
-            let (px, jw, jh, jc) = lossy_jpeg(src, cpp)?;
+            // lossy DNG: each chunk is a baseline (DCT) JPEG of 8-bit samples. Its frame is refused from the header
+            // when it holds more than a few times the chunk rounded up to whole 16-pixel MCUs (a last strip may be
+            // coded at the full RowsPerStrip, an image's only strip at a RowsPerStrip taller than the image), before
+            // the output it declares is allocated (upstream issue #2560).
+            let mcu = |v: usize| v.div_ceil(16).saturating_mul(16);
+            let rows = mcu(ch.max(info.chunk_size().1.min(info.height) as usize).max(info.height as usize));
+            let cap = mcu(cw).saturating_mul(rows).saturating_mul(LOSSY_FRAME_SLACK).saturating_mul(cpp.max(1));
+            let (px, jw, jh, jc) = lossy_jpeg_limited(src, cpp, 1 << 16, Some(cap))?;
             let mut v = vec![0u16; n];
             for y in 0..ch.min(jh) {
                 for x in 0..cw.min(jw) {
@@ -221,6 +227,9 @@ fn decode_chunk(data: &[u8], info: &ImageInfo, c: &Chunk, order: ByteOrder, pack
         other => Err(RawError::Unsupported(format!("TIFF compression {other}"))),
     }
 }
+
+/// How many times a lossy chunk, rounded up to whole MCUs, its JPEG frame may hold.
+const LOSSY_FRAME_SLACK: usize = 4;
 
 /// A chunk's nominal size and the part of it inside the image (smaller for edge tiles).
 fn chunk_dims(info: &ImageInfo, c: &Chunk) -> (usize, usize, usize, usize) {
@@ -419,6 +428,36 @@ mod lossy_tests {
         assert!((px(2, 3)[0] as i32 - 40).abs() <= 3 && (px(2, 3)[2] as i32 - 200).abs() <= 3, "{:?}", px(2, 3));
         assert!((px(20, 3)[0] as i32 - 220).abs() <= 3, "second tile: {:?}", px(20, 3));
         assert!((px(10, 5)[1] as i32 - 150).abs() <= 6, "green ramp: {:?}", px(10, 5));
+    }
+
+    /// A 16×8 lossy tile whose JPEG header declares a 4096×4096 frame is refused from that header, before the
+    /// frame is allocated and decoded (upstream #2635); the same tile with its own header decodes.
+    #[test]
+    fn lossy_tile_declaring_more_than_its_tile_is_refused_from_its_header() {
+        let px: Vec<u8> = (0..16 * 8).flat_map(|i| [40u8, (i % 16 * 15) as u8, 200]).collect();
+        let mut tile = Vec::new();
+        jpeg_encoder::Encoder::new(&mut tile, 100).encode(&px, 16, 8, jpeg_encoder::ColorType::Rgb).unwrap();
+        let info = |len: usize| ImageInfo {
+            width: 16,
+            height: 8,
+            bits_per_sample: vec![8, 8, 8],
+            samples_per_pixel: 3,
+            compression: comp::LOSSY_JPEG,
+            photometric: 34892,
+            planar: 1,
+            predictor: 1,
+            sample_format: 1,
+            new_subfile_type: 0,
+            layout: Layout::Tiles { tile_width: 16, tile_height: 8 },
+            offsets: vec![0],
+            byte_counts: vec![len as u64],
+        };
+        assert!(read_image(&tile, &info(tile.len()), ByteOrder::Little, Packing::Msb).is_ok());
+        let sof = tile.windows(2).position(|m| m == [0xFF, 0xC0]).unwrap();
+        tile[sof + 5..sof + 7].copy_from_slice(&4096u16.to_be_bytes());
+        tile[sof + 7..sof + 9].copy_from_slice(&4096u16.to_be_bytes());
+        let r = read_image(&tile, &info(tile.len()), ByteOrder::Little, Packing::Msb);
+        assert!(matches!(r, Err(RawError::Limit(_))), "{:?}", r.map(|_| ()));
     }
 
     fn strip_info(compression: u16, offsets: Vec<u64>, byte_counts: Vec<u64>) -> ImageInfo {
