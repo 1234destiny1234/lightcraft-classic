@@ -2,9 +2,9 @@
 //!
 //! Sources: own design (pairing by camera model and capture time; registration in [`register`]; sampling in
 //! [`sample`]).
-mod grid;
+pub(crate) mod grid;
 mod pair;
-mod register;
+pub(crate) mod register;
 mod sample;
 
 use crate::{Error, Result};
