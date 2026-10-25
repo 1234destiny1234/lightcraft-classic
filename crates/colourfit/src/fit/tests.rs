@@ -53,7 +53,7 @@ fn synthetic(model: &Model, lut: &pipe::Lut) -> Vec<PhotoSamples> {
                     let r: [f64; 3] = std::array::from_fn(|_| 0.1 + 0.9 * rng.next());
                     let camera: [f32; 3] = std::array::from_fn(|c| (n[c] * r[c] * k) as f32);
                     let xyz = lut.eval(dec.scene(camera));
-                    Sample { camera, lightroom_xyz: xyz.map(|v| v as f32), weight: 1.0 }
+                    Sample { camera, lightroom_xyz: xyz.map(|v| v as f32), weight: 1.0, pos: [0.5, 0.5] }
                 })
                 .collect();
             PhotoSamples {
@@ -66,6 +66,7 @@ fn synthetic(model: &Model, lut: &pipe::Lut) -> Vec<PhotoSamples> {
                 held_out: i % 5 == 0,
                 raw_path: PathBuf::new(),
                 export_path: PathBuf::new(),
+                dng: None,
             }
         })
         .collect()

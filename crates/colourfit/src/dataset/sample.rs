@@ -92,6 +92,7 @@ pub fn sample(cam: &Grid<[f32; 3]>, cam_max: &Grid<f32>, xyz: &Grid<[f32; 3]>, t
                     }
                 }
             }
+            let pos = [(2 * px + 1) as f32 / cam.w.max(1) as f32, (2 * py + 1) as f32 / cam.h.max(1) as f32];
             if !c_acc.iter().chain(&e_acc).all(|v| v.is_finite()) {
                 continue;
             }
@@ -104,7 +105,7 @@ pub fn sample(cam: &Grid<[f32; 3]>, cam_max: &Grid<f32>, xyz: &Grid<[f32; 3]>, t
             if cov(&gs) > MAX_COV || cov(&ys) > MAX_COV {
                 continue;
             }
-            cands.push((bin_of(e_acc), Sample { camera: c_acc, lightroom_xyz: e_acc, weight: 1.0 }));
+            cands.push((bin_of(e_acc), Sample { camera: c_acc, lightroom_xyz: e_acc, weight: 1.0, pos }));
         }
     }
     balance(cands, per_photo)
@@ -184,6 +185,7 @@ mod tests {
         let s = sample(&cam, &cam_max, &xyz, &t, 50);
         assert!(!s.is_empty() && s.len() <= 50);
         assert!(s.iter().all(|s| s.camera.iter().all(|v| *v < CAMERA_CLIP)));
+        assert!(s.iter().all(|s| s.pos.iter().all(|v| (0.0..=1.0).contains(v))));
         let mean_w = s.iter().map(|s| s.weight).sum::<f32>() / s.len() as f32;
         assert!((mean_w - 1.0).abs() < 1e-3);
     }

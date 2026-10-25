@@ -34,7 +34,7 @@ fn dec(u: f64) -> f64 {
     EPS * ((u.clamp(0.0, 1.0) * (VMAX / EPS).ln_1p()).exp() - 1.0)
 }
 
-fn settings() -> lcc_develop::DevelopSettings {
+pub(crate) fn settings() -> lcc_develop::DevelopSettings {
     let mut s = lcc_develop::DevelopSettings::default();
     s.detail.sharpen_amount = 0.0;
     s.detail.nr_luminance = 0.0;
