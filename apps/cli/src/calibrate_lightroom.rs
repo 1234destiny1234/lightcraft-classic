@@ -162,7 +162,10 @@ fn fit_cmd(args: &[String]) -> Result<(), String> {
         let dcp = cal.look_dcp(look);
         let bytes = write_dcp(&dcp.model, &dcp.name, &dcp.copyright, &dcp.color)?;
         let stem = json_path.file_stem().and_then(|s| s.to_str()).unwrap_or("calibration");
-        let path = out.join(format!("{stem}.{}.dcp", calibration::look_id(&look.name)));
+        // the id without its `cal:` prefix: `:` is not allowed in Windows file names
+        let id = calibration::look_id(&look.name);
+        let slug = id.strip_prefix(calibration::LOOK_PREFIX).unwrap_or(&id);
+        let path = out.join(format!("{stem}.{slug}.dcp"));
         std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         dcps.push(path);
     }
