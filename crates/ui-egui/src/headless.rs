@@ -240,14 +240,15 @@ pub struct Headless {
     /// Logical size (points) and scale.
     pub size: egui::Vec2,
     pub pixels_per_point: f32,
-    time: f64,
+    pub(crate) time: f64,
     frames: u64,
     pub(crate) events: Vec<egui::Event>,
     control: Sender<ControlRequest>,
     quit: bool,
     /// The simulated window is zoomed (`Maximized(true)` seen, reported back to the app like a real host).
     pub window_maximized: bool,
-    /// Window-management commands the app sent (`StartDrag`, `Maximized`, …), oldest first.
+    /// Window-management and pointer commands the app sent (`StartDrag`, `Maximized`,
+    /// `CursorPosition`, …), oldest first.
     pub window_commands: Vec<ViewportCommand>,
     /// The pointer cursor the last frame asked for (what a real host would show).
     pub last_cursor: egui::CursorIcon,
@@ -375,7 +376,8 @@ impl Headless {
                     self.window_maximized = on;
                     self.window_commands.push(c);
                 }
-                ViewportCommand::StartDrag => self.window_commands.push(c),
+                // recorded, not carried out: the simulated pointer moves only when a test moves it
+                ViewportCommand::StartDrag | ViewportCommand::CursorPosition(_) | ViewportCommand::CursorGrab(_) => self.window_commands.push(c),
                 _ => {}
             }
         }
@@ -2197,6 +2199,32 @@ mod tests {
         assert!((5..60).contains(&later.len()), "{} rows built", later.len());
         let deep = later.iter().filter_map(|w| w.strip_prefix("preset:user.big.")).filter_map(|n| n.parse::<usize>().ok()).max();
         assert!(deep.is_some_and(|n| n > 500), "scrolled rows: {later:?}");
+    }
+
+    /// With `label` and `labels` both set (a saved single-label filter, or an agent), the filter
+    /// bar lights only the labels that pass both, and a click starts from those, not their union.
+    #[test]
+    fn filter_bar_labels_from_label_and_labels() {
+        use lcc_catalog::ColorLabel;
+        let mut h = demo([1400.0, 800.0]);
+        let t = Duration::from_secs(10);
+        // (the filter bar shows from the start: `view.filterBar` would hide it)
+        h.app.ui.filter_bar = true;
+        h.settle(SETTLE);
+        h.app.session.execute("library.filter", &json!({"label": "red", "labels": ["red", "yellow"]})).unwrap();
+        // a frame so the bar is laid out for the new filter before the click
+        h.step();
+        let r = h.request("ui.clickWidget", json!({"id": "filter:label-green"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        let f = h.app.session.filter.clone();
+        assert_eq!((f.label, f.labels), (None, vec![ColorLabel::Red, ColorLabel::Green]));
+        // nothing passes both: nothing is lit, so a click shows just that label
+        h.app.session.execute("library.filter", &json!({"label": "red", "labels": ["yellow"]})).unwrap();
+        h.step();
+        h.request("ui.clickWidget", json!({"id": "filter:label-green"}), t);
+        let f = h.app.session.filter.clone();
+        assert_eq!((f.label, f.labels), (None, vec![ColorLabel::Green]));
+        h.settle(SETTLE);
     }
 
     /// The filter bar drives `library.filter` and saves the view as a smart album.

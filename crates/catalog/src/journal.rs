@@ -895,3 +895,28 @@ impl Drop for Journal {
         }
     }
 }
+
+#[cfg(test)]
+mod tests_resync {
+    use super::*;
+
+    /// A torn first line may end at any byte and a failed append's retried records may follow its
+    /// own start `{"seq":` more than once: `resync` finds the CRC-valid record after a fragment of
+    /// many record starts. UTF-8 is validated once for a valid line, and for a line that isn't
+    /// wholly valid only up to the budget instead of the suffix length per candidate (CWE-407).
+    #[test]
+    fn resync_finds_the_retried_record_after_a_fragment_of_many_starts() {
+        let op = Op::Batch { ops: vec![] };
+        let record = encode_record(5, &op);
+        let mut line = Vec::from(b"\xf2" as &[u8]); // an invalid byte, so the whole line is not UTF-8
+        for i in 0..1024 {
+            line.extend_from_slice(format!("{{\"seq\":{},\"crc\":{{", i).as_bytes());
+        }
+        let fragment = line.len();
+        line.extend_from_slice(record.as_bytes());
+        assert_eq!(resync(&line, 4).map(|(at, (seq, _))| (at, seq)), Some((fragment, 5)));
+        // a retry is still recognised past `last`: the fragment logs nothing valid, but the CRC
+        // matches, so the double `Some` is only reached with `last >= 4`
+        assert_eq!(resync(&line, 100).map(|(at, (seq, _))| (at, seq)), Some((fragment, 5)));
+    }
+}

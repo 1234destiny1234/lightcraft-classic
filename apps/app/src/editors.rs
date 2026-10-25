@@ -148,19 +148,25 @@ fn find_photocraft() -> Option<Launcher> {
     let from_entry = || {
         desktop_entry_dirs(env).into_iter().find_map(|d| {
             let text = std::fs::read_to_string(d.join(format!("{PHOTOCRAFT_ID}.desktop"))).ok()?;
-            desktop_exec(&text).and_then(|p| on_path(&p))
+            desktop_exec(&text)
+                // a wrapper (`Exec=env VAR=1 /opt/PhotoCraft/photocraft %F`) would be started with the photo only:
+                // skip it and look further
+                .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().to_lowercase().contains("photocraft")))
+                .and_then(|p| on_path(&p))
         })
     };
     let appimage = || {
         let home = env("HOME")?;
         let dirs = [Path::new(&home).join("Applications"), Path::new(&home).join(".local/bin")];
-        dirs.iter().find_map(|d| {
-            let mut found: Vec<PathBuf> =
-                std::fs::read_dir(d).ok()?.flatten().map(|e| e.path()).filter(|p| is_photocraft_appimage(p) && p.is_file()).collect();
-            // the newest version by name (1.10 after 1.9)
-            found.sort_by_key(|p| version_key(&p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default()));
-            found.pop()
-        })
+        // both folders, so the newest version wins whichever it is in
+        let mut found: Vec<PathBuf> = dirs
+            .iter()
+            .filter_map(|d| std::fs::read_dir(d).ok())
+            .flat_map(|rd| rd.flatten().map(|e| e.path()).filter(|p| is_photocraft_appimage(p) && p.is_file()).collect::<Vec<_>>())
+            .collect();
+        // the newest version by name (1.10 after 1.9)
+        found.sort_by_key(|p| version_key(&p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default()));
+        found.pop()
     };
     if let Some(p) = on_path(Path::new("photocraft")).or_else(from_entry).or_else(appimage) {
         return Some(Launcher::Program(p));
@@ -381,6 +387,20 @@ mod tests {
         let e = open_result(false, "Unable to find application named 'PhotoCraft'\n");
         assert_eq!(e, Err("Unable to find application named 'PhotoCraft'".into()));
         assert!(open_result(false, "").is_err());
+    }
+
+    #[test]
+    fn odd_detection_input_does_not_panic() {
+        for text in ["", "Exec=", "Exec=\"", "Exec=\"\"", "\u{0}\u{fffd}", "Exec= %F", "[Desktop Entry]\nExec=\u{e9}\u{301}"] {
+            let _ = desktop_exec(text);
+            let _ = mdfind_app(text);
+            let _ = reg_value(text);
+        }
+        for p in ["", "/", ".AppImage", "\u{e9}.appimage", "a/../b"] {
+            let _ = is_photocraft_appimage(Path::new(p));
+        }
+        let _ = desktop_entry_dirs(|_| None);
+        let _ = windows_candidates(None, Some("\"".into()), |_| None);
     }
 
     #[test]

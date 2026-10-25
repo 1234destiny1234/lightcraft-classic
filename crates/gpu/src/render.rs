@@ -696,9 +696,11 @@ pub fn render(
 
     // 5. per-pixel stage
     let mut fp = FinishParams::new(s, &plan.frame, info, w, h, plan.px_per_long, prep.air, req.space);
+    // soft proofing as the CPU's `finish` sets it up (an output-device table never gets here: see `render`)
+    fp.proof = req.proof.map(|pr| pr.params(req.space));
     // (a deep render is in the output space, as on the CPU: `finish::finish_deep`)
     if let Some(d) = req.display.as_ref().filter(|_| !deep) {
-        fp.for_display(d, None);
+        fp.for_display(d, req.proof);
     }
     let present = Present {
         clarity: prep.clarity.is_some(),

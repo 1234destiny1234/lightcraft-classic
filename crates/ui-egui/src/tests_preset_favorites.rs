@@ -50,3 +50,37 @@ fn a_starred_preset_is_listed_first_in_favorites_and_stays_in_its_group() {
     assert!(rect(&h, "presetFavorites").is_none(), "un-starring the last favourite removes the group");
     assert!(rect(&h, "presetFav:lc.bw-selenium").is_none());
 }
+
+/// A headless app on the demo library with the Presets panel open and laid out.
+fn app() -> Headless {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1400.0, 1000.0], 1.0);
+    h.app.run("panel.presets", json!({})).unwrap();
+    for _ in 0..5 {
+        h.step();
+    }
+    h
+}
+
+/// A user group named "Favorites" or "favorites" keeps its own header, apart from the section's: a
+/// click aimed at either id lands on the right row (the widget lookup takes the last match).
+#[test]
+fn user_groups_named_favorites_keep_their_own_header() {
+    let mut h = app();
+    let id = h.app.session.presets.first().map(|p| p.id.clone()).unwrap();
+    h.app.run("preset.favorite", json!({"id": id})).unwrap();
+    for group in ["Favorites", "favorites"] {
+        h.app.run("preset.create", json!({"name": format!("Mine in {group}"), "group": group})).unwrap();
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    let section = rect(&h, "presetFavorites").unwrap();
+    for group in ["Favorites", "favorites"] {
+        let id = format!("presetGroup:{group}");
+        let user = rect(&h, &id).unwrap_or_else(|| panic!("the user's {group:?} group is listed"));
+        assert_ne!(user, section, "{id} is its own row");
+        assert_eq!(h.app.widgets.iter().filter(|(w, _)| *w == id).count(), 1, "{id} names one row");
+    }
+    assert_eq!(h.app.widgets.iter().filter(|(w, _)| w == "presetFavorites").count(), 1);
+}

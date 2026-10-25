@@ -23,6 +23,7 @@ serde = { workspace = true }
 
 [dev-dependencies]
 wat = "1.228"
+dhat = { workspace = true }
 lcc-scenes = { workspace = true }
 proptest = { workspace = true }
 image = { workspace = true }
