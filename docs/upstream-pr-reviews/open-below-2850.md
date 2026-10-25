@@ -15,22 +15,22 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2849 | LR-EXP-METADATA: refuse Originals with embedded place names | LEARN | refuse Original export with embedded place names when location removal is on: privacy fix worth porting | fork #524 |
 | #2848 | LRC-SS-LAYOUT: the Slideshow settings page no longer moves when the slide preview finishes rendering | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2844 | GPU: black pixels take the colour tools and a light vignette as on the CPU | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
-| #2841 | Write sidecar keywords as names in dc:subject and paths in lr:hierarchicalSubject | LEARN | keywords as names in dc:subject, paths in lr:hierarchicalSubject: interop fix worth checking against the fork's sidecar writer |  |
+| #2841 | Write sidecar keywords as names in dc:subject and paths in lr:hierarchicalSubject | LEARN | keywords as names in dc:subject, paths in lr:hierarchicalSubject: interop fix worth checking against the fork's sidecar writer || fork #536 |
 | #2839 | Docking: side panels in dock columns, on craft-ui's shared docking | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2838 | Lightroom import: keep compressed history-step and snapshot settings in the archive | LEARN | Lightroom catalog import keeps compressed history-step and snapshot settings |  |
 | #2835 | raw: decode lossy single-plane (grey) JPEG XL LinearRaw DNGs (Lightroom monochrome merges) | LEARN | grey lossy JPEG XL LinearRaw DNGs (Lightroom monochrome merges): fork jxl.rs diverged; worth re-implementing | fork #529 |
 | #2834 | Clamp negative signals to zero in hlg_decode | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2833 | Strip trailing NULs from non-UTF-8 IPTC text | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2831 | Docs: link the lens profile gap and roadmap priority to #329 | SKIP | upstream docs/roadmap only |  |
-| #2830 | LR-BEHAV-MULTISELECT: replacing the selection with a repeated id keeps each photo once | LEARN | repeated id in a selection replacement kept once: tiny engine fix |  |
+| #2830 | LR-BEHAV-MULTISELECT: replacing the selection with a repeated id keeps each photo once | LEARN | repeated id in a selection replacement kept once: tiny engine fix || fork #536 |
 | #2828 | LRC-LIB-SMARTCOLL: reorder rules and groups in the smart album editor by drag or arrow keys | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2827 | GPU: compute preview histograms and result diagnostics with compact reductions | LEARN | GPU histograms with compact reductions: perf idea for the fork's GPU path |  |
-| #2825 | LR-LIB-ALBUM: album commands skip photos the library lacks and record nothing when they add nothing | LEARN | album commands skip unknown photos and record nothing when no-op |  |
+| #2825 | LR-LIB-ALBUM: album commands skip photos the library lacks and record nothing when they add nothing | LEARN | album commands skip unknown photos and record nothing when no-op || fork #536 |
 | #2823 | LR-BEHAV-DRAGDROP: a right-click on a text field while photos are carried opens no menu | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2822 | LR-VID-PLAY: MP4/MOV video import and cataloguing with duration and container badges | LEARN | MP4/MOV import and cataloguing: compare with the fork's lcc-video |  |
 | #2821 | LR-META-LOCATION: reject malformed typed GPS coordinates | LEARN | reject malformed typed GPS coordinates: small engine validation worth porting | fork #524 |
 | #2818 | LRC-LIB-SMARTCOLL: a smart album on a loop of albums holds no photos, and says which album it loops through | LEARN | smart album on a loop of albums holds no photos: same family as #2798 | not taken: overlaps #2798 (now refused at edit time); the fork already bounds loops in damaged catalogs |
-| #2812 | PERF-CATALOG: equal develop settings are held once in memory | LEARN | equal develop settings held once in memory: catalog memory win worth measuring |  |
+| #2812 | PERF-CATALOG: equal develop settings are held once in memory | LEARN | equal develop settings held once in memory: catalog memory win worth measuring || not taken: the fork's v4 store already shares equal settings on load (settings_ref) |
 | #2809 | LR-CROP-AUTO: Auto straighten reads the vertical vanishing point and the horizon | LEARN | Auto straighten from vertical vanishing point and horizon: pipeline feature worth evaluating |  |
 | #2808 | LR-BEHAV-DRAGDROP: a right-click while photos are carried opens no context menu | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2806 | LR-BEHAV-BG-TASKS: a preview build asked for while another runs can wait in line for it (engine) | LEARN | preview builds queue behind a running one (engine) |  |
@@ -42,7 +42,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2797 | LR-BEHAV-AUTOSAVE: a change that could only be partly taken back is saved and can be undone | LEARN | autosave of partly-undoable changes: idea for the fork's undo model |  |
 | #2796 | docs: gap 9 — the CI gate runs the tests on Linux x64; macOS, Windows and the GPU tests still don't | SKIP | upstream docs/roadmap only |  |
 | #2789 | Grading lgg vectorscope | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
-| #2787 | LR-IMP-FORMATS: decode GoPro GPR (VC-5) | LEARN | GoPro GPR (VC-5) decoder: raw format support worth porting |  |
+| #2787 | LR-IMP-FORMATS: decode GoPro GPR (VC-5) | LEARN | GoPro GPR (VC-5) decoder: raw format support worth porting || fork #531 |
 | #2781 | LR-LIB-VIRTUALCOPY: prevent numbering overflow in copy batches | LEARN | virtual-copy numbering overflow: small never-crash fix, conflicts; port by hand | fork #524 |
 | #2780 | security/raw: bound hostile-memory paths in the raw decoders | LEARN | raw hostile-memory bounds (SonarCloud): good findings, but conflicts with the fork's reworked tiffraw/mef/exif; port per finding later | fork #522 |
 | #2777 | LR-EDIT-OPTICS-PROFILE: Fujifilm X-S20 embedded lens corrections and spectral matrices | LEARN | Fujifilm X-S20 embedded lens corrections and spectral matrices: camera support | fork #529 |
@@ -97,7 +97,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2696 | LRC-LIB-LIBFOLDERS: a count never covers a name in a narrow sidebar | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2693 | "Favorite" and "Listing folders" in the catalogs that lack them | SKIP | upstream locale catalogs; the fork keeps its own overlay |  |
 | #2691 | LR-PREF-GENERAL: Esc in a Settings text box gives the text back instead of closing Settings | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
-| #2676 | LR-EDIT-OPTICS-PROFILE: preserve unknown crop factors in lens profiles | LEARN | keep unknown crop factors in lens profiles |  |
+| #2676 | LR-EDIT-OPTICS-PROFILE: preserve unknown crop factors in lens profiles | LEARN | keep unknown crop factors in lens profiles || fork #536 |
 | #2675 | LR-PROF-CAMERACOLOR: align lens-corrected camera JPEG training pairs | LEARN | align lens-corrected camera JPEG training pairs |  |
 | #2664 | raw: read Canon CR3/CR2 preview colour space from the maker note (#2654) | LEARN | CR3/CR2 preview colour space from the maker note: conflicts with the fork's camera_preview.rs; worth porting by hand | fork #529 |
 | #2661 | LR-EDIT-LENSBLUR: camera-like Lens Blur with AI subject focus and per-mask bokeh | SKIP | large AI-mask stack (thousands of lines across fork-owned UI); revisit as a whole when it lands upstream |  |
@@ -108,7 +108,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2653 | Detail view: zoom to 1600 % (#2652) | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2651 | LR-FILT-FLAG: the filter bar's flag buttons combine, Picked + Unflagged hides only the rejects | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2650 | LR-EXP-DIM: export resampling filters | LEARN | export resampling filters: feature idea |  |
-| #2649 | LR-LIB-DELETE: the catalog answers "which photos have a file in this folder / of this name" from an index | LEARN | catalog index for files by folder/name: perf idea for the fork's catalog |  |
+| #2649 | LR-LIB-DELETE: the catalog answers "which photos have a file in this folder / of this name" from an index | LEARN | catalog index for files by folder/name: perf idea for the fork's catalog || not taken: the fork's Delete from Disk plan is one pass over the library already |
 | #2648 | Never crash: the work gate's byte count saturates instead of overflowing (#2576) | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2647 | LR-LIB-SMARTALBUM: editing a smart album made from an album view keeps the album | LEARN | editing a smart album made from an album view keeps the album |  |
 | #2645 | Detail view: zoom past 100% shows the photo's pixels instead of a bilinear blur (#2643) | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
@@ -134,13 +134,13 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2605 | Write capture time UTC offset and sub-seconds in write_exif | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2600 | LR-EXP-LOCATION: an export subfolder never leaves the destination folder (#2571) | SKIP | the fork already refuses hostile export subfolders (#80) more strictly; ported then reverted |  |
 | #2599 | LRC-LIB-CATALOG-IMPORT: import Lightroom catalog backup zips directly (#2592) | LEARN | import Lightroom catalog backup zips directly |  |
-| #2598 | Colour NR: luminance-weighted blur keeps channel means (part of #840) | LEARN | colour NR keeps channel means (CPU+GPU); conflicts with the fork's local.rs/map.wgsl, needs a measured port |  |
+| #2598 | Colour NR: luminance-weighted blur keeps channel means (part of #840) | LEARN | colour NR keeps channel means (CPU+GPU); conflicts with the fork's local.rs/map.wgsl, needs a measured port || already in the fork: colour NR blurs luminance-weighted rgb (local::colour_nr) |
 | #2597 | LRC-LIB-LIBFOLDERS: the folders test fixture waits for the Missing Photos row | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2587 | fix(camera-preview): prefer better accepted per-photo colour fits | LEARN | prefer better accepted per-photo colour fits |  |
 | #2584 | i18n(sv): translate 1074 new strings, use the agreed terms in 16 | SKIP | upstream locale catalogs; the fork keeps its own overlay |  |
 | #2583 | Reset the profile section to the default profile | ADOPT | Profile section reset restores the default profile (fork lacked it) | fork #513 |
 | #2582 | i18n(ka): Georgian for 336 interface strings, 48 format messages and the 559 untranslated What's New lines | SKIP | upstream locale catalogs; the fork keeps its own overlay |  |
-| #2581 | LR-META-XMP: Read referenced JPEG Extended XMP | LEARN | Extended XMP GUID/coverage validation and GPS refusal on Original export; fork already reassembles extended XMP, add the validation |  |
+| #2581 | LR-META-XMP: Read referenced JPEG Extended XMP | LEARN | Extended XMP GUID/coverage validation and GPS refusal on Original export; fork already reassembles extended XMP, add the validation || own take in fork #533 (only the referenced, complete Extended XMP packet is read) |
 | #2547 | Tests: discovery tests use the platform's path separator (Windows) | SKIP | already fixed in the fork (fork PR #409) |  |
 | #2545 | Issue #136: applying the GPU setting never waits for the device on the UI thread | LEARN | GPU setting never blocks the UI thread waiting for the device |  |
 | #2544 | LR-EXPORT: simplify preset bit-depth guard | ADOPT | safety / correctness fix in engine, develop or catalog | fork #513 |
@@ -184,11 +184,11 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2434 | LR-PREF-PERFORMANCE: percentage and pixel limits for previews (#1897) | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2429 | i18n: complete the Traditional Chinese (zh-hant) catalog (200 missing strings) | SKIP | upstream locale catalogs; the fork keeps its own overlay |  |
 | #2427 | i18n: complete the Simplified Chinese (zh-hans) catalog (162 missing strings) | SKIP | upstream locale catalogs; the fork keeps its own overlay |  |
-| #2423 | PERF-SMART: test a smart album's rules cheapest first | LEARN | smart-album rules tested cheapest first: perf idea |  |
+| #2423 | PERF-SMART: test a smart album's rules cheapest first | LEARN | smart-album rules tested cheapest first: perf idea || deferred: reordering needs a loop-aware guard; low value after the fork's PERF-SMART tally |
 | #2421 | fix(windows): add opt-in DirectComposition workaround for VRR flicker | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
-| #2419 | PERF-SIDECARS: imports and moves answer sidecar lookups from the folder listing | LEARN | sidecar lookups from the folder listing: perf idea |  |
-| #2418 | PERF-SEARCH: typing in the library search keeps up on a large library | LEARN | library search keeps up on large libraries: perf idea (catalog) |  |
-| #2415 | PERF-LIB: big views list from a kept sort order instead of sorting every photo | LEARN | big views from a kept sort order: perf idea |  |
+| #2419 | PERF-SIDECARS: imports and moves answer sidecar lookups from the folder listing | LEARN | sidecar lookups from the folder listing: perf idea || own take in fork #535 (imports; rename/move lookups not changed) |
+| #2418 | PERF-SEARCH: typing in the library search keeps up on a large library | LEARN | library search keeps up on large libraries: perf idea (catalog) || own take in fork #534 |
+| #2415 | PERF-LIB: big views list from a kept sort order instead of sorting every photo | LEARN | big views from a kept sort order: perf idea || not taken: the fork already keeps sort orders (query::SortCache) |
 | #2414 | PERF-SELECT: a big selection no longer slows every idle frame | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2395 | web: ship the craft-fonts faces beside the WASM so the web release can use craft-fonts | SKIP | upstream CI/packaging/tooling |  |
 | #2394 | Tone Curve: put a clicked new point on the curve | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
@@ -206,9 +206,9 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2351 | gpu, windows: fix DX12 readback polling on RTX Spark (Windows ARM64) and Windows test paths | LEARN | DX12 readback polling with submission index (Windows ARM64): GPU robustness idea |  |
 | #2350 | LR-LIB-CULL: arrange bursts by hand with drag and drop, the first photo is the pick (stacked on #2281) | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2344 | feat(crop): Lightroom-style canvas and straighten band (opt-in; Photoshop stays default) | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
-| #2340 | Process V3: a sharp resample, and a sharp fit-to-screen and zoomed view | LEARN | Process V3 sharp resample / fit view: render-fidelity idea |  |
+| #2340 | Process V3: a sharp resample, and a sharp fit-to-screen and zoomed view | LEARN | Process V3 sharp resample / fit view: render-fidelity idea || stopped: depends on 2332 (sharp resample / fit view); needs a measured port |
 | #2338 | feat(ui): Lightroom Classic keymap profile (opt-in, user bindings stay on top) | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
-| #2332 | Process V3: sharpening at the original's pixels and a raw base look (LR-BEHAV-RENDER-FIDELITY) | LEARN | Process V3 sharpening at the original pixels: render-fidelity idea |  |
+| #2332 | Process V3: sharpening at the original's pixels and a raw base look (LR-BEHAV-RENDER-FIDELITY) | LEARN | Process V3 sharpening at the original pixels: render-fidelity idea || stopped: overlaps the fork's Process V4 sharpening; needs a measured port as a new fork process |
 | #2330 | LR-EDIT-EFFECTS-GRAIN: replace grid noise with signed particle grain | LEARN | signed particle grain: effect quality idea |  |
 | #2329 | Fill missing GPS locations for the current view | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2328 | #2311: Linear and Radial Gradients are drawn by dragging on the photo | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
@@ -217,7 +217,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2322 | LR-CROP-RECT: a free crop corner on a straightened photo grows both sides (#2308) | SKIP | feature or rework outside the policy's port list (or too large / tied to upstream structure) |  |
 | #2316 | #2063: decode pre-X FinePix and SuperCCD RAFs | SKIP | the fork already decodes pre-X / SuperCCD RAFs (raf_superccd.rs) |  |
 | #2315 | #2270: a host bridge for pages framing the web build (?host=parent) | SKIP | upstream web shell change; the fork's web app differs |  |
-| #2313 | LR-BEHAV-RENDER-FIDELITY: process V3 Highlights, Shadows, Whites and Blacks (#523) | LEARN | Process V3 Highlights/Shadows/Whites/Blacks: render-fidelity idea |  |
+| #2313 | LR-BEHAV-RENDER-FIDELITY: process V3 Highlights, Shadows, Whites and Blacks (#523) | LEARN | Process V3 Highlights/Shadows/Whites/Blacks: render-fidelity idea || stopped: process-version render-fidelity work tuned on upstream's own process numbering and Lightroom references; needs a measured port as a new fork process |
 | #2310 | Import JPE/JFIF JPEGs and preserve mixed-case XMP sidecars | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2305 | Group unnamed faces and improve face assignment review | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2303 | xtask warm: start a new worktree's target/ from a clone of the main checkout's | SKIP | upstream CI/packaging/tooling |  |
