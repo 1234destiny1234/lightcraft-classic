@@ -329,6 +329,7 @@ pub fn open_existing(path: &Path, opts: &OpenOptions) -> io::Result<File> {
     if !before.file_type().is_file() {
         return Err(not_plain(path));
     }
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut opts = opts.clone();
     #[cfg(windows)]
     {
