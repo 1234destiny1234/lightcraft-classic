@@ -785,6 +785,24 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .save_file()
                 .map(|p| p.to_string_lossy().to_string())
         })),
+        pick_print_templates: Some(Box::new(|| {
+            file_dialog()
+                .set_title(lcc_ui_egui::i18n::tr("Import Print Templates"))
+                .add_filter_nocase(lcc_ui_egui::i18n::tr("Print Templates"), &[lcc_engine::print::template::FILE_EXT])
+                .pick_files()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect()
+        })),
+        save_print_template: Some(Box::new(|name: &str| {
+            file_dialog()
+                .set_title(lcc_ui_egui::i18n::tr("Export Print Template"))
+                .add_filter_nocase(lcc_ui_egui::i18n::tr("Print Templates"), &[lcc_engine::print::template::FILE_EXT])
+                .set_file_name(name)
+                .save_file()
+                .map(|p| p.to_string_lossy().to_string())
+        })),
         // atomic (temp file + sync + rename): a failed write never leaves a truncated file
         write_shared: Some(std::sync::Arc::new(lcc_engine::export::write_file)),
         write: Some(Box::new(lcc_engine::export::write_file)),
@@ -1114,6 +1132,9 @@ fn main() -> eframe::Result {
     }
     let gpu_on = prefs.as_ref().is_none_or(|u| u.settings.gpu) && gpu_crash.is_none();
     lcc_engine::gpu::set_enabled(gpu_on);
+    if let Some(u) = &prefs {
+        lcc_engine::gpu::backend::set_compute_preference(u.settings.gpu_backend.name());
+    }
     // the window's renderer: probed (Windows) and with a fallback chain, so a driver that can't
     // build egui's pipeline never kills the start-up
     let compose_window = prefs.as_ref().is_some_and(|ui| ui.settings.compose_window) && std::env::var_os("WGPU_BACKEND").is_none();
