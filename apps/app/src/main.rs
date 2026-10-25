@@ -1898,11 +1898,11 @@ mod tests {
     /// systems drop the app after `on_exit`, which removes the note anyway.
     #[test]
     fn on_exit_removes_the_lock_owner_note() {
-        if let Some(dir) = std::env::var_os("LIGHTCRAFT_TEST_LOCK_DIR") {
+        if let Some(dir) = std::env::var_os(lcc_brand::env_var("TEST_LOCK_DIR")) {
             let mut session = lcc_engine::Session::new();
             session.open_library(&dir, false).unwrap();
             let mut app = App(
-                LightcraftApp::new(session, Services::default()),
+                LccApp::new(session, Services::default()),
                 PrefsWriter::default(),
                 #[cfg(target_os = "macos")]
                 None,
@@ -1915,8 +1915,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let out = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "tests::on_exit_removes_the_lock_owner_note", "--nocapture"])
-            .env("LIGHTCRAFT_TEST_LOCK_DIR", &dir)
-            .env("LIGHTCRAFT_NO_PREFS", "1")
+            .env(lcc_brand::env_var("TEST_LOCK_DIR"), &dir)
+            .env(lcc_brand::env_var("NO_PREFS"), "1")
             .output()
             .unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);

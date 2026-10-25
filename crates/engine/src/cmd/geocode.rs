@@ -222,7 +222,12 @@ mod download {
         // a temp file renamed over the old one: never half-written, and a link in its place is
         // replaced, not written through (#2575); not synced, as a download can always be repeated
         let write = |name: &str, data: &[u8]| {
-            lcc_catalog::safe_file::write_atomic_nosync(&dir.join(name), data).map_err(|e| format!("could not save {name}: {e}"))
+            let path = dir.join(name);
+            // the fork's atomic write goes through links on purpose; a link here is removed first
+            if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+                std::fs::remove_file(&path).map_err(|e| format!("could not replace the link {name}: {e}"))?;
+            }
+            lcc_catalog::safe_file::write_atomic_nosync(&path, data).map_err(|e| format!("could not save {name}: {e}"))
         };
         for name in &GEONAMES_FILES[1..] {
             // optional: without them states stay blank and countries are ISO codes
