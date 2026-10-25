@@ -362,7 +362,10 @@ fn templates_export_to_a_file_and_import_from_one() {
     let file = dir.join("proofs.lcprint");
     assert_eq!(r["path"], file.to_string_lossy().as_ref());
     let doc: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
-    assert_eq!((doc["format"].as_str(), doc["version"].as_u64(), doc["name"].as_str()), (Some(crate::legacy::PRINT_TEMPLATE_FORMAT), Some(1), Some("Proofs")));
+    assert_eq!(
+        (doc["format"].as_str(), doc["version"].as_u64(), doc["name"].as_str()),
+        (Some(crate::legacy::PRINT_TEMPLATE_FORMAT), Some(1), Some("Proofs"))
+    );
 
     // into the same library: the name is taken, so the copy is renamed
     let r = run(&mut s, "print.template.import", json!({"path": file.to_string_lossy()}));
@@ -381,8 +384,11 @@ fn templates_export_to_a_file_and_import_from_one() {
 
     // refusals leave the templates as they were
     let bad_file = dir.join("bad.lcprint");
-    std::fs::write(&bad_file, json!({"format": crate::legacy::PRINT_TEMPLATE_FORMAT, "version": 1, "name": "Bad", "settings": {"layout": {"pages": 0}}}).to_string())
-        .unwrap();
+    std::fs::write(
+        &bad_file,
+        json!({"format": crate::legacy::PRINT_TEMPLATE_FORMAT, "version": 1, "name": "Bad", "settings": {"layout": {"pages": 0}}}).to_string(),
+    )
+    .unwrap();
     let huge = dir.join("huge.lcprint");
     std::fs::write(&huge, vec![b' '; crate::print::template::MAX_FILE as usize + 1]).unwrap();
     for (p, why) in [

@@ -101,7 +101,12 @@ impl PrintTemplate {
         }
         match v.get("version").and_then(serde_json::Value::as_u64) {
             Some(1..=FILE_VERSION) => {}
-            Some(n) => return Err(format!("print template file version {n} is not one this version of {} reads (1 to {FILE_VERSION})", lcc_brand::DISPLAY_NAME)),
+            Some(n) => {
+                return Err(format!(
+                    "print template file version {n} is not one this version of {} reads (1 to {FILE_VERSION})",
+                    lcc_brand::DISPLAY_NAME
+                ));
+            }
             None => return Err("a print template file needs a `version` number".into()),
         }
         let name = clean_name(v.get("name").and_then(serde_json::Value::as_str).ok_or("a print template file needs a `name`")?)?;
