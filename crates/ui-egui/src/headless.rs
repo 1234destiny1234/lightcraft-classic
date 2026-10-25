@@ -4856,7 +4856,7 @@ mod tests {
             }
             fn upload(&mut self, view: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
                 assert_eq!(rgb.len(), width * height * 3);
-                self.0.borrow_mut().push((view, rgb.iter().copied().fold(0.0, f32::max)));
+                self.0.borrow_mut().push((crate::render::hdr_slot_view(view), rgb.iter().copied().fold(0.0, f32::max)));
                 Ok(egui::TextureId::User(7 + u64::from(view)))
             }
         }
@@ -4908,8 +4908,9 @@ mod tests {
         // zoomed in: the part on screen gets its own HDR render, highlights above SDR white; until
         // it comes the whole frame's HDR shows (softer), never 8-bit tiles of another brightness
         h.request("ui.menu.invoke", json!({"id": "view.zoom100"}), t);
+        let no_tiles = |h: &Headless| h.app.renderer.tiles_pending() == 0 && h.app.renderer.tiles.is_empty();
         let zoomed = |h: &Headless| {
-            assert!(hdr_shown(h), "an SDR frame while zooming in");
+            assert!(hdr_shown(h) && no_tiles(h), "an 8-bit tile while zooming in");
             h.app.region_view.is_some() && uploads.borrow().iter().any(|(v, m)| *v == HDR_ZOOMED + PANE_AFTER && *m > 1.0)
         };
         assert!(h.step_until(SETTLE, zoomed), "zoomed HDR window: {:?}", uploads.borrow());
@@ -4928,22 +4929,29 @@ mod tests {
         );
         h.app.run("develop.endInteraction", json!({})).unwrap();
         h.settle(SETTLE);
-        // a pan: the window of the part no longer on screen goes at once (the whole frame's HDR
-        // shows until the new part's comes; never the old part's window at the wrong place)
+        // a pan: the window there was stays where it belongs while the new part's renders (no
+        // 8-bit tiles), and panning back shows the first one again at once, rendering nothing
         let id = h.app.session.active().unwrap();
-        let shown = |h: &Headless| h.app.renderer.hdr_view.get(&(HDR_ZOOMED + PANE_AFTER)).filter(|v| v.photo == id).map(|v| v.key);
+        let shown = |h: &Headless| h.app.renderer.hdr_view.get(&(HDR_ZOOMED + PANE_AFTER)).filter(|v| v.photo == id).map(|v| (v.key, v.window));
         let (first, old) = (shown(&h).expect("a zoomed HDR window"), h.app.region_view.expect("zoomed").window);
         let before = zoomed_uploads();
         h.request("ui.set", json!({"pan": [0.2, 0.3]}), t);
         assert_ne!(h.app.region_view.expect("zoomed").window, old, "the pan shows another part");
         assert!(
             h.step_until(SETTLE, |h| {
-                assert!(hdr_shown(h), "an SDR frame after a pan");
-                assert_ne!(shown(h), Some(first), "the old part's window over the new part");
+                assert!(no_tiles(h), "an 8-bit tile after a pan");
+                assert!(shown(h).is_some(), "a pan leaves no HDR window up");
                 zoomed_uploads() > before
             }),
             "the new part's HDR window"
         );
+        h.settle(SETTLE);
+        assert_ne!(shown(&h), Some(first));
+        let before = zoomed_uploads();
+        h.request("ui.set", json!({"pan": [0.5, 0.5]}), t);
+        h.settle(SETTLE);
+        assert_eq!(shown(&h), Some(first), "back where it was: the window it showed");
+        assert_eq!(zoomed_uploads(), before, "shown again without rendering it again");
         // Before / After side by side, fit: the After stays HDR, the original is SDR
         h.request("ui.menu.invoke", json!({"id": "view.zoomFit"}), t);
         h.request("ui.menu.invoke", json!({"id": "view.beforeAfter"}), t);
@@ -5022,7 +5030,7 @@ mod tests {
                 Some(4.0)
             }
             fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
-                self.0.borrow_mut().push(view);
+                self.0.borrow_mut().push(crate::render::hdr_slot_view(view));
                 Ok(egui::TextureId::User(7 + u64::from(view)))
             }
         }

@@ -1,0 +1,3 @@
+## Performance
+
+- **Faster HDR zoom and drags:** HDR previews are prepared for the display off the interface thread, zoomed views keep their last few HDR windows (a pan back or a zoom back in is sharp at once, a pan keeps the part already sharp), and no unseen 8-bit tiles are rendered under them; a 1:1 HDR drag's frames take ~2 ms of interface time instead of ~15 ms. The kept windows are freed from graphics memory as soon as they go, and Settings ▸ Display & Speed offers them only where the graphics card has room (at most a quarter of its memory; greyed out with the reason elsewhere). Thanks @Kaan88. (no PR)
