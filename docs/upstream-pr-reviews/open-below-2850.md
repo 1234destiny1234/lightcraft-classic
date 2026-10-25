@@ -12,7 +12,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 
 | PR | Title | Decision | Reason | Fork PR |
 |---|---|---|---|---|
-| #2849 | LR-EXP-METADATA: refuse Originals with embedded place names | LEARN | refuse Original export with embedded place names when location removal is on: privacy fix worth porting |  |
+| #2849 | LR-EXP-METADATA: refuse Originals with embedded place names | LEARN | refuse Original export with embedded place names when location removal is on: privacy fix worth porting | fork #524 |
 | #2848 | LRC-SS-LAYOUT: the Slideshow settings page no longer moves when the slide preview finishes rendering | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2844 | GPU: black pixels take the colour tools and a light vignette as on the CPU | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2841 | Write sidecar keywords as names in dc:subject and paths in lr:hierarchicalSubject | LEARN | keywords as names in dc:subject, paths in lr:hierarchicalSubject: interop fix worth checking against the fork's sidecar writer |  |
@@ -28,7 +28,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2825 | LR-LIB-ALBUM: album commands skip photos the library lacks and record nothing when they add nothing | LEARN | album commands skip unknown photos and record nothing when no-op |  |
 | #2823 | LR-BEHAV-DRAGDROP: a right-click on a text field while photos are carried opens no menu | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2822 | LR-VID-PLAY: MP4/MOV video import and cataloguing with duration and container badges | LEARN | MP4/MOV import and cataloguing: compare with the fork's lcc-video |  |
-| #2821 | LR-META-LOCATION: reject malformed typed GPS coordinates | LEARN | reject malformed typed GPS coordinates: small engine validation worth porting |  |
+| #2821 | LR-META-LOCATION: reject malformed typed GPS coordinates | LEARN | reject malformed typed GPS coordinates: small engine validation worth porting | fork #524 |
 | #2818 | LRC-LIB-SMARTCOLL: a smart album on a loop of albums holds no photos, and says which album it loops through | LEARN | smart album on a loop of albums holds no photos: same family as #2798 | not taken: overlaps #2798 (now refused at edit time); the fork already bounds loops in damaged catalogs |
 | #2812 | PERF-CATALOG: equal develop settings are held once in memory | LEARN | equal develop settings held once in memory: catalog memory win worth measuring |  |
 | #2809 | LR-CROP-AUTO: Auto straighten reads the vertical vanishing point and the horizon | LEARN | Auto straighten from vertical vanishing point and horizon: pipeline feature worth evaluating |  |
@@ -43,7 +43,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2796 | docs: gap 9 — the CI gate runs the tests on Linux x64; macOS, Windows and the GPU tests still don't | SKIP | upstream docs/roadmap only |  |
 | #2789 | Grading lgg vectorscope | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2787 | LR-IMP-FORMATS: decode GoPro GPR (VC-5) | LEARN | GoPro GPR (VC-5) decoder: raw format support worth porting |  |
-| #2781 | LR-LIB-VIRTUALCOPY: prevent numbering overflow in copy batches | LEARN | virtual-copy numbering overflow: small never-crash fix, conflicts; port by hand |  |
+| #2781 | LR-LIB-VIRTUALCOPY: prevent numbering overflow in copy batches | LEARN | virtual-copy numbering overflow: small never-crash fix, conflicts; port by hand | fork #524 |
 | #2780 | security/raw: bound hostile-memory paths in the raw decoders | LEARN | raw hostile-memory bounds (SonarCloud): good findings, but conflicts with the fork's reworked tiffraw/mef/exif; port per finding later | fork #522 |
 | #2777 | LR-EDIT-OPTICS-PROFILE: Fujifilm X-S20 embedded lens corrections and spectral matrices | LEARN | Fujifilm X-S20 embedded lens corrections and spectral matrices: camera support | fork #529 |
 | #2776 | Reject signed numeric character references in XML entity decoding | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
