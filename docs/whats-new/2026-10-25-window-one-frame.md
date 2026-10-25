@@ -1,4 +1,3 @@
-## 2026-10-25
 ### Drags reach the screen a frame sooner
 - The window queues one frame ahead of the display again instead of two, as eframe does by default (since #136 it
   used egui-wgpu's high-throughput setting). Sliders, crop handles, brushes and every other drag show up one display
