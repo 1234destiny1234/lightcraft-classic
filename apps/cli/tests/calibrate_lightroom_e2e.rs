@@ -30,10 +30,7 @@ fn scratch() -> PathBuf {
 
 /// XYZ → camera under illuminant A and D65: what the hidden profile says, and what defines each photo's neutral.
 fn hidden_cm() -> [Mat3; 2] {
-    [
-        Mat3([[0.92, -0.28, -0.06], [-0.48, 1.38, 0.12], [-0.12, 0.32, 0.58]]),
-        Mat3([[0.82, -0.24, -0.06], [-0.44, 1.30, 0.16], [-0.08, 0.24, 0.70]]),
-    ]
+    [Mat3([[0.92, -0.28, -0.06], [-0.48, 1.38, 0.12], [-0.12, 0.32, 0.58]]), Mat3([[0.82, -0.24, -0.06], [-0.44, 1.30, 0.16], [-0.08, 0.24, 0.70]])]
 }
 
 fn hidden_calibration() -> Calibration {
