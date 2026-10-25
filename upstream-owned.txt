@@ -1,5 +1,6 @@
-# Upstream ownership manifest (plan/upstream.md -> "What we own"; read by `cargo xtask upstream-merge`,
-# `cargo xtask shared-check`).
+# Upstream ownership manifest (plan/upstream.md -> "What we own"; read by `cargo xtask upstream-review`,
+# `cargo xtask upstream-merge`, `cargo xtask shared-check`). The fork no longer merges upstream: see
+# docs/upstream-merge.md.
 #
 # Syntax (a subset of .gitignore): one path glob per line, `#` starts a comment.
 #   - `dir/`      the directory and everything below it
@@ -18,6 +19,9 @@ crates/brand/
 brand/
 # catalog v4: upstream fixes are reviewed and ported by hand
 crates/catalog/
+# the UI: the Modern layout, Settings, Import / Export screens and dialog cards replaced upstream's;
+# upstream UI changes are reviewed and ported by hand (docs/upstream-merge.md)
+crates/ui-egui/
 # upstream's store listing (its product name, icon and asset names): not ours to ship
 omastore.toml
 # our new crates

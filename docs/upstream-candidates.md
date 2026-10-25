@@ -1,7 +1,11 @@
 # Upstream candidates and our diff against upstream (U.5)
 
-Goal: keep Chromaforge's diff in files shared with upstream (everything not `[owned]` in `upstream-owned.txt`) small, so
-the weekly upstream merge stays cheap. Chromaforge-only logic lives in owned files; shared files carry one-line call-outs.
+> **Since 2026-10-25 the fork no longer merges upstream** (`docs/upstream-merge.md`): it reviews and cherry-picks
+> upstream commits instead, so a small diff in shared files no longer saves merge work. This list stays for the
+> generic fixes worth offering upstream (`cargo xtask upstream-pr`).
+
+Goal (until 2026-10-25): keep Chromaforge's diff in files shared with upstream (everything not `[owned]` in
+`upstream-owned.txt`) small, so the weekly upstream merge stays cheap. Chromaforge-only logic lives in owned files; shared files carry one-line call-outs.
 Generic fixes and features go upstream as PRs (this list) and disappear from our diff once merged.
 
 ## Measurement

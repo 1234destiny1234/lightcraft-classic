@@ -14,7 +14,8 @@ each add an entry never edit the same file and never conflict over it.
 
 - Write for people using the app, and say "the app" or `{app}` rather than its name. Each line is translated as it
   stands (`docs/localization.md`), so a later rewording shows in English until the catalogs catch up.
-- `docs/whats-new.md` is upstream's What's New: only upstream merges change it. `upstream.sha256` records it as the
+- `docs/whats-new.md` is upstream's What's New up to the last upstream merge (2026-10-25); the fork no longer merges
+  upstream (`docs/upstream-merge.md`), so it doesn't change any more. An upstream feature we port gets an entry here. `upstream.sha256` records it as the
   last merge left it, and `cargo xtask notes --check` (part of `cargo xtask ci`) fails if anything else edits it.
 - The app's build joins upstream's file and these entries (`crates/ui-egui/build.rs`, `lcc-notes`); on a day both
   have, ours come first. The joined text isn't committed.

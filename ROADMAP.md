@@ -230,6 +230,9 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-25: upstream: no more merges after PR #486 (281 commits, 88 conflicted files, mostly UI the fork replaced);
+  upstream commits are reviewed weekly and the useful ones cherry-picked (`cargo xtask upstream-review`,
+  `docs/upstream-merge.md`); `crates/ui-egui/` joins the fork-owned paths.
 - 2026-10-25: M11.4: `<cli> calibrate-lightroom` (preset, fit, add, list): camera calibrations matched to Lightroom
   by black-box fits to its exports of contributors' own photos; data rules amended (gaps 1 and 3; 0 cameras so far).
 - 2026-10-22 (upstream): Print page setup and PDF output gain the Japanese photo and postcard papers (L判, 2L判,

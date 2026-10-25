@@ -107,9 +107,12 @@ commands:
                   <PREFIX>_CI_LOCK=off to skip the lock)
   corpus [--download]
                   show where test corpora live; --download fetches PngSuite, CC0 raw samples (raw.pixls.us) and public-domain / CC-BY video clips into corpus/ and checks their sha256
+  upstream-review [--ref REF] | --done [REF]
+                  list the upstream commits since the last review (upstream-reviewed.txt), grouped by area, into
+                  target/upstream/upstream-review-YYYYMMDD.md for porting by hand; --done records REF as reviewed
   upstream-merge [--ref REF] [--no-ci]
-                  merge upstream (default upstream/main) on merge/upstream-YYYYMMDD, keep our version of owned
-                  paths (upstream-owned.txt), write target/upstream/review-YYYYMMDD.md, map crate names, run ci
+                  (no longer used: the fork cherry-picks instead, docs/upstream-merge.md) merge upstream on
+                  merge/upstream-YYYYMMDD, keep owned paths, write a review list, map crate names, run ci
   upstream-pr <branch> <commit>...
                   replay commits onto a new branch off upstream/main with upstream crate names (never pushes)
   shared-check [--strict]
@@ -159,6 +162,7 @@ fn main() -> ExitCode {
         Some("corpus") => cmd_corpus(rest.contains(&"--download")),
         Some("upstream-merge") => upstream::merge(&root(), &rest),
         Some("upstream-pr") => upstream::pr(&root(), &rest),
+        Some("upstream-review") => upstream::review(&root(), &rest),
         Some("shared-check") => upstream::shared_check(&root(), &rest, false),
         Some("stats") => stats::run(&root(), rest.contains(&"--exact")),
         Some("update-key") => update_key::run(&root(), &rest),
@@ -752,7 +756,8 @@ fn run_ci(opts: &CiOptions, args: &[&str]) -> Result<(), String> {
     if wants("parity") {
         steps.push(("parity", Box::new(|| parity::run(&root, false))));
     }
-    steps.push(("shared-check", Box::new(|| upstream::shared_check(&root, &[], true))));
+    // (shared-check is no longer a ci step: the fork doesn't merge upstream, so a change to a shared
+    // path needn't go upstream first; `cargo xtask shared-check` still lists them)
     steps.push(("layers", Box::new(cmd_layers)));
     steps.push(("assets", Box::new(|| assets::run(&root))));
     steps.push(("deny", Box::new(cmd_deny)));
