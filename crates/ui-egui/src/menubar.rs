@@ -2154,16 +2154,4 @@ mod tests {
         assert_eq!(shortcut_text("Cmd+Shift+Z", false), "Ctrl+Shift+Z");
         assert_eq!(shortcut_text("Delete", true), "⌫");
     }
-
-    /// Every item of a menu, submenus included.
-    fn flat(nodes: &[MenuNode]) -> Vec<&MenuNode> {
-        nodes
-            .iter()
-            .flat_map(|n| match n {
-                MenuNode::Submenu { children, .. } => flat(children),
-                MenuNode::Item { .. } => vec![n],
-                MenuNode::Separator => vec![],
-            })
-            .collect()
-    }
 }
