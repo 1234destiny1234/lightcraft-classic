@@ -14,7 +14,8 @@ use pair::{Export, Pair, RawFile};
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 
-/// One export folder: a Lightroom profile's exports (folder name or each file's `crs:CameraProfile` names it).
+/// A folder of Lightroom exports, searched with its subfolders. Each export's look is its `crs:CameraProfile`, else
+/// the name of the folder it sits in (so one root with a subfolder per profile works).
 #[derive(Clone, Debug)]
 pub struct ExportSet {
     pub dir: PathBuf,

@@ -38,14 +38,16 @@ pick the matching look for each photo's profile.
    - File format **TIFF**, **16 bits**, colour space **ProPhoto RGB**, no compression or ZIP;
    - image sizing off (full size), output sharpening off;
    - metadata **All** (the tool reads camera model, capture time and the profile name from it);
-   - into **one folder per profile**, named after it, e.g. `exports/Adobe Standard/`, `exports/Adobe Color/`.
+   - into **one folder per profile**, named after it, e.g. `exports/Adobe Standard/`, `exports/Adobe Color/`. Folders
+     are searched with their subfolders, so you can pass just `exports` (each file's profile comes from its metadata,
+     else from the folder it is in).
 
    Repeat step 3 for each profile you want matched.
 
 4. **Check the set** without fitting:
 
    ```sh
-   <cli> calibrate-lightroom fit --raws ~/Pictures/raws --exports "exports/Adobe Standard" "exports/Adobe Color" --dry-run
+   <cli> calibrate-lightroom fit --raws ~/Pictures/raws --exports exports --dry-run
    ```
 
    It prints how many raw ↔ export pairs it found, each file it skipped and why (a different camera, a crop, a
@@ -55,7 +57,7 @@ pick the matching look for each photo's profile.
 5. **Fit:**
 
    ```sh
-   <cli> calibrate-lightroom fit --raws ~/Pictures/raws --exports "exports/Adobe Standard" "exports/Adobe Color" -o out --contributor "Your Name"
+   <cli> calibrate-lightroom fit --raws ~/Pictures/raws --exports exports -o out --contributor "Your Name"
    ```
 
    Progress goes to the terminal; a fit takes a few minutes. It writes:

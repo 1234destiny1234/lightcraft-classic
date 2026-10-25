@@ -117,7 +117,7 @@ fn fit_cmd(args: &[String]) -> Result<(), String> {
         i += 1;
     }
     if raw_dirs.is_empty() || export_dirs.is_empty() {
-        return Err("fit needs --raws DIR… and --exports DIR… (one export folder per Lightroom profile)".into());
+        return Err("fit needs --raws DIR… and --exports DIR… (folders of Lightroom exports, searched with their subfolders)".into());
     }
     let mut raws = Vec::new();
     for d in &raw_dirs {

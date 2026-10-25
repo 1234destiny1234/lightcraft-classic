@@ -47,6 +47,11 @@ fn ext_in(p: &Path, list: &[&str]) -> bool {
 }
 
 fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>, skipped: &mut Vec<(String, String)>) {
+    walk_ext(dir, depth, RAW_EXT, out, skipped);
+}
+
+/// Files with one of `exts` under `dir` and its subfolders (depth- and count-capped, links not followed).
+fn walk_ext(dir: &Path, depth: usize, exts: &[&str], out: &mut Vec<PathBuf>, skipped: &mut Vec<(String, String)>) {
     if depth > MAX_DEPTH || out.len() >= MAX_FILES {
         return;
     }
@@ -63,8 +68,8 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>, skipped: &mut Vec<(Str
         // never follow links out of the tree
         let Ok(md) = std::fs::symlink_metadata(&p) else { continue };
         if md.is_dir() {
-            walk(&p, depth + 1, out, skipped);
-        } else if md.is_file() && ext_in(&p, RAW_EXT) && out.len() < MAX_FILES {
+            walk_ext(&p, depth + 1, exts, out, skipped);
+        } else if md.is_file() && ext_in(&p, exts) && out.len() < MAX_FILES {
             out.push(p);
         }
     }
@@ -193,17 +198,18 @@ pub fn baseline_problem(props: &BTreeMap<String, Vec<String>>) -> Option<String>
 /// Every export in the sets, with its look name, Lightroom temperature / tint and capture metadata.
 pub fn export_files(sets: &[ExportSet], skipped: &mut Vec<(String, String)>) -> Vec<Export> {
     let mut out = Vec::new();
+    // every export under each folder, its subfolders included; a file reached through two folders counts once
+    let mut files: Vec<PathBuf> = Vec::new();
     for set in sets {
-        let folder = file_name(&set.dir);
-        let rd = match std::fs::read_dir(&set.dir) {
-            Ok(rd) => rd,
-            Err(e) => {
-                skipped.push((folder, format!("cannot list folder: {e}")));
-                continue;
-            }
-        };
-        let mut files: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.is_file() && ext_in(p, EXPORT_EXT)).collect();
-        files.sort();
+        if !set.dir.is_dir() {
+            skipped.push((file_name(&set.dir), "not a folder".into()));
+            continue;
+        }
+        walk_ext(&set.dir, 0, EXPORT_EXT, &mut files, skipped);
+    }
+    let mut seen = std::collections::HashSet::new();
+    files.retain(|p| seen.insert(std::fs::canonicalize(p).unwrap_or_else(|_| p.clone())));
+    {
         for path in files.into_iter().take(MAX_FILES) {
             let bytes = match read_file(&path) {
                 Ok(b) => b,
@@ -222,7 +228,9 @@ pub fn export_files(sets: &[ExportSet], skipped: &mut Vec<(String, String)>) -> 
                 skipped.push((file_name(&path), why));
                 continue;
             }
-            let look = first(&props, "crs:CameraProfile").map(str::to_string).unwrap_or_else(|| folder.clone());
+            // the profile Lightroom names, else the folder the export sits in
+            let folder = path.parent().map(file_name).unwrap_or_default();
+            let look = first(&props, "crs:CameraProfile").map(str::to_string).unwrap_or(folder);
             let temp_tint = num(&props, "crs:Temperature").zip(num(&props, "crs:Tint"));
             out.push(Export {
                 path,
@@ -294,6 +302,24 @@ pub fn pair(raws: &[RawFile], exports: &[Export], skipped: &mut Vec<(String, Str
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn export_folders_are_searched_with_their_subfolders_once() {
+        let root = std::env::temp_dir().join(format!("colourfit-nested-{}", std::process::id()));
+        let deep = root.join("Adobe Color").join("day 1");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(deep.join("IMG_1.tif"), b"not an image").unwrap();
+        std::fs::write(root.join("notes.txt"), b"ignored").unwrap();
+        // the root and a subfolder of it: the file is found (and skipped as damaged) once
+        let sets = [ExportSet { dir: root.clone() }, ExportSet { dir: root.join("Adobe Color") }, ExportSet { dir: root.join("missing") }];
+        let mut skipped = Vec::new();
+        let found = export_files(&sets, &mut skipped);
+        assert!(found.is_empty());
+        assert_eq!(skipped.iter().filter(|(n, _)| n == "IMG_1.tif").count(), 1, "{skipped:?}");
+        assert!(skipped.iter().any(|(n, why)| n == "missing" && why == "not a folder"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     use super::*;
 
     fn props(kv: &[(&str, &str)]) -> BTreeMap<String, Vec<String>> {
