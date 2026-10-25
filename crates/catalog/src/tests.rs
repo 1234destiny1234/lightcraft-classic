@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use lcc_develop::DevelopSettings;
+use serde_json::json;
 
 use super::*;
 
@@ -25,6 +26,26 @@ fn edits_are_stored_within_list_limits() {
     let few = Arc::new(DevelopSettings { masks: vec![Default::default(); 3], ..Default::default() });
     c.apply(Op::SetDevelop { id: a, settings: few.clone(), label: "Masks".into(), edited: None }).unwrap();
     assert!(Arc::ptr_eq(&c.photo(a).unwrap().develop, &few));
+}
+
+#[cfg(test)]
+mod filter_deserialize_tests {
+    use super::*;
+
+    /// #2241: a filter key that is not one of `Filter`'s fields (a typo or a guessed name such as
+    /// `cameraModel` instead of `camera`) is rejected, not silently dropped: an agent or script that
+    /// filters by `cameraModel` must not be handed the whole library and told the filter worked.
+    #[test]
+    fn unknown_filter_key_is_rejected_not_ignored() {
+        let e = serde_json::from_value::<Filter>(json!({ "cameraModel": "X2" })).unwrap_err().to_string();
+        assert!(e.contains("cameraModel"), "the unknown key is named: {e}");
+
+        let e = serde_json::from_value::<Filter>(json!({ "foo": 1 })).unwrap_err().to_string();
+        assert!(e.contains("foo"), "the unknown key is named: {e}");
+
+        // the valid key is still accepted; `camera` is the field `cameraModel` was close to.
+        serde_json::from_value::<Filter>(json!({ "camera": "X2" })).unwrap();
+    }
 }
 
 #[test]
