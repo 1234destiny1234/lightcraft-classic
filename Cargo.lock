@@ -5230,6 +5230,7 @@ dependencies = [
  "jpeg-encoder",
  "jxl-oxide",
  "lcc-brand",
+ "lcc-codecs",
  "lcc-color",
  "lcc-geom",
  "lcc-meta",
