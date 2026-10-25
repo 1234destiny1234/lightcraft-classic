@@ -7,6 +7,8 @@
 //! - `add FILE [--repo DIR] [--contributor NAME]`: validate a contribution and commit-ready write it into
 //!   `crates/camdb/data/calibrations/` with its `assets/ATTRIBUTION.md` row.
 //! - `list`: the calibrations built into this binary.
+//! - `probe -o DIR (--like RAW | --make M --model M)`: synthetic probe DNGs and slider sweeps for Lightroom to render;
+//!   `probe-check --probes DIR --exports DIR`: read them back (`lcc_colourfit::probe`).
 //! - `verify --raws DIR… --exports DIR… [--report DIR] [--json] [--size N] [--max N]`: the app's render of edited
 //!   photos against their edited exports, ΔE00 per photo and per group of controls used (`lcc_colourfit::verify`).
 //!
@@ -31,7 +33,9 @@ pub fn run(args: &[String]) -> Result<(), String> {
         Some("add") => add(rest),
         Some("list") => list(),
         Some("verify") => verify_cmd(rest),
-        _ => Err("calibrate-lightroom needs `preset`, `fit`, `add`, `list` or `verify` (see --help)".into()),
+        Some("probe") => probe_cmd(rest),
+        Some("probe-check") => probe_check_cmd(rest),
+        _ => Err("calibrate-lightroom needs `preset`, `fit`, `add`, `list`, `verify`, `probe` or `probe-check` (see --help)".into()),
     }
 }
 
@@ -111,6 +115,79 @@ fn verify_cmd(args: &[String]) -> Result<(), String> {
         println!("{}", serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?);
     } else {
         print!("{}", verify::text(&report));
+    }
+    Ok(())
+}
+
+fn probe_cmd(args: &[String]) -> Result<(), String> {
+    let (mut out, mut make, mut model, mut like, mut unique) = (None, None, None, None, None);
+    let mut sweeps = true;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" | "--out" => out = Some(PathBuf::from(take(args, &mut i, "-o")?)),
+            "--make" => make = Some(take(args, &mut i, "--make")?.to_string()),
+            "--model" => model = Some(take(args, &mut i, "--model")?.to_string()),
+            "--like" => like = Some(PathBuf::from(take(args, &mut i, "--like")?)),
+            "--unique-model" => unique = Some(take(args, &mut i, "--unique-model")?.to_string()),
+            "--base-only" => sweeps = false,
+            a => return Err(format!("unknown argument `{a}`")),
+        }
+        i += 1;
+    }
+    let out = out.ok_or("probe needs -o DIR")?;
+    if let Some(raw) = &like {
+        let (mk, md) = lcc_colourfit::probe::camera_of(raw).map_err(|e| e.to_string())?;
+        make = make.or(mk);
+        model = model.or(md);
+    }
+    let (Some(make), Some(model)) = (make, model) else {
+        return Err("probe needs the camera: --like ONE_OF_ITS_RAWS, or --make MAKE --model MODEL as its raws name it".into());
+    };
+    let m = lcc_colourfit::probe::write(&out, &make, &model, unique.as_deref(), sweeps).map_err(|e| e.to_string())?;
+    eprintln!(
+        "calibrate-lightroom probe: wrote {} probe DNG(s) for {} {} (UniqueCameraModel \"{}\") and {} to {}",
+        m.files.len(),
+        m.make,
+        m.model,
+        m.unique_camera_model,
+        lcc_colourfit::probe::MANIFEST,
+        out.display()
+    );
+    eprintln!(
+        "next: import the folder into Lightroom, export every probe as a 16-bit ProPhoto TIFF keeping its file name, then run `calibrate-lightroom probe-check --probes {} --exports EXPORTS`",
+        out.display()
+    );
+    Ok(())
+}
+
+fn probe_check_cmd(args: &[String]) -> Result<(), String> {
+    let (mut probes, mut exports, mut out) = (None, None, None);
+    let mut json = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--probes" => probes = Some(PathBuf::from(take(args, &mut i, "--probes")?)),
+            "--exports" => exports = Some(PathBuf::from(take(args, &mut i, "--exports")?)),
+            "-o" | "--out" => out = Some(PathBuf::from(take(args, &mut i, "-o")?)),
+            "--json" => json = true,
+            a => return Err(format!("unknown argument `{a}`")),
+        }
+        i += 1;
+    }
+    let (Some(probes), Some(exports)) = (probes, exports) else {
+        return Err("probe-check needs --probes DIR (from `probe`) and --exports DIR (Lightroom's exports of them)".into());
+    };
+    let report = lcc_colourfit::probe::check(&probes, &exports).map_err(|e| e.to_string())?;
+    if let Some(path) = &out {
+        let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+        std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        eprintln!("calibrate-lightroom probe-check: wrote {}", path.display());
+    }
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?);
+    } else {
+        print!("{}", lcc_colourfit::probe::text(&report));
     }
     Ok(())
 }
