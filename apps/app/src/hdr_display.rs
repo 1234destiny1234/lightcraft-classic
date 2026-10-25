@@ -331,8 +331,24 @@ impl lcc_ui_egui::HdrOutput for WindowHdr {
     }
 
     fn upload(&mut self, slot: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
-        let headroom = self.upload_headroom.or_else(|| self.levels.and_then(|l| l.headroom)).unwrap_or(1.0);
-        let texels = encode_rgba16f(rgb, width, height, headroom)?;
+        let texels = encode_rgba16f(rgb, width, height, self.encode_headroom())?;
+        self.write(slot, width, height, &texels)
+    }
+
+    fn upload_texels(&mut self, slot: u8, width: usize, height: usize, texels: &[u16], headroom: f32) -> Option<Result<egui::TextureId, String>> {
+        let n = width.checked_mul(height).and_then(|n| n.checked_mul(4));
+        (headroom.to_bits() == self.encode_headroom().to_bits() && n == Some(texels.len())).then(|| self.write(slot, width, height, texels))
+    }
+}
+
+impl WindowHdr {
+    /// The headroom textures are encoded for: the probe's, else the display's.
+    fn encode_headroom(&self) -> f32 {
+        self.upload_headroom.or_else(|| self.levels.and_then(|l| l.headroom)).unwrap_or(1.0)
+    }
+
+    /// `texels` (`Rgba16Float`, `width × height`) as slot `slot`'s texture.
+    fn write(&mut self, slot: u8, width: usize, height: usize, texels: &[u16]) -> Result<egui::TextureId, String> {
         let (device, queue) = (&self.state.device, &self.state.queue);
         let size = [width, height];
         let (w, h) = (u32::try_from(width).map_err(|e| e.to_string())?, u32::try_from(height).map_err(|e| e.to_string())?);
@@ -361,7 +377,7 @@ impl lcc_ui_egui::HdrOutput for WindowHdr {
         let Some((tex, id, _)) = self.textures.get(&slot) else { return Err("no HDR texture".into()) };
         queue.write_texture(
             wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            bytemuck::cast_slice(&texels),
+            bytemuck::cast_slice(texels),
             wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(w.saturating_mul(8)), rows_per_image: Some(h) },
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );

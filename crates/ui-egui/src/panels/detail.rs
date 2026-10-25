@@ -600,21 +600,32 @@ pub(crate) fn request_window(
     } else {
         1
     };
-    let placeholder =
-        c.full_preview.as_ref().filter(|p| !v.before && c.overlay == lcc_pipeline::Overlay::None && c.proof.is_none() && (p.width, p.height) == full);
+    // the part of the frame on screen: the tiles that cover it
     let mut cover: Option<(usize, usize, usize, usize)> = None;
+    for rect in tiles.iter().filter(|t| t.1).filter_map(|t| crate::region::tile_rect(full, side, t.0)) {
+        let (x1, y1) = (rect.x + rect.w, rect.y + rect.h);
+        cover = Some(cover.map_or((rect.x, rect.y, x1, y1), |(a, b, cc, d)| (a.min(rect.x), b.min(rect.y), cc.max(x1), d.max(y1))));
+    }
+    let (x0, y0, x1, y1) = cover?;
+    let window = lcc_engine::pipeline::PixelWindow { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    // an HDR edit shown in HDR: its HDR window (or the whole frame's HDR until it comes) is what
+    // shows, so no 8-bit tiles are rendered beside it (they would only hold it up)
+    if !matches!(hdr_window(app, c, v, full), HdrPane::Sdr) {
+        budget = 0;
+    }
+    let placeholder = c
+        .full_preview
+        .as_ref()
+        .filter(|p| budget > 0 && !v.before && c.overlay == lcc_pipeline::Overlay::None && c.proof.is_none() && (p.width, p.height) == full);
     for &(tile, on_screen) in &tiles {
         let Some(rect) = crate::region::tile_rect(full, side, tile) else { continue };
         let key = crate::region::TileKey { photo: c.id, pane: v.pane, full, tile, look };
-        if on_screen {
-            let (x1, y1) = (rect.x + rect.w, rect.y + rect.h);
-            cover = Some(cover.map_or((rect.x, rect.y, x1, y1), |(a, b, cc, d)| (a.min(rect.x), b.min(rect.y), cc.max(x1), d.max(y1))));
-            if let Some(p) = placeholder
-                && !c.interacting
-                && let Some(part) = crate::region::crop_tile(p, lcc_engine::pipeline::PixelWindow { x: 0, y: 0, w: p.width, h: p.height }, rect)
-            {
-                app.renderer.tile_placeholder(ctx, key, &part);
-            }
+        if on_screen
+            && let Some(p) = placeholder
+            && !c.interacting
+            && let Some(part) = crate::region::crop_tile(p, lcc_engine::pipeline::PixelWindow { x: 0, y: 0, w: p.width, h: p.height }, rect)
+        {
+            app.renderer.tile_placeholder(ctx, key, &part);
         }
         if app.renderer.tiles.has_render(&key) {
             continue;
@@ -634,8 +645,6 @@ pub(crate) fn request_window(
         wanted.push(slot);
         app.renderer.request_tile(key, job, window, rect, if on_screen { TILE_PRIORITY } else { TILE_RING_PRIORITY });
     }
-    let (x0, y0, x1, y1) = cover?;
-    let window = lcc_engine::pipeline::PixelWindow { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     Some(crate::region::RegionView { photo: c.id, before: v.before, key: look, full, window, settings: look, tile: side })
 }
 
@@ -653,9 +662,10 @@ pub(crate) fn draw_window(p: &egui::Painter, app: &mut LccApp, c: &WindowCtx, v:
     };
     if view.photo == c.id {
         match hdr_window(app, c, v, full) {
+            // (an older window, while the new one renders, where it belongs: after a pan only the
+            // part newly on screen is soft)
             HdrPane::Frame(tex) => {
-                let win = crate::region::window_for(full.0, full.1, visible_px(full, v.target, v.visible), crate::region::max_span(c.texture_side));
-                p.image(tex.tex, place(win.unwrap_or(view.window)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                p.image(tex.tex, place(tex.window.unwrap_or(view.window)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                 return;
             }
             HdrPane::Pending => return,
@@ -1928,6 +1938,7 @@ pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::Re
         return None;
     }
     let headroom = app.services.hdr_output.as_mut().and_then(|o| o.headroom());
+    app.renderer.set_hdr_headroom(headroom);
     // (an extended-linear surface takes sRGB: no monitor profile conversion)
     if let Some(o) = app.services.hdr_output.as_ref() {
         app.renderer.set_surface_extended_linear(o.extended());
@@ -1936,6 +1947,9 @@ pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::Re
     let job = hdr_view_job(job, headroom);
     app.renderer.prepare_hdr_view(view, &job);
     let key = job.key;
+    if app.renderer.hdr_view.get(&view).is_some_and(|v| v.key != key) && app.renderer.reuse_hdr(view, key) {
+        return Some(key);
+    }
     if app.renderer.hdr_view.get(&view).is_none_or(|v| v.key != key) || app.renderer.wanted(Slot::HdrView(view)).is_some_and(|pending| pending != key)
     {
         app.renderer.request(Slot::HdrView(view), job, priority);
@@ -1961,11 +1975,14 @@ pub(crate) fn upload_hdr_views(app: &mut LccApp) {
     }
     let results = std::mem::take(&mut app.renderer.hdr_view_result);
     let Some(out) = app.services.hdr_output.as_mut() else { return };
-    for (view, (photo, key, deep)) in results {
+    for (view, crate::render::HdrResult { photo, key, deep, window, texels }) in results {
         let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { continue };
-        match out.upload(view, deep.width, deep.height, rgb) {
+        let slot = app.renderer.hdr_upload_slot(view, window);
+        // (texels the worker made, when they are for the headroom the output uploads with)
+        let ready = texels.and_then(|(t, h)| out.upload_texels(slot, deep.width, deep.height, &t, h));
+        match ready.unwrap_or_else(|| out.upload(slot, deep.width, deep.height, rgb)) {
             Ok(tex) => {
-                app.renderer.hdr_view.insert(view, crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height] });
+                app.renderer.adopt_hdr(view, crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height], window, slot });
             }
             Err(e) => log::warn!("HDR view texture: {e}"),
         }
@@ -1988,7 +2005,10 @@ pub(crate) enum HdrPane {
 /// window a drag renders, [`crate::region::window_for`]: the same at rest and in a drag, and no
 /// bigger, since each update is a texture the UI thread copies to the GPU) rendered once more as
 /// linear float, drawn in place of its 8-bit tiles so highlights go above SDR white zoomed in
-/// too, including during slider drags.
+/// too, including during slider drags. A window it showed before comes back at once
+/// ([`Renderer::reuse_hdr`]).
+///
+/// [`Renderer::reuse_hdr`]: crate::render::Renderer::reuse_hdr
 pub(crate) fn hdr_window(app: &mut LccApp, c: &WindowCtx, v: &WindowView, full: (usize, usize)) -> HdrPane {
     if !hdr_shown(app) || c.holding || app.headless_screenshotting {
         return HdrPane::Sdr;
@@ -2010,7 +2030,8 @@ pub(crate) fn hdr_window(app: &mut LccApp, c: &WindowCtx, v: &WindowView, full: 
     };
     let Some(job) = job else { return HdrPane::Sdr };
     let hdr_view = crate::render::HDR_ZOOMED.saturating_add(v.pane);
-    let Some(key) = request_hdr(app, hdr_view, job, !v.before, TILE_PRIORITY.saturating_sub(1)) else { return HdrPane::Sdr };
+    // (above the tiles: it is what shows)
+    let Some(key) = request_hdr(app, hdr_view, job, !v.before, TILE_PRIORITY.saturating_add(1)) else { return HdrPane::Sdr };
     upload_hdr_views(app);
     if let Some(frame) = hdr_texture(app, hdr_view, c.id, Some(key)) {
         return HdrPane::Frame(frame);

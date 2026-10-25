@@ -94,6 +94,25 @@ pub const HDR_BEFORE: u8 = 1;
 pub const HDR_SECOND: u8 = 2;
 pub const HDR_COMPARE: u8 = 8;
 pub const HDR_ZOOMED: u8 = 32;
+/// The first [`crate::HdrOutput::upload`] slot of the zoomed panes' recent windows
+/// ([`HDR_WINDOW_RING`] each, after the views' own slots): a window kept for going back to it
+/// has a texture of its own, so a new window never overwrites one still drawn.
+const HDR_RING_SLOTS: u8 = 64;
+/// The view whose frame upload slot `slot` ([`Renderer::hdr_upload_slot`]) holds.
+pub fn hdr_slot_view(slot: u8) -> u8 {
+    match slot.checked_sub(HDR_RING_SLOTS) {
+        Some(o) => HDR_ZOOMED.saturating_add(o / HDR_WINDOW_RING),
+        None => slot,
+    }
+}
+/// Upload slots per zoomed pane: the window shown, the ones kept ([`HDR_WINDOWS_KEPT`]) and
+/// room for the next.
+const HDR_WINDOW_RING: u8 = 8;
+/// Recent HDR windows kept per zoomed pane besides the one shown (zoom out and back in, or pan
+/// back: shown at once), within [`HDR_WINDOWS_BYTES`] together.
+const HDR_WINDOWS_KEPT: usize = 4;
+const HDR_WINDOWS_BYTES: usize = 256 << 20;
+
 /// A view's HDR texture ([`Slot::HdrView`]), drawn in place of (or over) its 8-bit render.
 #[derive(Clone, Copy, Debug)]
 pub struct HdrView {
@@ -102,6 +121,10 @@ pub struct HdrView {
     pub key: u64,
     pub tex: egui::TextureId,
     pub size: [usize; 2],
+    /// The part of the frame it shows (`None`: all of it), where a zoomed view draws it.
+    pub window: Option<lcc_pipeline::PixelWindow>,
+    /// The [`crate::HdrOutput::upload`] slot its texture lives in.
+    pub slot: u8,
 }
 
 /// What a view's HDR frame covers: a frame held while its update renders must show the same
@@ -164,6 +187,19 @@ pub trait RenderOffload {
 struct Finished {
     result: RenderResult,
     color: Option<Arc<egui::ColorImage>>,
+    /// An HDR view's float samples as its texture's texels, and the headroom they were made for.
+    texels: Option<(Vec<u16>, f32)>,
+}
+
+/// A finished [`Slot::HdrView`] render waiting for its upload.
+pub struct HdrResult {
+    pub photo: PhotoId,
+    pub key: u64,
+    pub deep: lcc_pipeline::DeepImage,
+    /// The part of the frame it shows ([`HdrView::window`]).
+    pub window: Option<lcc_pipeline::PixelWindow>,
+    /// Its texels, made on the render worker ([`crate::HdrOutput::upload_texels`]).
+    pub texels: Option<(Vec<u16>, f32)>,
 }
 
 /// Immutable identity captured when a request is submitted, not when its result is collected.
@@ -316,9 +352,13 @@ pub struct Renderer {
     /// The last [`Slot::PanelHistogram`] result: (photo, job key, histogram with its waveform).
     pub panel_histogram: Option<(PhotoId, u64, Histogram)>,
     /// The [`Slot::HdrView`] renders not yet uploaded: view → (photo, job key, linear float image).
-    pub hdr_view_result: HashMap<u8, (PhotoId, u64, lcc_pipeline::DeepImage)>,
+    pub hdr_view_result: HashMap<u8, HdrResult>,
+    /// The headroom HDR views are encoded for on the worker ([`Self::set_hdr_headroom`]).
+    hdr_headroom: Option<f32>,
     /// Each view's uploaded HDR texture.
     pub hdr_view: HashMap<u8, HdrView>,
+    /// A zoomed view's recent HDR windows besides the one shown, newest first.
+    hdr_kept: HashMap<u8, Vec<HdrView>>,
     hdr_geometry: HashMap<u8, HdrGeometry>,
     /// How long each view's latest HDR render took (ms): what a high quality drag times when the
     /// HDR texture is what shows it.
@@ -418,7 +458,9 @@ impl Renderer {
             live_hdr_histogram: None,
             panel_histogram: None,
             hdr_view_result: HashMap::new(),
+            hdr_headroom: None,
             hdr_view: HashMap::new(),
+            hdr_kept: HashMap::new(),
             hdr_geometry: HashMap::new(),
             hdr_view_ms: HashMap::new(),
             last_main_ms: 0.0,
@@ -589,15 +631,31 @@ impl Renderer {
     }
 
     /// Run `job` for `slot` and make its image ready for `display` (on the worker thread). An
-    /// HDR view's result is uploaded from its float samples, so it gets no 8-bit texture pixels.
-    fn run_for(slot: Slot, job: impl FnOnce() -> RenderResult, display: &Option<Arc<lcc_engine::display::Display>>) -> Finished {
+    /// HDR view's result is uploaded from its float samples, so it gets no 8-bit texture pixels,
+    /// but those samples as texels for `headroom` (a few ms a frame the UI thread then doesn't spend).
+    fn run_for(
+        slot: Slot,
+        job: impl FnOnce() -> RenderResult,
+        display: &Option<Arc<lcc_engine::display::Display>>,
+        headroom: Option<f32>,
+    ) -> Finished {
         let mut r = job();
         if let Some(d) = display {
             lcc_engine::display::present(&mut r, d);
         }
-        let texture = !matches!(slot, Slot::HdrView(_));
-        let color = r.rendered.as_ref().ok().filter(|_| texture).map(|x| Arc::new(color_image(&x.image)));
-        Finished { result: r, color }
+        let hdr = matches!(slot, Slot::HdrView(_));
+        let color = r.rendered.as_ref().ok().filter(|_| !hdr).map(|x| Arc::new(color_image(&x.image)));
+        let texels = headroom.filter(|_| hdr).and_then(|h| {
+            let deep = r.rendered.as_ref().ok()?.deep.as_ref()?;
+            let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { return None };
+            lcc_engine::hdr_texture::encode_rgba16f(rgb, deep.width, deep.height, h).ok().map(|t| (t, h))
+        });
+        Finished { result: r, color, texels }
+    }
+
+    /// Encode HDR views for `headroom` on the render worker from now on (`None`: on upload).
+    pub fn set_hdr_headroom(&mut self, headroom: Option<f32>) {
+        self.hdr_headroom = headroom;
     }
 
     fn request_needed(&self, slot: Slot, key: u64, priority: u32) -> bool {
@@ -649,9 +707,15 @@ impl Renderer {
             crop: r.apply_crop.then_some(job.settings.crop),
             orientation: job.settings.orientation,
         };
-        if self.hdr_geometry.get(&view) != Some(&geometry) {
+        let old = self.hdr_geometry.get(&view).copied();
+        if old != Some(geometry) {
             self.hdr_geometry.insert(view, geometry);
-            self.hdr_view.remove(&view);
+            // another part of the same frame (a pan): the frames there are stay, each drawn where
+            // it belongs, until the new part's arrives; anything else they no longer show
+            if old.is_none_or(|o| HdrGeometry { window: geometry.window, ..o } != geometry || o.window.is_none() || geometry.window.is_none()) {
+                self.hdr_view.remove(&view);
+                self.hdr_kept.remove(&view);
+            }
             self.hdr_view_result.remove(&view);
             let slot = Slot::HdrView(view);
             self.requests.remove(&slot);
@@ -666,6 +730,63 @@ impl Renderer {
     pub fn hdr_frame(&self, view: u8, photo: PhotoId, key: u64) -> Option<HdrView> {
         let held = self.hdr_view.get(&view).filter(|v| v.photo == photo)?;
         (held.key == key || self.pending.get(&Slot::HdrView(view)).is_some_and(|p| p.0 == key)).then_some(*held)
+    }
+
+    /// Show view `view`'s kept HDR frame for `key` again, if there is one (a zoomed view back at a
+    /// place it showed): it becomes the frame shown, the one shown is kept, and nothing renders.
+    pub fn reuse_hdr(&mut self, view: u8, key: u64) -> bool {
+        let Some(kept) = self.hdr_kept.get_mut(&view) else { return false };
+        let Some(i) = kept.iter().position(|v| v.key == key) else { return false };
+        let frame = kept.remove(i);
+        if let Some(shown) = self.hdr_view.insert(view, frame) {
+            kept.insert(0, shown);
+        }
+        let slot = Slot::HdrView(view);
+        self.requests.remove(&slot);
+        self.pending.remove(&slot);
+        self.hdr_view_result.remove(&view);
+        self.shown_ids.insert(slot, lcc_preview::next_tick());
+        true
+    }
+
+    /// The upload slot for view `view`'s next HDR frame, of `window`: the view's own, or for a
+    /// zoomed pane the shown frame's when that is of the same window (a newer look of it: the
+    /// older one is worth nothing kept), else one of its ring that no frame shown or kept uses
+    /// (the oldest kept one's when all are).
+    pub fn hdr_upload_slot(&mut self, view: u8, window: Option<lcc_pipeline::PixelWindow>) -> u8 {
+        let Some(base) = view.checked_sub(HDR_ZOOMED).and_then(|pane| pane.checked_mul(HDR_WINDOW_RING)).and_then(|o| HDR_RING_SLOTS.checked_add(o))
+        else {
+            return view;
+        };
+        let Some(last) = base.checked_add(HDR_WINDOW_RING - 1) else { return view };
+        if let Some(shown) = self.hdr_view.get(&view).filter(|v| v.window == window && (base..=last).contains(&v.slot)) {
+            return shown.slot;
+        }
+        let used = |r: &Self, s: u8| {
+            r.hdr_view.get(&view).is_some_and(|v| v.slot == s) || r.hdr_kept.get(&view).is_some_and(|k| k.iter().any(|v| v.slot == s))
+        };
+        if let Some(free) = (base..=last).find(|s| !used(self, *s)) {
+            return free;
+        }
+        self.hdr_kept.get_mut(&view).and_then(|k| k.pop()).map_or(view, |v| v.slot)
+    }
+
+    /// View `view`'s new HDR frame, uploaded: it is shown from now on, and a zoomed pane keeps
+    /// the one it replaces (of the same photo) for going back to it.
+    pub fn adopt_hdr(&mut self, view: u8, frame: HdrView) {
+        let Some(shown) = self.hdr_view.insert(view, frame) else { return };
+        if view < HDR_ZOOMED || shown.photo != frame.photo || shown.slot == frame.slot || shown.key == frame.key {
+            return;
+        }
+        let kept = self.hdr_kept.entry(view).or_default();
+        kept.retain(|v| v.key != shown.key && v.slot != frame.slot && v.window != frame.window);
+        kept.insert(0, shown);
+        let mut bytes = frame.size[0].saturating_mul(frame.size[1]).saturating_mul(8);
+        kept.retain(|v| {
+            bytes = bytes.saturating_add(v.size[0].saturating_mul(v.size[1]).saturating_mul(8));
+            bytes <= HDR_WINDOWS_BYTES
+        });
+        kept.truncate(HDR_WINDOWS_KEPT);
     }
 
     /// Request a render for `slot` (no-op if already current or pending at the same priority).
@@ -692,13 +813,14 @@ impl Renderer {
         let key = job.key;
         let background = matches!(slot, Slot::Thumb(_) | Slot::ThumbQuick(_) | Slot::Prefetch(_));
         let display = self.display.clone();
+        let headroom = self.hdr_headroom;
         self.pool.submit(
             slot,
             key,
             priority,
             Box::new(move || {
                 let run = || if background { lcc_engine::memory::in_background(|| job.run()) } else { job.run() };
-                Self::run_for(slot, run, &display)
+                Self::run_for(slot, run, &display, headroom)
             }),
         );
     }
@@ -735,7 +857,7 @@ impl Renderer {
         self.requests.insert(slot, Requested { id: job.request_id, source });
         let key = job.key;
         let display = self.display.clone();
-        self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(slot, || job.run(), &display)));
+        self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(slot, || job.run(), &display, None)));
     }
 
     /// Render a slideshow title screen into `slot` (once per screen key, like [`Self::request`]):
@@ -753,7 +875,7 @@ impl Renderer {
         let request_id = lcc_preview::next_tick();
         self.requests.insert(slot, Requested { id: request_id, source: None });
         let display = self.display.clone();
-        self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(slot, || compose.result(request_id), &display)));
+        self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(slot, || compose.result(request_id), &display, None)));
     }
 
     /// Prepare a photo in the background (a [`Slot::Prefetch`] job runs once per key; a newer one
@@ -767,7 +889,12 @@ impl Renderer {
         job.request_id = lcc_preview::next_tick();
         self.requests.insert(slot, Requested { id: job.request_id, source: Some(job.origin.clone()) });
         let key = job.key;
-        self.pool.submit(slot, key, priority, Box::new(move || Finished { result: lcc_engine::memory::in_background(|| job.run()), color: None }));
+        self.pool.submit(
+            slot,
+            key,
+            priority,
+            Box::new(move || Finished { result: lcc_engine::memory::in_background(|| job.run()), color: None, texels: None }),
+        );
     }
 
     /// Drop the slideshow slides other than `keep`: their textures and their requests that have
@@ -808,6 +935,7 @@ impl Renderer {
         self.window_req.clear();
         self.window_shown.clear();
         self.hdr_view.clear();
+        self.hdr_kept.clear();
         self.hdr_view_result.clear();
         self.hdr_geometry.clear();
         self.hdr_view_ms.clear();
@@ -1102,14 +1230,14 @@ impl Renderer {
     fn collect(&mut self, ctx: &egui::Context, session: &mut Session, inline_ms: f64) -> bool {
         let mut finished = Vec::new();
         while let Some(done) = self.pool.try_recv() {
-            finished.push((done.slot, done.result.result, done.result.color, if done.ms > 0.0 { done.ms } else { inline_ms }));
+            finished.push((done.slot, done.result.result, done.result.color, done.result.texels, if done.ms > 0.0 { done.ms } else { inline_ms }));
         }
         if let Some(off) = self.offload.as_mut() {
-            finished.extend(off.finished().into_iter().map(|(slot, r, ms)| (slot, r, None, ms)));
+            finished.extend(off.finished().into_iter().map(|(slot, r, ms)| (slot, r, None, None, ms)));
         }
         self.dispatch();
         let mut changed = false;
-        for (mut slot, mut r, mut color, ms) in finished {
+        for (mut slot, mut r, mut color, texels, ms) in finished {
             self.completed += 1;
             // made for another display profile than the one in use: obsolete
             if r.display.is_some_and(|id| Some(id) != self.display_id()) {
@@ -1165,6 +1293,7 @@ impl Renderer {
                     // (an HDR view's older frame no longer shows what is asked for)
                     if let Slot::HdrView(view) = slot {
                         self.hdr_view.remove(&view);
+                        self.hdr_kept.remove(&view);
                         self.hdr_view_result.remove(&view);
                     }
                     continue;
@@ -1194,7 +1323,9 @@ impl Renderer {
             }
             if let Slot::HdrView(view) = slot {
                 if let Some(deep) = rendered.deep {
-                    self.hdr_view_result.insert(view, (r.photo, r.key, deep));
+                    // (a result that gets here is for the geometry asked for now: older ones were retired)
+                    let window = self.hdr_geometry.get(&view).and_then(|g| g.window);
+                    self.hdr_view_result.insert(view, HdrResult { photo: r.photo, key: r.key, deep, window, texels });
                     self.hdr_view_ms.insert(view, ms);
                     changed = true;
                 }
@@ -1981,7 +2112,7 @@ mod thumbnail_tests {
         let view = HDR_LOUPE;
         let key = crate::panels::detail::request_hdr(&mut app, view, job.clone(), true, 100).unwrap();
         take_job(&work);
-        app.renderer.hdr_view.insert(view, HdrView { photo: PhotoId(1), key, tex: egui::TextureId::User(1), size: [8, 8] });
+        app.renderer.hdr_view.insert(view, HdrView { photo: PhotoId(1), key, tex: egui::TextureId::User(1), size: [8, 8], window: None, slot: 0 });
         crate::panels::detail::request_hdr(&mut app, view, job.clone().draft(), true, 100);
         take_job(&work);
         crate::panels::detail::request_hdr(&mut app, view, job, true, 100);
@@ -1995,7 +2126,9 @@ mod thumbnail_tests {
         let (view, slot) = (HDR_LOUPE, Slot::HdrView(HDR_LOUPE));
         let job = crate::panels::detail::hdr_view_job(app.session.render_job(PhotoId(1), 8, 8, false, true).unwrap(), Some(4.0));
         app.renderer.prepare_hdr_view(view, &job);
-        app.renderer.hdr_view.insert(view, HdrView { photo: PhotoId(1), key: job.key ^ 1, tex: egui::TextureId::User(1), size: [8, 8] });
+        app.renderer
+            .hdr_view
+            .insert(view, HdrView { photo: PhotoId(1), key: job.key ^ 1, tex: egui::TextureId::User(1), size: [8, 8], window: None, slot: 0 });
         app.renderer.request(slot, job.clone(), 100);
         assert!(app.renderer.hdr_frame(view, PhotoId(1), job.key).is_some(), "the older frame stays up while its update renders");
         let (_, pending) = take_job(&work);
@@ -2040,7 +2173,9 @@ mod thumbnail_tests {
         let v = WindowView { pane: PANE_AFTER, before: false, img: r, target: r, visible: r };
         // no whole frame in HDR under it yet: its tiles
         assert!(matches!(hdr_window(&mut app, &c, &v, (8, 8)), HdrPane::Sdr));
-        app.renderer.hdr_view.insert(HDR_LOUPE, HdrView { photo: PhotoId(1), key: 1, tex: egui::TextureId::User(2), size: [8, 8] });
+        app.renderer
+            .hdr_view
+            .insert(HDR_LOUPE, HdrView { photo: PhotoId(1), key: 1, tex: egui::TextureId::User(2), size: [8, 8], window: None, slot: 0 });
         assert!(matches!(hdr_window(&mut app, &c, &v, (8, 8)), HdrPane::Pending), "the whole frame's HDR shows meanwhile");
         let (slot, job) = work.borrow_mut().jobs.drain(..).find(|(s, _)| matches!(s, Slot::HdrView(_))).expect("the HDR window job");
         finish(&mut app, &work, &ctx, slot, job.run());
@@ -2048,11 +2183,47 @@ mod thumbnail_tests {
     }
 
     #[test]
+    fn a_zoomed_pane_keeps_other_places_windows_but_not_older_looks_of_its_own() {
+        let mut r = Renderer::default();
+        let view = HDR_ZOOMED + PANE_AFTER;
+        let at = |x| Some(lcc_pipeline::PixelWindow { x, y: 0, w: 64, h: 64 });
+        let adopt = |r: &mut Renderer, key: u64, window| {
+            let slot = r.hdr_upload_slot(view, window);
+            r.adopt_hdr(view, HdrView { photo: PhotoId(1), key, tex: egui::TextureId::User(u64::from(slot)), size: [64, 64], window, slot });
+            slot
+        };
+        // a drag at one place: each newer look takes the place of the last, nothing piles up
+        let first = adopt(&mut r, 1, at(0));
+        for key in 2..20 {
+            assert_eq!(adopt(&mut r, key, at(0)), first, "a newer look of the same window");
+        }
+        assert!(r.hdr_kept.get(&view).is_none_or(|k| k.is_empty()));
+        // pans: the windows of other places are kept (each in a texture of its own) to come back to
+        let mut slots = vec![first];
+        for (i, x) in [64, 128, 192].into_iter().enumerate() {
+            slots.push(adopt(&mut r, 100 + i as u64, at(x)));
+        }
+        slots.sort_unstable();
+        slots.dedup();
+        assert_eq!(slots.len(), 4, "a window shown again never shares a texture with one kept");
+        assert!(r.reuse_hdr(view, 19), "back at the first place: its last look");
+        assert_eq!(r.hdr_view[&view].window, at(0));
+        assert!(!r.reuse_hdr(view, 5), "an older look of it is not kept");
+        // at most HDR_WINDOWS_KEPT windows are kept
+        for x in 0..20 {
+            adopt(&mut r, 1000 + x, at(256 + 64 * x as usize));
+        }
+        assert!(r.hdr_kept[&view].len() <= HDR_WINDOWS_KEPT);
+    }
+
+    #[test]
     fn an_older_hdr_frame_is_not_shown_for_a_render_nothing_runs() {
         let (mut app, _work, _) = fixture();
         let job = crate::panels::detail::hdr_view_job(app.session.render_job(PhotoId(1), 8, 8, false, true).unwrap(), Some(4.0));
         let view = HDR_SECOND;
-        app.renderer.hdr_view.insert(view, HdrView { photo: PhotoId(1), key: job.key ^ 1, tex: egui::TextureId::User(1), size: [8, 8] });
+        app.renderer
+            .hdr_view
+            .insert(view, HdrView { photo: PhotoId(1), key: job.key ^ 1, tex: egui::TextureId::User(1), size: [8, 8], window: None, slot: 0 });
         assert!(app.renderer.hdr_frame(view, PhotoId(1), job.key).is_none(), "no update on its way: the frame is stale");
         app.renderer.request(Slot::HdrView(view), job.clone(), 100);
         assert!(app.renderer.hdr_frame(view, PhotoId(1), job.key).is_some());
@@ -2066,7 +2237,7 @@ mod thumbnail_tests {
         let (mut app, _work, _) = fixture();
         let view = HDR_LOUPE;
         let job = crate::panels::detail::hdr_view_job(app.session.render_job(PhotoId(1), 8, 8, false, true).unwrap(), Some(4.0));
-        let held = HdrView { photo: PhotoId(1), key: job.key, tex: egui::TextureId::User(1), size: [8, 8] };
+        let held = HdrView { photo: PhotoId(1), key: job.key, tex: egui::TextureId::User(1), size: [8, 8], window: None, slot: 0 };
         let changes: [(&str, fn(&mut lcc_develop::DevelopSettings), bool); 4] = [
             ("exposure", |s| s.light.exposure += 1.0, true),
             ("crop aspect", |s| s.crop.aspect = Some((1, 1)), false),
@@ -2091,9 +2262,16 @@ mod thumbnail_tests {
         let deep = crate::panels::detail::hdr_view_job(job, Some(4.0));
         assert!(deep.clone().run().rendered.unwrap().deep.is_some(), "the job carries float samples");
         for slot in [Slot::Main, Slot::Before, Slot::Second, Slot::HdrHistogram, Slot::Compare(0)] {
-            assert!(Renderer::run_for(slot, || deep.clone().run(), &None).color.is_some(), "{slot:?}");
+            assert!(Renderer::run_for(slot, || deep.clone().run(), &None, None).color.is_some(), "{slot:?}");
         }
-        assert!(Renderer::run_for(Slot::HdrView(HDR_LOUPE), || deep.clone().run(), &None).color.is_none(), "uploaded from its floats");
+        assert!(Renderer::run_for(Slot::HdrView(HDR_LOUPE), || deep.clone().run(), &None, None).color.is_none(), "uploaded from its floats");
+        // its texels are made beside the render, for the headroom asked for, exactly as an upload would
+        let done = Renderer::run_for(Slot::HdrView(HDR_LOUPE), || deep.clone().run(), &None, Some(2.5));
+        let samples = done.result.rendered.as_ref().unwrap().deep.as_ref().unwrap();
+        let lcc_pipeline::DeepSamples::F32(rgb) = &samples.samples else { panic!("float HDR required") };
+        let expected = lcc_engine::hdr_texture::encode_rgba16f(rgb, samples.width, samples.height, 2.5).unwrap();
+        assert_eq!(done.texels, Some((expected, 2.5)));
+        assert!(Renderer::run_for(Slot::Main, || deep.clone().run(), &None, Some(2.5)).texels.is_none(), "only HDR views");
         // and through the renderer: a view's texture still arrives
         app.renderer.request(Slot::Second, deep, 100);
         let (slot, job) = take_job(&work);
@@ -2112,13 +2290,15 @@ mod thumbnail_tests {
         app.renderer.prepare_hdr_view(view, &job);
         app.renderer.request(slot, job.clone(), 100);
         let (_, old) = take_job(&work);
-        app.renderer.hdr_view.insert(view, HdrView { photo: PhotoId(1), key: job.key, tex: egui::TextureId::User(1), size: [4, 4] });
+        app.renderer
+            .hdr_view
+            .insert(view, HdrView { photo: PhotoId(1), key: job.key, tex: egui::TextureId::User(1), size: [4, 4], window: None, slot: 0 });
         app.renderer.prepare_hdr_view(view, &job.clone().draft());
         assert!(app.renderer.hdr_view.contains_key(&view), "tone changes retain the region");
         job.request.window.as_mut().unwrap().x = 4;
         job.key ^= 42;
         app.renderer.prepare_hdr_view(view, &job);
-        assert!(!app.renderer.hdr_view.contains_key(&view), "panning invalidates coverage");
+        assert!(app.renderer.hdr_view.contains_key(&view), "a pan keeps the frame there is, drawn where it belongs");
         app.renderer.request(slot, job, 100);
         let (_, new) = take_job(&work);
         finish(&mut app, &work, &ctx, slot, old.run());
@@ -2147,11 +2327,11 @@ mod thumbnail_tests {
         let mut jobs = jobs.into_iter();
         let (first, second, last) = (jobs.next().unwrap(), jobs.next().unwrap(), jobs.next().unwrap());
         finish(&mut app, &work, &ctx, slot, first.run());
-        assert_eq!(app.renderer.hdr_view_result[&HDR_LOUPE].1, keys[0]);
+        assert_eq!(app.renderer.hdr_view_result[&HDR_LOUPE].key, keys[0]);
         assert!(app.renderer.is_pending(slot), "updates continue while dragging");
         finish(&mut app, &work, &ctx, slot, last.run());
         finish(&mut app, &work, &ctx, slot, second.run());
-        let (_, key, deep) = &app.renderer.hdr_view_result[&HDR_LOUPE];
+        let HdrResult { key, deep, .. } = &app.renderer.hdr_view_result[&HDR_LOUPE];
         assert_eq!(*key, keys[2], "late older frames never replace newer pixels");
         let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { panic!("float HDR required") };
         assert!(rgb.iter().any(|v| *v > 1.0), "highlights survive the draft pipeline");
