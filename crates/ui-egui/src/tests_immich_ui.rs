@@ -210,7 +210,8 @@ fn plain_http_server_url_shows_an_unencrypted_warning() {
         h.app.immich.url = url.to_string();
         h.step();
         h.step();
-        h.painted_text().join("\n").contains("not encrypted")
+        // the warning sits under the field, which may be below the panel's fold: look for its widget
+        has(h, "label:immichUrlInsecure")
     };
     assert!(warned(&mut h, "http://nas:2283"));
     assert!(!warned(&mut h, "https://nas:2283"));
