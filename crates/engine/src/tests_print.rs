@@ -414,7 +414,7 @@ fn templates_export_to_a_file_and_import_from_one() {
 #[derive(Clone, Default)]
 struct PrefsUnreadable(MemStore);
 
-impl lightcraft_catalog::Store for PrefsUnreadable {
+impl lcc_catalog::Store for PrefsUnreadable {
     fn read(&mut self, name: &str) -> std::io::Result<Option<Vec<u8>>> {
         if name == "prefs.json" {
             return Err(std::io::Error::other("locked by another process"));
