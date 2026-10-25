@@ -5533,11 +5533,12 @@ mod tests {
     #[test]
     fn show_briefly_when_photo_changes_in_view_options() {
         use crate::state::{BRIEF_INFO_SECS, InfoOverlay};
-        let mut h = demo([1000.0, 700.0]);
+        let mut h = demo([1400.0, 1100.0]);
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "detail"}), t);
         assert_eq!(h.request("ui.key", json!({"key": "j", "cmd": true}), t)["ok"], true);
         h.step();
+        h.settle(SETTLE); // the dialog opens over a few frames
         assert_eq!(h.request("ui.clickWidget", json!({"id": "check:viewOptions.briefly2"}), t)["ok"], true);
         h.step();
         assert_eq!(h.app.ui.settings.loupe_info.briefly, InfoOverlay::Exposure);
@@ -5918,13 +5919,13 @@ mod tests {
         use crate::render::Slot;
         use std::{cell::Cell, rc::Rc};
         let pill = |h: &Headless| h.app.widgets.iter().any(|(w, _)| w == "loupe:rendering");
-        let mut h = demo([1000.0, 700.0]);
+        let mut h = demo([1400.0, 1100.0]);
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "detail", "right": "none"}), t);
         h.settle(SETTLE);
         assert!(h.app.ui.settings.loupe_messages, "on by default");
         assert_eq!(h.request("ui.key", json!({"key": "j", "cmd": true}), t)["ok"], true);
-        h.step();
+        h.settle(SETTLE); // the dialog opens over a few frames
         assert_eq!(h.request("ui.clickWidget", json!({"id": "check:viewOptions.loupeMessages"}), t)["ok"], true);
         h.step();
         assert!(!h.app.ui.settings.loupe_messages, "the tick box turns it off");
