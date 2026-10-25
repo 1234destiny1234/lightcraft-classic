@@ -411,9 +411,15 @@ fn extract_embedded(e: Embedded, mut m: Metadata, xmp: Option<XmpData>) -> Metad
     if let Some(i) = e.iptc.as_deref() {
         m.fill_missing(&parse_iptc(i));
     }
+    // a JPEG's extended XMP holds what did not fit in the main packet: it fills what that left out
+    let extended = e.xmp_extended.as_deref().and_then(|x| parse_xmp(x).ok());
     if let Some(xmp) = xmp {
         m.overlay_user_fields(&xmp.metadata);
         m.fill_missing(&xmp.metadata);
+        if let Some(ext) = &extended {
+            m.overlay_user_fields(&ext.metadata);
+            m.fill_missing(&ext.metadata);
+        }
         // boxes another app drew on the photo as stored go where the upright photo has them (#2674)
         if let (Some(drawn_on), Some(orientation), Some(w), Some(h)) = (xmp.regions_drawn_on(), m.orientation, m.width, m.height) {
             upright_regions(&mut m.regions, drawn_on, orientation, (w, h));
