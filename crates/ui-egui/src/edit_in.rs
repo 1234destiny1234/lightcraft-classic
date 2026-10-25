@@ -419,10 +419,18 @@ fn combo(ui: &mut egui::Ui, id: &str, label: &str, value: &mut String, choices: 
 
 fn presets_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     let list = app.session.execute("editIn.presets", &json!({})).ok();
-    let mut open = !crate::dialog_frame::esc_closes(app.ui.dialog.is_some(), ctx);
-    egui::Window::new(tr("Edit In Presets")).id(egui::Id::new("edit-in-presets")).open(&mut open).default_width(420.0).collapsible(false).show(
-        ctx,
-        |ui| {
+    let open = !crate::dialog_frame::esc_closes(app.ui.dialog.is_some(), ctx);
+    let mut closed = false;
+    egui::Window::new(tr("Edit In Presets"))
+        .id(egui::Id::new("edit-in-presets"))
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
+        .default_width(420.0)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            if crate::dialog_frame::card_header(ui, tr("Edit In Presets"), Some("edit-in-presets:close")) {
+                closed = true;
+            }
             ui.horizontal_wrapped(|ui| {
                 for (kind, builtin) in [("builtin", true), ("user", false)] {
                     for p in list.as_ref().and_then(|l| l[kind].as_array()).into_iter().flatten() {
@@ -506,9 +514,8 @@ fn presets_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
             if !st.message.is_empty() {
                 ui.label(egui::RichText::new(&st.message).small());
             }
-        },
-    );
-    st.presets_open = open;
+        });
+    st.presets_open = open && !closed;
 }
 
 /// Lightroom's "Edit Photo" question for a PSD or TIFF.
@@ -517,17 +524,31 @@ fn ask_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     let mut open = true;
     let mut go = false;
     let mut cancel = false;
-    egui::Window::new(tr("Edit Photo")).id(egui::Id::new("edit-in-ask")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
-        for (v, l) in [("original", "Edit Original"), ("copy", "Edit a Copy"), ("copyWithAdjustments", "Edit a Copy with Adjustments")] {
-            ui.radio_value(&mut mode, v.to_string(), tr(l));
-        }
-        ui.label(egui::RichText::new(tr("Edit Original opens the file itself; saving it updates this photo.")).small());
-        ui.separator();
-        ui.horizontal(|ui| {
-            go = ui.button(tr("Edit")).clicked();
-            cancel = ui.button(tr("Cancel")).clicked();
+    let mut closed = false;
+    egui::Window::new(tr("Edit Photo"))
+        .id(egui::Id::new("edit-in-ask"))
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            if crate::dialog_frame::card_header(ui, tr("Edit Photo"), Some("edit-in-ask:close")) {
+                closed = true;
+            }
+            for (v, l) in [("original", "Edit Original"), ("copy", "Edit a Copy"), ("copyWithAdjustments", "Edit a Copy with Adjustments")] {
+                ui.radio_value(&mut mode, v.to_string(), tr(l));
+            }
+            ui.label(egui::RichText::new(tr("Edit Original opens the file itself; saving it updates this photo.")).small());
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                use crate::button::{Button, Kind};
+                go = Button::new("Edit").kind(Kind::Primary).widget("button:editInGo").show(ui).clicked();
+                cancel = Button::new("Cancel").widget("button:editInCancel").show(ui).clicked();
+            });
         });
-    });
+    if closed {
+        open = false;
+    }
     if go {
         let mut p = params;
         if let Some(o) = p.as_object_mut() {
@@ -543,89 +564,98 @@ fn ask_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
 
 fn actions_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     let list = app.session.execute("actions.list", &json!({})).map_err(|e| e.to_string());
-    let mut open = !crate::dialog_frame::esc_closes(app.ui.dialog.is_some(), ctx);
-    egui::Window::new(tr("Actions")).id(egui::Id::new("actions-panel")).open(&mut open).default_width(360.0).show(ctx, |ui| {
-        let (actions, recording) = match &list {
-            Ok(l) => (l["actions"].as_array().cloned().unwrap_or_default(), l["recording"].as_str().map(str::to_string)),
-            Err(e) => {
-                ui.colored_label(ui.visuals().error_fg_color, e);
-                (Vec::new(), None)
+    let open = !crate::dialog_frame::esc_closes(app.ui.dialog.is_some(), ctx);
+    let mut closed = false;
+    egui::Window::new(tr("Actions"))
+        .id(egui::Id::new("actions-panel"))
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
+        .default_width(360.0)
+        .show(ctx, |ui| {
+            if crate::dialog_frame::card_header(ui, tr("Actions"), Some("actions-panel:close")) {
+                closed = true;
             }
-        };
-        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-            if actions.is_empty() {
-                ui.label(tr("No actions yet: record one below."));
-            }
-            for a in &actions {
-                let name = a["name"].as_str().unwrap_or_default().to_string();
-                ui.horizontal(|ui| {
-                    let sc = a["shortcut"].as_str().map(|s| format!("  {s}")).unwrap_or_default();
-                    let text = format!("{name}  ·  {} {}{sc}", a["steps"].as_u64().unwrap_or(0), tr("steps"));
-                    if ui.selectable_label(st.selected.as_deref() == Some(&name), text).clicked() {
-                        st.shortcut = a["shortcut"].as_str().unwrap_or_default().to_string();
-                        st.selected = Some(name.clone());
-                    }
-                    if ui.small_button(tr("Play")).on_hover_text(tr("Play on the selected photos")).clicked() {
-                        let r = app.run("actions.play", json!({"name": name}));
-                        outcome(st, r, "Action played");
-                    }
-                });
-            }
-        });
-        if let Some(sel) = st.selected.clone() {
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label(tr("Shortcut"));
-                let r = ui.add(egui::TextEdit::singleline(&mut st.shortcut).hint_text("Cmd+Alt+1").desired_width(110.0));
-                crate::access::label(&r, "Shortcut");
-                if ui.button(tr("Set")).clicked() {
-                    let sc = st.shortcut.trim().to_string();
-                    let r = if !sc.is_empty() && crate::shortcuts::parse(&sc).is_none() {
-                        Err(format!("{}: {sc}", tr("Not a shortcut")))
-                    } else {
-                        app.session.execute("actions.save", &json!({"name": sel, "shortcut": sc})).map_err(|e| e.to_string())
-                    };
-                    outcome(st, r, "Shortcut saved");
+            let (actions, recording) = match &list {
+                Ok(l) => (l["actions"].as_array().cloned().unwrap_or_default(), l["recording"].as_str().map(str::to_string)),
+                Err(e) => {
+                    ui.colored_label(ui.visuals().error_fg_color, e);
+                    (Vec::new(), None)
                 }
-                if ui.button(tr("Delete")).clicked() {
-                    let r = app.session.execute("actions.delete", &json!({"name": sel})).map_err(|e| e.to_string());
-                    if outcome(st, r, "Action deleted").is_some() {
-                        st.selected = None;
-                    }
+            };
+            egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                if actions.is_empty() {
+                    ui.label(tr("No actions yet: record one below."));
+                }
+                for a in &actions {
+                    let name = a["name"].as_str().unwrap_or_default().to_string();
+                    ui.horizontal(|ui| {
+                        let sc = a["shortcut"].as_str().map(|s| format!("  {s}")).unwrap_or_default();
+                        let text = format!("{name}  ·  {} {}{sc}", a["steps"].as_u64().unwrap_or(0), tr("steps"));
+                        if ui.selectable_label(st.selected.as_deref() == Some(&name), text).clicked() {
+                            st.shortcut = a["shortcut"].as_str().unwrap_or_default().to_string();
+                            st.selected = Some(name.clone());
+                        }
+                        if ui.small_button(tr("Play")).on_hover_text(tr("Play on the selected photos")).clicked() {
+                            let r = app.run("actions.play", json!({"name": name}));
+                            outcome(st, r, "Action played");
+                        }
+                    });
                 }
             });
-        }
-        ui.separator();
-        match recording {
-            Some(name) => {
-                ui.label(format!("● {} {name}", tr("Recording")));
+            if let Some(sel) = st.selected.clone() {
+                ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button(tr("Stop Recording")).clicked() {
-                        let r = app.run("actions.stop", json!({}));
-                        outcome(st, r, "Action saved");
+                    ui.label(tr("Shortcut"));
+                    let r = ui.add(egui::TextEdit::singleline(&mut st.shortcut).hint_text("Cmd+Alt+1").desired_width(110.0));
+                    crate::access::label(&r, "Shortcut");
+                    if ui.button(tr("Set")).clicked() {
+                        let sc = st.shortcut.trim().to_string();
+                        let r = if !sc.is_empty() && crate::shortcuts::parse(&sc).is_none() {
+                            Err(format!("{}: {sc}", tr("Not a shortcut")))
+                        } else {
+                            app.session.execute("actions.save", &json!({"name": sel, "shortcut": sc})).map_err(|e| e.to_string())
+                        };
+                        outcome(st, r, "Shortcut saved");
                     }
-                    if ui.button(tr("Cancel")).clicked() {
-                        let r = app.run("actions.cancel", json!({}));
-                        outcome(st, r, "Recording cancelled");
+                    if ui.button(tr("Delete")).clicked() {
+                        let r = app.session.execute("actions.delete", &json!({"name": sel})).map_err(|e| e.to_string());
+                        if outcome(st, r, "Action deleted").is_some() {
+                            st.selected = None;
+                        }
                     }
                 });
             }
-            None => {
-                ui.horizontal(|ui| {
-                    let r = ui.add(egui::TextEdit::singleline(&mut st.record_name).hint_text(tr("Action name")).desired_width(180.0));
-                    crate::access::label(&r, "Action name");
-                    if ui.button(tr("Record")).clicked() {
-                        let r = app.run("actions.record", json!({"name": st.record_name.trim()}));
-                        outcome(st, r, "Recording: edit a photo, then stop");
-                    }
-                });
+            ui.separator();
+            match recording {
+                Some(name) => {
+                    ui.label(format!("● {} {name}", tr("Recording")));
+                    ui.horizontal(|ui| {
+                        if ui.button(tr("Stop Recording")).clicked() {
+                            let r = app.run("actions.stop", json!({}));
+                            outcome(st, r, "Action saved");
+                        }
+                        if ui.button(tr("Cancel")).clicked() {
+                            let r = app.run("actions.cancel", json!({}));
+                            outcome(st, r, "Recording cancelled");
+                        }
+                    });
+                }
+                None => {
+                    ui.horizontal(|ui| {
+                        let r = ui.add(egui::TextEdit::singleline(&mut st.record_name).hint_text(tr("Action name")).desired_width(180.0));
+                        crate::access::label(&r, "Action name");
+                        if ui.button(tr("Record")).clicked() {
+                            let r = app.run("actions.record", json!({"name": st.record_name.trim()}));
+                            outcome(st, r, "Recording: edit a photo, then stop");
+                        }
+                    });
+                }
             }
-        }
-        if !st.message.is_empty() {
-            ui.label(egui::RichText::new(&st.message).small());
-        }
-    });
-    st.actions_open = open;
+            if !st.message.is_empty() {
+                ui.label(egui::RichText::new(&st.message).small());
+            }
+        });
+    st.actions_open = open && !closed;
 }
 
 /// The actions whose saved shortcut was pressed this frame (`(shortcut, action)` pairs).

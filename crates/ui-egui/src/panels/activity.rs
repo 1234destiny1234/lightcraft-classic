@@ -70,11 +70,12 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let shown = if app.activity_expanded { tasks.len() } else { tasks.len().min(MAX_ROWS) };
     let hidden = tasks.len().saturating_sub(shown);
     // Modern layout: centred under its Library / Develop switch, inside the screen's insets (clear
-    // of the buttons in the corners and of the cards); else below the top bar
+    // of the buttons in the corners and of the cards); else centred below the top bar
     let origin = if crate::modern::on(app) {
         pos2(ctx.content_rect().center().x - WIDTH / 2.0, crate::modern::overlay_origin(app).y)
     } else {
-        pos2(8.0, t.top_bar_h + 8.0)
+        // centred under the top bar: clear of the windows and dialogs that open at the top left
+        pos2((ctx.content_rect().center().x - WIDTH / 2.0).max(8.0), t.top_bar_h + 8.0)
     };
     let top = origin.y - 8.0;
     let max_height = (ctx.content_rect().height() - top - 60.0).max(80.0);

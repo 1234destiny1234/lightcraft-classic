@@ -90,8 +90,25 @@ pub fn pinned_histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
 }
 
 /// The Edit panel under its histogram: soft proofing, the header and every section.
+/// The Edit panel with one section only, open and without its header (`key`: a section's id, or
+/// `profile` for the rows above Basic, `plugins` for the plug-in filters): the Modern layout's cards.
+pub(crate) fn show_section(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, key: &str) {
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(ONLY_SECTION), key.to_string()));
+    show_controls(app, ui, id);
+    ui.ctx().data_mut(|d| d.remove::<String>(egui::Id::new(ONLY_SECTION)));
+}
+
+const ONLY_SECTION: &str = "edit-only-section";
+
+/// The one section [`show_section`] asked for, if any.
+fn only_section(ui: &egui::Ui) -> Option<String> {
+    ui.ctx().data(|d| d.get_temp::<String>(egui::Id::new(ONLY_SECTION)))
+}
+
 pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
+    let only = only_section(ui);
+    let shows = |key: &str| only.as_deref().is_none_or(|o| o == key);
     let d = app.session.develop_of(id).unwrap_or_default();
     // a raw shown from its embedded JPEG (preview only) gets the rendered-file white balance scale
     let raw = app.session.catalog.photo(id).is_some_and(|p| p.develops_raw() && !p.relative_wb());
@@ -112,126 +129,132 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     }
     let preview_only = app.session.catalog.photo(id).and_then(|p| p.preview_only.clone());
 
-    if app.ui.soft_proof {
+    if app.ui.soft_proof && only.is_none() {
         soft_proofing(app, ui, id);
     }
-    // header: Edit (Reset sits in the bar under the panels, issue #116), then Lightroom Classic's Basic button row:
-    // Auto, B&W | HDR (issue #124)
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 14, bottom: 0 }).show(ui, |ui| {
-        ui.label(egui::RichText::new(crate::i18n::tr("Edit")).font(t.semibold(15.0)).color(t.text));
-    });
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 10, bottom: 14 }).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                if text_button(ui, "hdr", crate::i18n::tr("HDR"), d.hdr.enabled).on_hover_text(hdr_button_tip(app.hdr_display_sdr)).clicked() {
-                    let _ = app.run("develop.hdr", json!({"enabled": !d.hdr.enabled}));
-                }
-                // the separator between the treatment and HDR, as in Classic
-                let (sep, _) = ui.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
-                ui.painter().vline(sep.center().x, sep.y_range(), egui::Stroke::new(1.0, t.button_border));
-                let bw = crate::is_bw(&d);
-                if text_button(ui, "treatment-bw", crate::i18n::tr("B&W"), bw).on_hover_text(crate::i18n::tr("Black & White")).clicked() {
-                    let _ = app.run("develop.treatment", json!({"bw": !bw}));
-                }
-                let applied = app.session.auto_is_current(id);
-                let r = ui.add_enabled_ui(!applied, |ui| text_button(ui, "auto", crate::i18n::tr("Auto"), false)).inner;
-                if r.clicked() {
-                    let _ = app.run("develop.auto", json!({}));
-                    app.toast(ui.ctx(), crate::i18n::tr("Auto settings applied"));
-                }
-            });
+    if shows("profile") {
+        // header: Edit (Reset sits in the bar under the panels, issue #116), then Lightroom Classic's Basic button row:
+        // Auto, B&W | HDR (issue #124)
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 14, bottom: 0 }).show(ui, |ui| {
+            ui.label(egui::RichText::new(crate::i18n::tr("Edit")).font(t.semibold(15.0)).color(t.text));
         });
-    });
-    if let Some(why) = &preview_only {
-        let reload = egui::Frame::NONE
-            .inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 12 })
-            .show(ui, |ui| crate::widgets::preview_only_notice(ui, "edit", why))
-            .inner;
-        if reload {
-            reload_preview_only(app, ui.ctx(), id);
-        }
-    }
-    let n = app.session.selection.ids.len();
-    if n > 1 && matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid) {
-        quick_develop(app, ui, n);
-    }
-    if app.session.auto_sync && n > 1 {
-        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 10, bottom: 14 }).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(crate::i18n::tr_format!("Auto Sync: edits apply to {n} photos", n = n)).color(t.accent).size(12.0));
+                ui.spacing_mut().item_spacing.x = 8.0;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if text_button(ui, "autoSyncOff", crate::i18n::tr("Turn Off"), false).clicked() {
-                        let _ = app.run("develop.autoSync", json!({"on": false}));
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    if text_button(ui, "hdr", crate::i18n::tr("HDR"), d.hdr.enabled).on_hover_text(hdr_button_tip(app.hdr_display_sdr)).clicked() {
+                        let _ = app.run("develop.hdr", json!({"enabled": !d.hdr.enabled}));
+                    }
+                    // the separator between the treatment and HDR, as in Classic
+                    let (sep, _) = ui.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
+                    ui.painter().vline(sep.center().x, sep.y_range(), egui::Stroke::new(1.0, t.button_border));
+                    let bw = crate::is_bw(&d);
+                    if text_button(ui, "treatment-bw", crate::i18n::tr("B&W"), bw).on_hover_text(crate::i18n::tr("Black & White")).clicked() {
+                        let _ = app.run("develop.treatment", json!({"bw": !bw}));
+                    }
+                    let applied = app.session.auto_is_current(id);
+                    let r = ui.add_enabled_ui(!applied, |ui| text_button(ui, "auto", crate::i18n::tr("Auto"), false)).inner;
+                    if r.clicked() {
+                        let _ = app.run("develop.auto", json!({}));
+                        app.toast(ui.ctx(), crate::i18n::tr("Auto settings applied"));
                     }
                 });
             });
         });
-    }
-    divider(ui);
-    // profile row
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 12, bottom: 12 }).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(crate::i18n::tr("Profile")).font(t.font(13.0)).color(t.text_dim));
-            let name = app.session.profile_info(&d.profile.id).map(|(name, _)| name).unwrap_or("Color");
-            // a long name is cut short before Browse Profiles: a wider row would widen the whole panel's
-            // content, and the sliders below would run past its edge
-            let max = ui.available_width() - 28.0 - ui.spacing().item_spacing.x;
-            let r = crate::widgets::dropdown_within(ui, "profile", crate::i18n::profile_label(&d.profile.id, name), t.font(15.0), t.text_label, max);
-            let below = r.rect.bottom();
-            egui::Popup::menu(&r).show(|ui| profile_menu(app, ui, &d, below));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if crate::widgets::icon_button(
-                    ui,
-                    "profileBrowser",
-                    Icon::ProfileGrid,
-                    vec2(28.0, 28.0),
-                    false,
-                    true,
-                    crate::i18n::tr("Browse Profiles"),
-                )
-                .clicked()
-                {
-                    let _ = app.run("panel.profiles", json!({}));
-                }
+        if let Some(why) = &preview_only {
+            let reload = egui::Frame::NONE
+                .inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 12 })
+                .show(ui, |ui| crate::widgets::preview_only_notice(ui, "edit", why))
+                .inner;
+            if reload {
+                reload_preview_only(app, ui.ctx(), id);
+            }
+        }
+        let n = app.session.selection.ids.len();
+        if n > 1 && matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid) {
+            quick_develop(app, ui, n);
+        }
+        if app.session.auto_sync && n > 1 {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(crate::i18n::tr_format!("Auto Sync: edits apply to {n} photos", n = n)).color(t.accent).size(12.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if text_button(ui, "autoSyncOff", crate::i18n::tr("Turn Off"), false).clicked() {
+                            let _ = app.run("develop.autoSync", json!({"on": false}));
+                        }
+                    });
+                });
+            });
+        }
+        divider(ui);
+        // profile row
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 12, bottom: 12 }).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(crate::i18n::tr("Profile")).font(t.font(13.0)).color(t.text_dim));
+                let name = app.session.profile_info(&d.profile.id).map(|(name, _)| name).unwrap_or("Color");
+                // a long name is cut short before Browse Profiles: a wider row would widen the whole panel's
+                // content, and the sliders below would run past its edge
+                let max = ui.available_width() - 28.0 - ui.spacing().item_spacing.x;
+                let r =
+                    crate::widgets::dropdown_within(ui, "profile", crate::i18n::profile_label(&d.profile.id, name), t.font(15.0), t.text_label, max);
+                let below = r.rect.bottom();
+                egui::Popup::menu(&r).show(|ui| profile_menu(app, ui, &d, below));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if crate::widgets::icon_button(
+                        ui,
+                        "profileBrowser",
+                        Icon::ProfileGrid,
+                        vec2(28.0, 28.0),
+                        false,
+                        true,
+                        crate::i18n::tr("Browse Profiles"),
+                    )
+                    .clicked()
+                    {
+                        let _ = app.run("panel.profiles", json!({}));
+                    }
+                });
             });
         });
-    });
-    if d.profile.id != "lc.color" {
-        control(app, ui, &d, "profile.amount", true);
-        ui.add_space(6.0);
+        if d.profile.id != "lc.color" {
+            control(app, ui, &d, "profile.amount", true);
+            ui.add_space(6.0);
+        }
+        // whether to offer the two file options below: facts of the file that stay put while sources are decoded again
+        // (an edit, crop mode), so the rows under them never move
+        let facts = app.session.media.profile_facts(id);
+        // a raw carrying its own local tone mapping (Apple ProRAW's gain table map): off renders it as
+        // Lightroom Classic does, on as the camera does
+        if facts.local_tone {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
+                let mut on = d.profile.camera_local_tone;
+                let r = ui.checkbox(&mut on, crate::i18n::tr("Camera local tone mapping"));
+                crate::widgets::register(ui.ctx(), "check:profile.cameraLocalTone", r.rect);
+                if r.on_hover_text(crate::i18n::tr("Apply the local tone mapping stored in the raw (Apple ProRAW), as the camera renders it"))
+                    .changed()
+                {
+                    let _ =
+                        app.run("develop.merge", json!({"settings": {"profile": {"camera_local_tone": on}}, "label": "Camera Local Tone Mapping"}));
+                }
+            });
+        }
+        // a raw without colour matrices whose camera model has measured ones: off starts from the look fitted to the
+        // camera's JPEG (Auto), on from the measured colour with the app's own tone curve (Colorimetric)
+        if facts.colorimetric {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
+                let mut on = d.profile.camera_colour == lcc_develop::CameraColour::Colorimetric;
+                let r = ui.checkbox(&mut on, crate::i18n::tr("Calibrated camera colour"));
+                crate::widgets::register(ui.ctx(), "check:profile.cameraColour", r.rect);
+                let tip = "Start from the colour measured for this camera model instead of the look fitted to the camera's JPEG";
+                if r.on_hover_text(crate::i18n::tr(tip)).changed() {
+                    let mode = if on { "colorimetric" } else { "auto" };
+                    let _ = app.run("develop.merge", json!({"settings": {"profile": {"camera_colour": mode}}, "label": "Calibrated Camera Colour"}));
+                }
+            });
+        }
+        divider(ui);
     }
-    // whether to offer the two file options below: facts of the file that stay put while sources are decoded again
-    // (an edit, crop mode), so the rows under them never move
-    let facts = app.session.media.profile_facts(id);
-    // a raw carrying its own local tone mapping (Apple ProRAW's gain table map): off renders it as
-    // Lightroom Classic does, on as the camera does
-    if facts.local_tone {
-        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
-            let mut on = d.profile.camera_local_tone;
-            let r = ui.checkbox(&mut on, crate::i18n::tr("Camera local tone mapping"));
-            crate::widgets::register(ui.ctx(), "check:profile.cameraLocalTone", r.rect);
-            if r.on_hover_text(crate::i18n::tr("Apply the local tone mapping stored in the raw (Apple ProRAW), as the camera renders it")).changed() {
-                let _ = app.run("develop.merge", json!({"settings": {"profile": {"camera_local_tone": on}}, "label": "Camera Local Tone Mapping"}));
-            }
-        });
-    }
-    // a raw without colour matrices whose camera model has measured ones: off starts from the look fitted to the
-    // camera's JPEG (Auto), on from the measured colour with the app's own tone curve (Colorimetric)
-    if facts.colorimetric {
-        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
-            let mut on = d.profile.camera_colour == lcc_develop::CameraColour::Colorimetric;
-            let r = ui.checkbox(&mut on, crate::i18n::tr("Calibrated camera colour"));
-            crate::widgets::register(ui.ctx(), "check:profile.cameraColour", r.rect);
-            let tip = "Start from the colour measured for this camera model instead of the look fitted to the camera's JPEG";
-            if r.on_hover_text(crate::i18n::tr(tip)).changed() {
-                let mode = if on { "colorimetric" } else { "auto" };
-                let _ = app.run("develop.merge", json!({"settings": {"profile": {"camera_colour": mode}}, "label": "Calibrated Camera Colour"}));
-            }
-        });
-    }
-    divider(ui);
 
     let video = crate::video_ui::photo_is_video(app, id);
     // Lightroom Classic's Basic panel: white balance, then Tone (with Auto), then Presence
@@ -476,7 +499,9 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(8.0);
     });
-    super::plugin_filters::show(app, ui, &d);
+    if shows("plugins") {
+        super::plugin_filters::show(app, ui, &d);
+    }
     ui.add_space(40.0);
 }
 
@@ -618,6 +643,14 @@ pub(crate) fn section_with(
     switch: bool,
     body: impl FnOnce(&mut LccApp, &mut egui::Ui, &DevelopSettings),
 ) {
+    // one section alone (the Modern layout's card): open, no header
+    if let Some(only) = only_section(ui) {
+        if only == id {
+            let blocked = !crate::video_ui::section_allowed(id) && app.session.active().is_some_and(|p| crate::video_ui::photo_is_video(app, p));
+            crate::video_ui::video_gate(ui, blocked, |ui| body(app, ui, d));
+        }
+        return;
+    }
     let open = app.ui.section_open(id);
     let (resp, toggled) = section_header(ui, id, title, open, switch.then(|| d.section_enabled(id)));
     // video takes the global Light and Color controls only: the rest show greyed out

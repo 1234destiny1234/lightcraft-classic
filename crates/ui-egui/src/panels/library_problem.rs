@@ -245,9 +245,10 @@ fn upgrade_window(ctx: &egui::Context, path: &str) {
     let t = Tokens::get(ctx);
     dim(ctx);
     let progress = lcc_engine::library::migration_progress();
-    let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(18, 14));
+    let frame = crate::dialog_frame::card_frame(ctx);
     egui::Window::new(crate::i18n::tr("Upgrading your library"))
         .id(egui::Id::new("library-upgrade"))
+        .title_bar(false)
         .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(false)
@@ -255,8 +256,9 @@ fn upgrade_window(ctx: &egui::Context, path: &str) {
         .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
         .default_width(460.0)
         .show(ctx, |ui| {
-            ui.set_width(440.0);
+            ui.set_width((ctx.content_rect().width() - 64.0).clamp(240.0, 440.0));
             ui.spacing_mut().item_spacing.y = 8.0;
+            crate::dialog_frame::card_header(ui, crate::i18n::tr("Upgrading your library"), None);
             ui.label(RichText::new(crate::i18n::tr("{app} is moving the library at")).color(t.text_label));
             ui.label(RichText::new(path).font(t.semibold(12.5)).color(t.text));
             ui.label(
@@ -295,47 +297,66 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     dim(ctx);
     let mut choice = None;
-    let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(18, 14));
+    // a card, as every dialog: rounded, the title inside it, the main action in the accent colour
+    let frame = egui::Frame::window(&ctx.global_style())
+        .inner_margin(egui::Margin { left: 20, right: 20, top: 16, bottom: 16 })
+        .corner_radius(16.0)
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
+        .shadow(egui::epaint::Shadow { offset: [0, 10], blur: 32, spread: 0, color: egui::Color32::from_black_alpha(110) });
     let kind = problem.kind();
     let window_id = egui::Id::new("library-problem");
     let shown = egui::Window::new(crate::i18n::tr(kind.title()))
         .id(window_id)
+        .title_bar(false)
         .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(false)
         .frame(frame)
         .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
-        .default_width(460.0)
+        .default_width(480.0)
         .show(ctx, |ui| {
-            // a fixed width: a wrapped label in an auto-sized, centred window would move it every frame
-            ui.set_width(440.0);
+            // a fixed width (narrower on a phone): a wrapped label in an auto-sized, centred window would move it every frame
+            let w = (ctx.content_rect().width() - 64.0).clamp(240.0, 460.0);
+            ui.set_width(w);
             ui.spacing_mut().item_spacing.y = 8.0;
             let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
             layout.body(ui, |ui| {
+                let h = ui.label(RichText::new(crate::i18n::tr(kind.title())).font(t.semibold(17.0)).color(t.text));
+                register(ui.ctx(), "dialog:title", h.rect);
+                ui.add_space(2.0);
                 if problem.path.is_empty() {
-                    ui.label(RichText::new(crate::i18n::tr("{app} couldn't find where to keep your library.")).color(t.text));
+                    ui.label(RichText::new(crate::i18n::tr("{app} couldn't find where to keep your library.")).color(t.text_label));
                 } else {
                     ui.label(RichText::new(crate::i18n::tr("{app} couldn't open the library at")).color(t.text_label));
-                    ui.label(RichText::new(&problem.path).font(t.semibold(12.5)).color(t.text));
+                    ui.add(egui::Label::new(RichText::new(&problem.path).font(t.semibold(13.0)).color(t.text)).wrap());
                 }
-                ui.add(egui::Label::new(RichText::new(&problem.error).color(t.caution)).wrap());
-                ui.label(RichText::new(crate::i18n::tr(kind.advice())).color(t.text_dim));
+                // what went wrong, in a soft caution box
+                egui::Frame::NONE.fill(t.caution.gamma_multiply(0.12)).corner_radius(10.0).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.add(egui::Label::new(RichText::new(&problem.error).color(t.caution)).wrap());
+                });
+                ui.add(egui::Label::new(RichText::new(crate::i18n::tr(kind.advice())).color(t.text_dim)).wrap());
             });
             layout.footer(ui, |ui| {
+                use crate::button::{Button, Kind};
+                ui.add_space(6.0);
+                let mut button = |ui: &mut egui::Ui, id: &str, label: &str, enabled: bool, kind: Kind, c: Choice| {
+                    if Button::new(label).kind(kind).enabled(enabled).widget(format!("button:{id}")).show(ui).clicked() {
+                        choice = Some(c);
+                    }
+                };
+                // the other ways on, wrapping on a narrow window
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+                    button(ui, "libraryChoose", "Choose Another Library…", app.services.pick_folder.is_some(), Kind::Secondary, Choice::Choose);
+                    button(ui, "libraryNew", "New Catalog…", true, Kind::Secondary, Choice::New);
+                    button(ui, "libraryTemporary", "Continue Without Saving", true, Kind::Secondary, Choice::Temporary);
+                });
                 ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    let mut button = |ui: &mut egui::Ui, id: &str, label: &str, enabled: bool, c: Choice| {
-                        let r = ui.add_enabled(enabled, egui::Button::new(crate::i18n::tr(label)).min_size(vec2(0.0, 26.0)));
-                        register(ui.ctx(), format!("button:{id}"), r.rect);
-                        if r.clicked() {
-                            choice = Some(c);
-                        }
-                    };
-                    button(ui, "libraryRetry", "Try Again", problem.can_retry && kind.retryable(), Choice::Retry);
-                    button(ui, "libraryChoose", "Choose Another Library…", app.services.pick_folder.is_some(), Choice::Choose);
-                    button(ui, "libraryNew", "New Catalog…", true, Choice::New);
-                    button(ui, "libraryTemporary", "Continue Without Saving", true, Choice::Temporary);
-                    button(ui, "libraryQuit", "Quit", true, Choice::Quit);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    button(ui, "libraryRetry", "Try Again", problem.can_retry && kind.retryable(), Kind::Primary, Choice::Retry);
+                    button(ui, "libraryQuit", "Quit", true, Kind::Ghost, Choice::Quit);
                 });
             });
         });

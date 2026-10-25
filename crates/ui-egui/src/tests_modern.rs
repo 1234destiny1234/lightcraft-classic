@@ -136,6 +136,13 @@ fn the_dock_moves_to_the_side_and_back() {
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:dockSwitch"}));
     assert!(h.app.ui.modern.dock_side);
     assert!(dock(&h).height() > dock(&h).width() && dock(&h).left() < 40.0, "down the side");
+    // clear of the top row's ☰ (and of the menu bar it opens), however short the window
+    let menu = h.app.widgets.iter().rev().find(|(w, _)| w == "modern:menu").map(|(_, r)| *r).unwrap();
+    assert!(dock(&h).top() > menu.bottom(), "below ☰: {:?} vs {menu:?}", dock(&h));
+    ask(&mut h, "ui.resize", json!({"width": 900, "height": 420}));
+    let menu = h.app.widgets.iter().rev().find(|(w, _)| w == "modern:menu").map(|(_, r)| *r).unwrap();
+    assert!(dock(&h).top() > menu.bottom() && dock(&h).bottom() <= 420.0, "a short window: {:?}", dock(&h));
+    ask(&mut h, "ui.resize", json!({"width": 1280, "height": 800}));
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:dockSwitch"}));
     assert!(!h.app.ui.modern.dock_side);
 }
@@ -222,4 +229,62 @@ fn the_empty_library_offers_finger_sized_ways_in_without_desktop_hints() {
         let height = h.app.widgets.iter().find(|(w, _)| w == "button:emptyImportPhotos").map(|(_, r)| r.height()).unwrap();
         assert!(height >= 44.0, "finger-sized buttons ({size:?}: {height})");
     }
+}
+
+/// Every develop setting is reachable in Modern: a slider with more behind it carries a mark and a
+/// right-click (or long press) opens its whole section; each group's section buttons open the rest.
+#[test]
+fn every_setting_is_reachable_through_the_groups_sections() {
+    let mut h = develop([1280.0, 800.0]);
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    exec(&mut h, "modern.group", json!({"group": "effects"}));
+    assert!(has(&h, "sliderMore:vignette.amount"), "Vignette says it has more");
+    ask(&mut h, "ui.clickWidget", json!({"id": "slider:vignette.amount", "button": "right"}));
+    assert_eq!(h.app.ui.modern.more.as_deref(), Some("effects"));
+    for id in ["vignette.midpoint", "vignette.feather", "vignette.roundness", "vignette.highlights", "grain.size", "grain.roughness"] {
+        assert!(has(&h, &format!("slider:{id}")), "{id} in Effects");
+    }
+    // Back: to the group's sliders first
+    let r = exec(&mut h, "modern.back", json!({}));
+    assert_eq!(r["result"]["closed"], "section", "{r}");
+    assert!(h.app.ui.modern.group.is_some() && h.app.ui.modern.more.is_none());
+    for group in crate::modern_dock::Group::ADJUST {
+        exec(&mut h, "modern.group", json!({"group": group.label()}));
+        for (key, _) in group.sections() {
+            assert_eq!(ask(&mut h, "ui.clickWidget", json!({"id": format!("modern:more:{key}")}))["ok"], true, "{group:?} offers {key}");
+            assert_eq!(h.app.ui.modern.more.as_deref(), Some(*key));
+            assert!(has(&h, "modern:card"));
+            ask(&mut h, "ui.clickWidget", json!({"id": "modern:moreBack"}));
+            assert!(h.app.ui.modern.more.is_none(), "‹ goes back");
+        }
+    }
+    // the tone curve and colour grading are there
+    exec(&mut h, "modern.group", json!({"group": "colour"}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:more:grading"}));
+    assert_eq!(h.app.ui.modern.more.as_deref(), Some("grading"));
+}
+
+/// While a pill is dragged the chrome fades away (the slider and the histogram stay), and it comes
+/// back when the drag ends.
+#[test]
+fn the_chrome_fades_while_a_slider_is_dragged() {
+    let mut h = develop([1280.0, 800.0]);
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    exec(&mut h, "modern.group", json!({"group": "light"}));
+    let pill = h.app.widgets.iter().rev().find(|(w, _)| w == "slider:light.exposure").map(|(_, r)| *r).unwrap();
+    let at = pill.left_center() + egui::vec2(30.0, 0.0);
+    let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+    for e in [egui::Event::PointerMoved(at), button(at, true)] {
+        h.app.synthetic.push(e);
+        h.step();
+    }
+    for i in 1..=30 {
+        h.app.synthetic.push(egui::Event::PointerMoved(at + egui::vec2(i as f32 * 3.0, 0.0)));
+        h.step();
+    }
+    assert!(crate::modern::chrome_alpha(&h.view.ctx) < 0.2, "faded while dragging: {}", crate::modern::chrome_alpha(&h.view.ctx));
+    assert!(has(&h, "modern:histogram"), "the histogram stays");
+    h.app.synthetic.push(button(at + egui::vec2(90.0, 0.0), false));
+    h.settle(SETTLE);
+    assert!((crate::modern::chrome_alpha(&h.view.ctx) - 1.0).abs() < 1e-3, "back after the drag");
 }
