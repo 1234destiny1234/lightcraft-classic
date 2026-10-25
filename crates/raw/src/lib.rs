@@ -883,7 +883,8 @@ impl RawImage {
         let n = self.normalized()?;
         // the demosaiced picture is the biggest buffer: refuse it with an error rather than abort on allocation
         drop(lcc_raster::Rgb32f::try_new(n.width, n.height).map_err(|_| RawError::Limit("not enough memory to develop this raw"))?);
-        let rgb = demosaic(&n, method);
+        // (X-Trans interpolates the white-balanced mosaic; Bayer methods ignore the gains)
+        let rgb = demosaic::demosaic_with(&n, method, demosaic::Options { balance: self.wb_multipliers });
         drop(n);
         Ok(self.finish_demosaiced(rgb))
     }
