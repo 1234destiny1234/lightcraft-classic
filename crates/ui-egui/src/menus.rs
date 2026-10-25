@@ -2348,9 +2348,11 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                     parts.push(msg);
                 }
                 // Show the new presets: Develop's left column already lists them when it is shown,
-                // so they stay there (issue #469); otherwise the presets column opens.
+                // so they stay there, unfolded (issue #469); otherwise the presets column opens.
                 let in_left_column = app.ui.module == crate::module::ModuleId::Develop && crate::module::edge_visible(app, crate::module::Edge::Left);
-                if n > 0 && !in_left_column {
+                if n > 0 && in_left_column {
+                    crate::panels::classic::set_open_with_key(app, crate::module::PanelId::Presets, crate::panels::presets::IN_COLUMN_KEY, true);
+                } else if n > 0 {
                     app.ui.presets = true;
                 }
             }
