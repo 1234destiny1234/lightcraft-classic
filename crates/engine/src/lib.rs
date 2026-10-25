@@ -1657,6 +1657,8 @@ mod tests;
 #[cfg(test)]
 mod tests_album_loops;
 #[cfg(test)]
+mod tests_album_missing;
+#[cfg(test)]
 mod tests_album_order;
 #[cfg(test)]
 mod tests_album_remove;

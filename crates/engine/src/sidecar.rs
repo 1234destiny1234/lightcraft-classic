@@ -633,6 +633,8 @@ pub fn sidecar_packet_with(p: &Photo, cat: &lcc_catalog::Catalog, remove_locatio
 /// [`sidecar_packet_with`]; the GPS position is left out unless `gps` is set.
 fn packet(p: &Photo, cat: &lcc_catalog::Catalog, remove_location: bool, gps: bool) -> String {
     let nz = |s: &str| (!s.trim().is_empty()).then(|| s.to_string());
+    // Names in `dc:subject`, paths in `lr:hierarchicalSubject` (`keywords::to_file`).
+    let keywords = lcc_catalog::keywords::to_file(&p.meta.keywords);
     let meta = lcc_meta::Metadata {
         software: Some(lcc_brand::DISPLAY_NAME.into()),
         title: nz(&p.meta.title),
@@ -649,7 +651,8 @@ fn packet(p: &Photo, cat: &lcc_catalog::Catalog, remove_location: bool, gps: boo
         copyright_url: nz(&p.meta.copyright_url),
         artist: nz(&p.meta.creator),
         contact: p.meta.contact.clone(),
-        keywords: p.meta.keywords.clone(),
+        keywords: keywords.flat,
+        hierarchical_keywords: keywords.hierarchical,
         rating: Some(p.rating.min(5) as i8),
         label: p.label.map(|l| cat.label_name(l)),
         // (never the file's modification time standing in for a capture time nobody stated)
@@ -712,6 +715,7 @@ pub const OWNED: &[&str] = &[
     "dc:rights",
     "dc:creator",
     "dc:subject",
+    "lr:hierarchicalSubject",
     "Iptc4xmpCore:Location",
     "Iptc4xmpCore:AltTextAccessibility",
     "Iptc4xmpCore:ExtDescrAccessibility",
