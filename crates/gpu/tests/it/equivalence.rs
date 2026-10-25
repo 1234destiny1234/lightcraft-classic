@@ -1259,3 +1259,21 @@ fn soft_proofs_match() {
     };
     assert!(lcc_gpu::render(&src, &raw, &DevelopSettings::default(), &req, None).is_none(), "declined: the CPU renders it");
 }
+
+/// Colours pushed past white (process V5 keeps their hue, older processes move them toward their luminance) match
+/// the CPU's on every process.
+#[test]
+fn overrange_colours_match_on_every_process() {
+    if !gpu() {
+        return;
+    }
+    let raw = SourceInfo { raw: true, ..Default::default() };
+    let src = scene(0, 900, 600);
+    let req = RenderRequest::fit(640, 640);
+    for p in Process::ALL {
+        let mut s = DevelopSettings { process: p.version(), ..DevelopSettings::default() };
+        s.light.exposure = 2.5;
+        s.color.saturation = 40.0;
+        check(&format!("{p:?} pushed past white"), &src, &raw, &s, &req);
+    }
+}

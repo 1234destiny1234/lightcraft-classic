@@ -29,7 +29,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2823 | LR-BEHAV-DRAGDROP: a right-click on a text field while photos are carried opens no menu | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2822 | LR-VID-PLAY: MP4/MOV video import and cataloguing with duration and container badges | LEARN | MP4/MOV import and cataloguing: compare with the fork's lcc-video |  |
 | #2821 | LR-META-LOCATION: reject malformed typed GPS coordinates | LEARN | reject malformed typed GPS coordinates: small engine validation worth porting |  |
-| #2818 | LRC-LIB-SMARTCOLL: a smart album on a loop of albums holds no photos, and says which album it loops through | LEARN | smart album on a loop of albums holds no photos: same family as #2798 |  |
+| #2818 | LRC-LIB-SMARTCOLL: a smart album on a loop of albums holds no photos, and says which album it loops through | LEARN | smart album on a loop of albums holds no photos: same family as #2798 | not taken: overlaps #2798 (now refused at edit time); the fork already bounds loops in damaged catalogs |
 | #2812 | PERF-CATALOG: equal develop settings are held once in memory | LEARN | equal develop settings held once in memory: catalog memory win worth measuring |  |
 | #2809 | LR-CROP-AUTO: Auto straighten reads the vertical vanishing point and the horizon | LEARN | Auto straighten from vertical vanishing point and horizon: pipeline feature worth evaluating |  |
 | #2808 | LR-BEHAV-DRAGDROP: a right-click while photos are carried opens no context menu | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
@@ -38,13 +38,13 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2804 | fix(ui): wrap the Edit header buttons instead of letting Reset cover HDR | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2803 | chore(deps): bump the cargo-dependencies group across 1 directory with 19 updates | SKIP | dependabot: we manage our own dependencies |  |
 | #2802 | Add an Android app shell | SKIP | the fork has its own Android port (own design) |  |
-| #2798 | LR-LIB-SMARTALBUM: the catalog refuses an edit that makes a smart album include itself | LEARN | catalog refuses a smart album that includes itself: worth porting to the fork's catalog |  |
+| #2798 | LR-LIB-SMARTALBUM: the catalog refuses an edit that makes a smart album include itself | LEARN | catalog refuses a smart album that includes itself: worth porting to the fork's catalog | fork #525 |
 | #2797 | LR-BEHAV-AUTOSAVE: a change that could only be partly taken back is saved and can be undone | LEARN | autosave of partly-undoable changes: idea for the fork's undo model |  |
 | #2796 | docs: gap 9 — the CI gate runs the tests on Linux x64; macOS, Windows and the GPU tests still don't | SKIP | upstream docs/roadmap only |  |
 | #2789 | Grading lgg vectorscope | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2787 | LR-IMP-FORMATS: decode GoPro GPR (VC-5) | LEARN | GoPro GPR (VC-5) decoder: raw format support worth porting |  |
 | #2781 | LR-LIB-VIRTUALCOPY: prevent numbering overflow in copy batches | LEARN | virtual-copy numbering overflow: small never-crash fix, conflicts; port by hand |  |
-| #2780 | security/raw: bound hostile-memory paths in the raw decoders | LEARN | raw hostile-memory bounds (SonarCloud): good findings, but conflicts with the fork's reworked tiffraw/mef/exif; port per finding later |  |
+| #2780 | security/raw: bound hostile-memory paths in the raw decoders | LEARN | raw hostile-memory bounds (SonarCloud): good findings, but conflicts with the fork's reworked tiffraw/mef/exif; port per finding later | fork #522 |
 | #2777 | LR-EDIT-OPTICS-PROFILE: Fujifilm X-S20 embedded lens corrections and spectral matrices | LEARN | Fujifilm X-S20 embedded lens corrections and spectral matrices: camera support |  |
 | #2776 | Reject signed numeric character references in XML entity decoding | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2772 | Logging: each render request and how it ended, at debug level (#2682) | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
@@ -222,7 +222,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2305 | Group unnamed faces and improve face assignment review | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2303 | xtask warm: start a new worktree's target/ from a clone of the main checkout's | SKIP | upstream CI/packaging/tooling |  |
 | #2290 | #2284: read the Exif and XMP items of HEIF files | SKIP | HEIF Exif/XMP items already read by the fork (meta::heif) |  |
-| #2289 | Rate, flag and label every photo of a collapsed stack | LEARN | rate/flag/label all photos of a collapsed stack: fork library.rs diverged; re-implement mark_targets |  |
+| #2289 | Rate, flag and label every photo of a collapsed stack | LEARN | rate/flag/label all photos of a collapsed stack: fork library.rs diverged; re-implement mark_targets | fork #525 |
 | #2287 | LR-CROP-DIMMING: adjustable crop-mask opacity | SKIP | upstream docs/roadmap only |  |
 | #2283 | LR-LIB-CULL: Assisted Culling measures focus on the subject — face regions, focus point (#2276, stacked on #2279) | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2281 | LR-LIB-CULL: Assisted Culling can stack each burst, best photo on top (#2277, stacked on #2279) | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |

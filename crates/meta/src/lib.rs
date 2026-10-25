@@ -30,7 +30,7 @@ mod xmp_merge;
 
 pub use container::{Embedded, embedded, jpeg_segments, png_chunks, webp_chunks};
 pub use datetime::DateTime;
-pub use exif::{from_tiff, read_exif, strip_exif_header, try_read_exif, write_exif};
+pub use exif::{from_tiff, read_exif, strip_exif_header, try_read_exif, try_read_exif_with, write_exif};
 pub use focus::FocusPoint;
 pub use fuji::{FujiRecipe, FujiRow, read_recipe_file, recipe_from_bytes, recipe_from_exif};
 pub use gpx::{GpxError, Match, TrackPoint, Tracklog, parse_gpx};
