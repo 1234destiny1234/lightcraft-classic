@@ -780,8 +780,37 @@ fn lower(v: &Value) -> String {
     }
 }
 
+/// The text a Text rule looks through: every searched field of `p`, trimmed and lower-cased.
+pub(crate) fn rule_text_of(p: &Photo) -> String {
+    let m = &p.meta;
+    [
+        p.file_name.as_str(),
+        &m.title,
+        &m.caption,
+        &m.camera,
+        &m.lens,
+        &m.location,
+        &m.city,
+        &m.state,
+        &m.country,
+        &m.alt_text,
+        &p.format,
+        &m.keywords.join(" "),
+        &p.people().join(" "),
+        p.copy_name.as_deref().unwrap_or(""),
+        &p.plugin_fields.values().map(plugin_value_text).collect::<Vec<_>>().join(" "),
+    ]
+    .join(" ")
+    .trim()
+    .to_lowercase()
+}
+
 fn text_op(op: &str, have: &str, want: &str) -> bool {
-    let have = have.trim().to_lowercase();
+    text_op_lowered(op, &have.trim().to_lowercase(), want)
+}
+
+/// [`text_op`] on text trimmed and lower-cased already.
+fn text_op_lowered(op: &str, have: &str, want: &str) -> bool {
     match op {
         "contains" => want.split_whitespace().all(|w| have.contains(w)),
         "notContains" => !want.split_whitespace().any(|w| have.contains(w)),
@@ -993,27 +1022,10 @@ impl Rule {
             "person" => names_op(op, &p.people(), &want),
             "personCount" => num_op(op, Some(p.people().len() as f64), value),
             "faceCount" => num_op(op, Some(p.face_count() as f64), value),
-            "text" => {
-                let all = [
-                    p.file_name.as_str(),
-                    &m.title,
-                    &m.caption,
-                    &m.camera,
-                    &m.lens,
-                    &m.location,
-                    &m.city,
-                    &m.state,
-                    &m.country,
-                    &m.alt_text,
-                    &p.format,
-                    &m.keywords.join(" "),
-                    &p.people().join(" "),
-                    p.copy_name.as_deref().unwrap_or(""),
-                    &p.plugin_fields.values().map(plugin_value_text).collect::<Vec<_>>().join(" "),
-                ]
-                .join(" ");
-                text(&all)
-            }
+            "text" => match cat.rule_text(p) {
+                Some(have) => text_op_lowered(op, have, &want),
+                None => text_op_lowered(op, &rule_text_of(p), &want),
+            },
             "fileName" => text(&p.file_name),
             "extension" => text_op(op, p.extension(), want.trim_start_matches('.')),
             "duration" => num_op(op, p.duration.filter(|d| d.is_finite()), value),
