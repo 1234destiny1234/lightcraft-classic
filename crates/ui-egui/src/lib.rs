@@ -2169,6 +2169,8 @@ pub struct Caches {
     /// The catalog's part of the folder tree (before the disk folders are added), by catalog revision.
     folder_base: Option<(u64, std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
     people: Option<(u64, lcc_catalog::Filter, std::sync::Arc<Vec<lcc_catalog::Person>>)>,
+    /// The ignored faces (`faces.ignore`) as `(photo, index)`, at a catalog revision.
+    ignored_faces: Option<(u64, std::sync::Arc<Vec<(u64, usize)>>)>,
     suggestions: Option<(u64, std::sync::Arc<Vec<String>>)>,
     /// What the Add keyword box offers for the text typed in it, by library revision, the
     /// selection's keywords and that text.
@@ -2399,6 +2401,24 @@ impl Caches {
                 let t = std::sync::Arc::new(cat.people_in(&key));
                 self.people = Some((cat.revision, key, t.clone()));
                 t
+            }
+        }
+    }
+    /// The in-library faces the user ignored, as `(photo, index)` (People offers to restore them).
+    pub fn ignored_faces(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<(u64, usize)>> {
+        match &self.ignored_faces {
+            Some((r, v)) if *r == cat.revision => v.clone(),
+            _ => {
+                let v: Vec<(u64, usize)> = cat
+                    .photos()
+                    .filter(|p| p.in_library())
+                    .flat_map(|p| {
+                        p.meta.regions.iter().enumerate().filter(|(_, r)| r.kind == lcc_meta::RegionKind::IgnoredFace).map(move |(i, _)| (p.id.0, i))
+                    })
+                    .collect();
+                let v = std::sync::Arc::new(v);
+                self.ignored_faces = Some((cat.revision, v.clone()));
+                v
             }
         }
     }

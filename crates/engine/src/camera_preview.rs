@@ -47,7 +47,8 @@ use lcc_raw::{
 /// #699); a tone-only fallback for near-black scenes with too few colour pairs (upstream #1587); Sony DRO tone.
 /// 17: fitted tone curves are smoothed, and a DRO-lowered one follows Sony's curve between knots (upstream #2188).
 /// 18: ISO 50 on the ILCE-7CR fits and renders one stop darker (`vendor::arw::extended_iso_exposure`, upstream #2854).
-pub const LOOK_VERSION: u32 = 18;
+/// 19: the Canon CR3/CR2 camera JPEG read in the colour space of the Canon maker note (upstream #2664).
+pub const LOOK_VERSION: u32 = 19;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CameraLook {
@@ -1122,7 +1123,7 @@ fn proxies(
     let edge = (2 * size).max(384) as u32;
     let decoded = crate::files::decode_raw_preview(
         bytes,
-        lcc_codecs::DecodeOptions { max_size: Some((edge, edge)), max_pixels: FIT_PREVIEW_MAX_PIXELS },
+        lcc_codecs::DecodeOptions { max_size: Some((edge, edge)), max_pixels: FIT_PREVIEW_MAX_PIXELS, ..Default::default() },
         None,
     )?;
     let (a, crop) = (raw.active_area, raw.crop.clipped(raw.active_area.width, raw.active_area.height));

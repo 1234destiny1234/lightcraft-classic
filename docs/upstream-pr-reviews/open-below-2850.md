@@ -12,13 +12,13 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 
 | PR | Title | Decision | Reason | Fork PR |
 |---|---|---|---|---|
-| #2849 | LR-EXP-METADATA: refuse Originals with embedded place names | LEARN | refuse Original export with embedded place names when location removal is on: privacy fix worth porting |  |
+| #2849 | LR-EXP-METADATA: refuse Originals with embedded place names | LEARN | refuse Original export with embedded place names when location removal is on: privacy fix worth porting | fork #524 |
 | #2848 | LRC-SS-LAYOUT: the Slideshow settings page no longer moves when the slide preview finishes rendering | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2844 | GPU: black pixels take the colour tools and a light vignette as on the CPU | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2841 | Write sidecar keywords as names in dc:subject and paths in lr:hierarchicalSubject | LEARN | keywords as names in dc:subject, paths in lr:hierarchicalSubject: interop fix worth checking against the fork's sidecar writer |  |
 | #2839 | Docking: side panels in dock columns, on craft-ui's shared docking | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2838 | Lightroom import: keep compressed history-step and snapshot settings in the archive | LEARN | Lightroom catalog import keeps compressed history-step and snapshot settings |  |
-| #2835 | raw: decode lossy single-plane (grey) JPEG XL LinearRaw DNGs (Lightroom monochrome merges) | LEARN | grey lossy JPEG XL LinearRaw DNGs (Lightroom monochrome merges): fork jxl.rs diverged; worth re-implementing |  |
+| #2835 | raw: decode lossy single-plane (grey) JPEG XL LinearRaw DNGs (Lightroom monochrome merges) | LEARN | grey lossy JPEG XL LinearRaw DNGs (Lightroom monochrome merges): fork jxl.rs diverged; worth re-implementing | fork #529 |
 | #2834 | Clamp negative signals to zero in hlg_decode | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2833 | Strip trailing NULs from non-UTF-8 IPTC text | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2831 | Docs: link the lens profile gap and roadmap priority to #329 | SKIP | upstream docs/roadmap only |  |
@@ -28,7 +28,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2825 | LR-LIB-ALBUM: album commands skip photos the library lacks and record nothing when they add nothing | LEARN | album commands skip unknown photos and record nothing when no-op |  |
 | #2823 | LR-BEHAV-DRAGDROP: a right-click on a text field while photos are carried opens no menu | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2822 | LR-VID-PLAY: MP4/MOV video import and cataloguing with duration and container badges | LEARN | MP4/MOV import and cataloguing: compare with the fork's lcc-video |  |
-| #2821 | LR-META-LOCATION: reject malformed typed GPS coordinates | LEARN | reject malformed typed GPS coordinates: small engine validation worth porting |  |
+| #2821 | LR-META-LOCATION: reject malformed typed GPS coordinates | LEARN | reject malformed typed GPS coordinates: small engine validation worth porting | fork #524 |
 | #2818 | LRC-LIB-SMARTCOLL: a smart album on a loop of albums holds no photos, and says which album it loops through | LEARN | smart album on a loop of albums holds no photos: same family as #2798 | not taken: overlaps #2798 (now refused at edit time); the fork already bounds loops in damaged catalogs |
 | #2812 | PERF-CATALOG: equal develop settings are held once in memory | LEARN | equal develop settings held once in memory: catalog memory win worth measuring |  |
 | #2809 | LR-CROP-AUTO: Auto straighten reads the vertical vanishing point and the horizon | LEARN | Auto straighten from vertical vanishing point and horizon: pipeline feature worth evaluating |  |
@@ -43,9 +43,9 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2796 | docs: gap 9 — the CI gate runs the tests on Linux x64; macOS, Windows and the GPU tests still don't | SKIP | upstream docs/roadmap only |  |
 | #2789 | Grading lgg vectorscope | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2787 | LR-IMP-FORMATS: decode GoPro GPR (VC-5) | LEARN | GoPro GPR (VC-5) decoder: raw format support worth porting |  |
-| #2781 | LR-LIB-VIRTUALCOPY: prevent numbering overflow in copy batches | LEARN | virtual-copy numbering overflow: small never-crash fix, conflicts; port by hand |  |
+| #2781 | LR-LIB-VIRTUALCOPY: prevent numbering overflow in copy batches | LEARN | virtual-copy numbering overflow: small never-crash fix, conflicts; port by hand | fork #524 |
 | #2780 | security/raw: bound hostile-memory paths in the raw decoders | LEARN | raw hostile-memory bounds (SonarCloud): good findings, but conflicts with the fork's reworked tiffraw/mef/exif; port per finding later | fork #522 |
-| #2777 | LR-EDIT-OPTICS-PROFILE: Fujifilm X-S20 embedded lens corrections and spectral matrices | LEARN | Fujifilm X-S20 embedded lens corrections and spectral matrices: camera support |  |
+| #2777 | LR-EDIT-OPTICS-PROFILE: Fujifilm X-S20 embedded lens corrections and spectral matrices | LEARN | Fujifilm X-S20 embedded lens corrections and spectral matrices: camera support | fork #529 |
 | #2776 | Reject signed numeric character references in XML entity decoding | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2772 | Logging: each render request and how it ended, at debug level (#2682) | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2771 | Read Canon maker-note lens when LensModel is missing | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
@@ -74,8 +74,8 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2736 | LR-BEHAV-DRAGDROP: the message after a drop that moved, added or tagged photos has an Undo button | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2735 | LR-BEHAV-DRAGDROP: a drop's destination is named with its parent when another folder or album has the same name | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2734 | LR-BEHAV-DRAGDROP: the photos being dragged are dimmed in the grid | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
-| #2733 | LR-EDIT-OPTICS-PROFILE: Sigma 10-18 mm exception on the ILCE-6700 (stacked on #2732) | LEARN | Sigma 10-18 on ILCE-6700 (stacked on #2732) |  |
-| #2732 | LR-EDIT-OPTICS-PROFILE: Sony ILCE-6700 in-file distortion | LEARN | Sony ILCE-6700 in-file distortion: camera support |  |
+| #2733 | LR-EDIT-OPTICS-PROFILE: Sigma 10-18 mm exception on the ILCE-6700 (stacked on #2732) | LEARN | Sigma 10-18 on ILCE-6700 (stacked on #2732) | fork #529 |
+| #2732 | LR-EDIT-OPTICS-PROFILE: Sony ILCE-6700 in-file distortion | LEARN | Sony ILCE-6700 in-file distortion: camera support | already in the fork (ILCE-6700 in-file distortion) |
 | #2731 | Brush dabs: build only as far as the caller will look (#1520) | ADOPT | safety / correctness fix in engine, develop or catalog | fork #513 |
 | #2726 | LR-BEHAV-LOCALIZE: panel layout toasts, face recognition prompts and the second window title are translated | SKIP | upstream locale catalogs; the fork keeps its own overlay |  |
 | #2725 | LRC-LIB-CATALOG-LOCK: quitting on macOS removes the lock's owner note | ADOPT | safety / correctness fix in engine, develop or catalog | fork #513 |
@@ -99,7 +99,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2691 | LR-PREF-GENERAL: Esc in a Settings text box gives the text back instead of closing Settings | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2676 | LR-EDIT-OPTICS-PROFILE: preserve unknown crop factors in lens profiles | LEARN | keep unknown crop factors in lens profiles |  |
 | #2675 | LR-PROF-CAMERACOLOR: align lens-corrected camera JPEG training pairs | LEARN | align lens-corrected camera JPEG training pairs |  |
-| #2664 | raw: read Canon CR3/CR2 preview colour space from the maker note (#2654) | LEARN | CR3/CR2 preview colour space from the maker note: conflicts with the fork's camera_preview.rs; worth porting by hand |  |
+| #2664 | raw: read Canon CR3/CR2 preview colour space from the maker note (#2654) | LEARN | CR3/CR2 preview colour space from the maker note: conflicts with the fork's camera_preview.rs; worth porting by hand | fork #529 |
 | #2661 | LR-EDIT-LENSBLUR: camera-like Lens Blur with AI subject focus and per-mask bokeh | SKIP | large AI-mask stack (thousands of lines across fork-owned UI); revisit as a whole when it lands upstream |  |
 | #2660 | LR-PROF-IMPORT: export a look as a 3D LUT | LEARN | export a look as a 3D LUT: feature idea |  |
 | #2659 | LR-META-LOCATION: place names always download into the settings folder (#2575) | ADOPT | place names only download into the settings folder; geonames links removed before the fork's write-through atomic write | fork #513 |

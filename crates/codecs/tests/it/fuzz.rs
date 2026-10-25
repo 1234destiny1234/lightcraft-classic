@@ -23,13 +23,13 @@ const MAGICS: &[&[u8]] = &[
 ];
 
 fn small_opts() -> DecodeOptions {
-    DecodeOptions { max_size: None, max_pixels: 1 << 22 }
+    DecodeOptions { max_size: None, max_pixels: 1 << 22, ..Default::default() }
 }
 
 fn try_all(bytes: &[u8]) {
     if let Some(f) = sniff(bytes) {
         let _ = decode_unguarded(bytes, f, &small_opts());
-        let _ = decode_unguarded(bytes, f, &DecodeOptions { max_size: Some((8, 8)), max_pixels: 1 << 22 });
+        let _ = decode_unguarded(bytes, f, &DecodeOptions { max_size: Some((8, 8)), max_pixels: 1 << 22, ..Default::default() });
         let _ = read_header_unguarded(bytes, f);
     }
     let _ = decode(bytes, small_opts());
@@ -101,13 +101,13 @@ fn tiny_bmp(w: i32, h: i32) -> Vec<u8> {
     b
 }
 
-/// Issue #2553: the import probe had no header reader for GIF or BMP and decoded them in full, so
+/// Issue #2553 (sizes kept under the 512 MP cap, so the fill check is what refuses them): the import probe had no header reader for GIF or BMP and decoded them in full, so
 /// a tiny file declaring a canvas just under the 1-gigapixel limit allocated ~4.3 GB (an abort, not
 /// an error, when it failed). Both the probe and a decode now refuse a canvas the file's bytes
 /// can't fill, before the decoder allocates it.
 #[test]
 fn tiny_gif_and_bmp_declaring_a_gigapixel_canvas_are_refused_before_allocating() {
-    for (name, bytes) in [("gif", tiny_gif(32_767, 32_767)), ("bmp", tiny_bmp(32_000, 32_000))] {
+    for (name, bytes) in [("gif", tiny_gif(22_000, 22_000)), ("bmp", tiny_bmp(22_000, 22_000))] {
         assert!(bytes.len() < 64, "{name}: {} bytes", bytes.len());
         let header = read_header(&bytes);
         assert!(matches!(&header, Err(Error::Malformed(_, m)) if m.contains("can hold")), "{name}: {header:?}");
@@ -174,7 +174,7 @@ fn an_rle_bmp_that_ends_early_still_opens() {
 /// decoder allocates them.
 #[test]
 fn a_tiny_rle_bmp_declaring_a_gigapixel_canvas_is_refused_before_allocating() {
-    for (w, h) in [(2_001, 2_000), (32_000, 32_000)] {
+    for (w, h) in [(2_001, 2_000), (22_000, 22_000)] {
         let b = rle_bmp_ending_at_once(w, h);
         let header = read_header(&b);
         assert!(matches!(&header, Err(Error::Malformed(_, m)) if m.contains("mostly blank")), "{w} × {h}: {header:?}");
@@ -210,7 +210,7 @@ fn a_gif_with_a_small_first_frame_on_a_larger_screen_opens() {
 
 #[test]
 fn a_gif_whose_one_pixel_frame_sits_on_a_gigapixel_screen_is_refused_before_allocating() {
-    let b = gif_with_one_pixel_frame(32_767, 32_767);
+    let b = gif_with_one_pixel_frame(22_000, 22_000);
     let header = read_header(&b);
     assert!(matches!(&header, Err(Error::Malformed(_, m)) if m.contains("mostly blank")), "{header:?}");
     let decoded = decode(&b, DecodeOptions::default());
@@ -221,7 +221,7 @@ fn a_gif_whose_one_pixel_frame_sits_on_a_gigapixel_screen_is_refused_before_allo
 /// comment doesn't let it claim a gigapixel canvas: only the frame's LZW data counts.
 #[test]
 fn a_gif_padded_with_comments_still_cannot_claim_a_gigapixel_canvas() {
-    let mut bytes = tiny_gif(32_767, 32_767);
+    let mut bytes = tiny_gif(22_000, 22_000);
     let mut comment = vec![0x21, 0xFE];
     for _ in 0..400 {
         comment.push(255);

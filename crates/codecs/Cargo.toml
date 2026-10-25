@@ -59,6 +59,7 @@ lcc-testkit = { workspace = true }
 # JPEG XL tests read encoded samples without our colour conversion
 jxl-oxide = { workspace = true }
 proptest = { workspace = true }
+serde_json = { workspace = true }
 # Lossless synthetic HEIC files for the `heif` feature's tests.
 lcc-heif = { workspace = true, features = ["testdata"] }
 
