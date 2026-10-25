@@ -108,8 +108,10 @@ pub(crate) fn create_staging(tmp: &std::path::Path) -> io::Result<std::fs::File>
 }
 
 impl Store for FsStore {
+    /// Never through a link at the name (issue #2122): a `prefs.json` linked to a key file would be
+    /// read as damaged and copied into the library as `prefs.json.corrupt-…`.
     fn read(&mut self, name: &str) -> io::Result<Option<Vec<u8>>> {
-        match std::fs::read(self.path(name)) {
+        match crate::safe_file::read_no_follow(&self.path(name)) {
             Ok(b) => Ok(Some(b)),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
@@ -169,7 +171,8 @@ impl Store for FsStore {
         if self.appender.as_ref().is_none_or(|(n, _)| n != name) {
             check_regular_directory_entry(&self.path(name))?;
             let existed = self.path(name).exists();
-            let f = std::fs::OpenOptions::new().create(true).append(true).open(self.path(name))?;
+            // never appended through a link at the name: the log's records would land in its target (issue #2122)
+            let f = crate::safe_file::open_or_create(&self.path(name), std::fs::OpenOptions::new().append(true))?;
             if !existed {
                 self.sync_dir();
             }
@@ -190,8 +193,8 @@ impl Store for FsStore {
         if self.appender.as_ref().is_some_and(|(n, _)| n == name) {
             self.appender = None;
         }
-        check_regular_directory_entry(&self.path(name))?;
-        let f = match std::fs::OpenOptions::new().write(true).open(self.path(name)) {
+        // a link at the name is refused, not cut: a damaged log linked elsewhere would empty its target (issue #2122)
+        let f = match crate::safe_file::open_existing(&self.path(name), std::fs::OpenOptions::new().write(true)) {
             Ok(f) => f,
             // nothing to cut (an append that failed before creating the file)
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
