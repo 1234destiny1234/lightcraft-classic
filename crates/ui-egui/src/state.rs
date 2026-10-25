@@ -260,12 +260,31 @@ impl LoupeInfoField {
 }
 
 /// The three lines each mode of the info overlay shows: Info 1 ([`InfoOverlay::Basic`]) and
-/// Info 2 ([`InfoOverlay::Exposure`]).
+/// Info 2 ([`InfoOverlay::Exposure`]), and which of them Show Briefly When Photo Changes shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LoupeInfo {
     pub info1: [LoupeInfoField; 3],
     pub info2: [LoupeInfoField; 3],
+    /// Show Briefly When Photo Changes: while the info overlay is off, this Info shows for
+    /// [`BRIEF_INFO_SECS`] each time the loupe changes to another photo ([`InfoOverlay::Off`]:
+    /// neither).
+    pub briefly: InfoOverlay,
+}
+
+/// How long Show Briefly When Photo Changes shows the info overlay (seconds).
+pub const BRIEF_INFO_SECS: f64 = 3.0;
+
+/// When the loupe last changed photo, for Show Briefly When Photo Changes
+/// ([`LoupeInfo::briefly`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct BriefInfo {
+    /// The photo the loupe showed last.
+    pub photo: Option<lcc_catalog::PhotoId>,
+    /// When the loupe changed to it (seconds on egui's clock).
+    pub since: f64,
+    /// The brief info overlay shows this frame.
+    pub shown: bool,
 }
 
 impl LoupeInfo {
@@ -277,7 +296,7 @@ impl LoupeInfo {
 
 impl Default for LoupeInfo {
     fn default() -> Self {
-        LoupeInfo { info1: LoupeInfo::INFO1, info2: LoupeInfo::INFO2 }
+        LoupeInfo { info1: LoupeInfo::INFO1, info2: LoupeInfo::INFO2, briefly: InfoOverlay::Off }
     }
 }
 
@@ -451,6 +470,9 @@ pub struct AppSettings {
     pub wheel_scroll_speed: f32,
     /// When a brush tool is active, the mouse wheel changes its size instead of zooming.
     pub wheel_resizes_brush: bool,
+    /// View ▸ View Options ▸ Show message when loading or rendering photos: the loupe says
+    /// "Rendering…" while the photo it shows is not the finished render.
+    pub loupe_messages: bool,
     /// Shortcuts the user changed (Help ▸ Keyboard Shortcuts): command id → shortcut, `""` = none.
     pub keymap: crate::shortcuts::Keymap,
     /// The keymap set the user's changes apply over (Classic by default).
@@ -563,6 +585,7 @@ impl Default for AppSettings {
             grid_badges: GridBadges::Auto,
             wheel_scroll_speed: 1.0,
             wheel_resizes_brush: true,
+            loupe_messages: true,
             keymap: Default::default(),
             keymap_set: Default::default(),
             appearance_mode: AppearanceMode::Dark,
@@ -1235,6 +1258,9 @@ pub struct UiState {
     pub slides: crate::slideshow_ui::SlideshowState,
     /// Info overlay on the loupe.
     pub info_overlay: InfoOverlay,
+    /// When the loupe last changed photo (View Options' Show Briefly When Photo Changes).
+    #[serde(skip)]
+    pub brief_info: BriefInfo,
     /// The loupe's layout image overlay (View ▸ Loupe Overlay).
     pub layout_image: LayoutImage,
     /// Navigator mini map in the loupe while zoomed in.
@@ -1889,6 +1915,7 @@ impl Default for UiState {
             dragging_preset: None,
             dragging_preset_group: None,
             info_overlay: InfoOverlay::Off,
+            brief_info: BriefInfo::default(),
             layout_image: LayoutImage::default(),
             navigator: true,
             settings: AppSettings::default(),
@@ -2105,16 +2132,36 @@ mod loupe_info_tests {
     fn view_options_lines_are_saved_with_the_settings() {
         let mut settings = AppSettings::default();
         settings.loupe_info.info2 = [LoupeInfoField::Lens, LoupeInfoField::None, LoupeInfoField::FileName];
+        settings.loupe_info.briefly = InfoOverlay::Exposure;
         let saved = serde_json::to_value(&settings).unwrap();
         assert_eq!(saved["loupeInfo"]["info2"], serde_json::json!(["lens", "none", "fileName"]));
+        assert_eq!(saved["loupeInfo"]["briefly"], "exposure");
         let read: AppSettings = serde_json::from_value(saved).unwrap();
         assert_eq!(read.loupe_info, settings.loupe_info);
 
         let old: AppSettings = serde_json::from_value(serde_json::json!({"filmNames": false})).unwrap();
         assert_eq!(old.loupe_info, LoupeInfo::default());
+        // lines saved before Show Briefly When Photo Changes existed are kept, with it off
+        let lines: AppSettings = serde_json::from_value(serde_json::json!({"loupeInfo": {"info2": ["lens", "none", "fileName"]}})).unwrap();
+        assert_eq!(lines.loupe_info.info2, settings.loupe_info.info2);
+        assert_eq!(lines.loupe_info.briefly, InfoOverlay::Off);
         let newer: AppSettings =
             serde_json::from_value(serde_json::json!({"filmNames": false, "loupeInfo": {"info1": ["rating", "fileName", "none"]}})).unwrap();
         assert_eq!(newer.loupe_info, LoupeInfo::default());
         assert!(!newer.film_names, "the rest of the settings are still read");
+    }
+
+    /// Show message when loading or rendering photos is on until it is turned off, and is saved
+    /// with the app's settings.
+    #[test]
+    fn the_loading_message_choice_is_saved_with_the_settings() {
+        assert!(AppSettings::default().loupe_messages);
+        let old: AppSettings = serde_json::from_value(serde_json::json!({"filmNames": false})).unwrap();
+        assert!(old.loupe_messages, "a settings file from before the choice existed keeps the message");
+        let settings = AppSettings { loupe_messages: false, ..AppSettings::default() };
+        let saved = serde_json::to_value(&settings).unwrap();
+        assert_eq!(saved["loupeMessages"], false);
+        let read: AppSettings = serde_json::from_value(saved).unwrap();
+        assert!(!read.loupe_messages);
     }
 }

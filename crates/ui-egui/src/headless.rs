@@ -5527,6 +5527,54 @@ mod tests {
         assert_eq!(h.app.ui.settings.loupe_info.info2, [F::Camera, F::None, F::FileName], "a refused change changes nothing");
     }
 
+    /// View Options' Show Briefly When Photo Changes: a tick box under each Info (ticking one
+    /// unticks the other) and `view.viewOptions {briefly}`; with the overlay off, the loupe shows
+    /// the chosen Info after → changes the photo, and hides it again a few seconds later.
+    #[test]
+    fn show_briefly_when_photo_changes_in_view_options() {
+        use crate::state::{BRIEF_INFO_SECS, InfoOverlay};
+        let mut h = demo([1400.0, 1100.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view": "detail"}), t);
+        assert_eq!(h.request("ui.key", json!({"key": "j", "cmd": true}), t)["ok"], true);
+        h.step();
+        h.settle(SETTLE); // the dialog opens over a few frames
+        assert_eq!(h.request("ui.clickWidget", json!({"id": "check:viewOptions.briefly2"}), t)["ok"], true);
+        h.step();
+        assert_eq!(h.app.ui.settings.loupe_info.briefly, InfoOverlay::Exposure);
+        assert_eq!(h.request("ui.clickWidget", json!({"id": "check:viewOptions.briefly1"}), t)["ok"], true);
+        h.step();
+        assert_eq!(h.app.ui.settings.loupe_info.briefly, InfoOverlay::Basic, "one Info at most");
+        h.app.ui.dialog = None;
+        h.step();
+
+        let overlay = |h: &Headless| h.app.widgets.iter().any(|(w, _)| w == "canvas:infoOverlay");
+        assert_eq!(h.app.ui.info_overlay, InfoOverlay::Off);
+        h.time += BRIEF_INFO_SECS + 1.0;
+        h.step();
+        h.step();
+        assert!(!overlay(&h), "hidden once the time has passed");
+        let before = h.app.session.active();
+        h.request("ui.key", json!({"key": "right"}), t);
+        assert_ne!(h.app.session.active(), before);
+        h.step();
+        assert!(overlay(&h), "shown after → changes the photo");
+        h.time += BRIEF_INFO_SECS + 1.0;
+        h.step();
+        h.step();
+        assert!(!overlay(&h), "and hidden again");
+
+        let r = h.request("engine.execute", json!({"command": "view.viewOptions", "params": {"briefly": "off"}}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(r["result"]["loupeInfo"]["briefly"], "off", "{r}");
+        h.request("ui.key", json!({"key": "right"}), t);
+        h.step();
+        assert!(!overlay(&h), "off: nothing shows when the photo changes");
+        let r = h.request("engine.execute", json!({"command": "view.viewOptions", "params": {"briefly": "info3"}}), t);
+        assert_eq!(r["ok"], false, "{r}");
+        assert_eq!(h.app.ui.settings.loupe_info.briefly, InfoOverlay::Off, "a refused change changes nothing");
+    }
+
     /// A click on the image zooms to the chosen click-zoom ratio (1:1 by default), animating the
     /// loupe while rendering once at the final size; Z uses the same ratio; a second click returns to Fit.
     #[test]
@@ -5861,6 +5909,69 @@ mod tests {
         open.set(true);
         assert!(h.step_until(SETTLE, |h| !pill(h)), "gone once the render lands");
         assert!(!h.app.renderer.is_pending(Slot::Main));
+    }
+
+    /// View Options' Show message when loading or rendering photos (on by default): turned off in
+    /// the window, the loupe does not say "Rendering…" while an edit renders; `view.viewOptions
+    /// {loupeMessages}` turns it back on for an agent (refusing a value that is not true or false).
+    #[test]
+    fn view_options_turn_the_rendering_message_off() {
+        use crate::render::Slot;
+        use std::{cell::Cell, rc::Rc};
+        let pill = |h: &Headless| h.app.widgets.iter().any(|(w, _)| w == "loupe:rendering");
+        let mut h = demo([1400.0, 1100.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view": "detail", "right": "none"}), t);
+        h.settle(SETTLE);
+        assert!(h.app.ui.settings.loupe_messages, "on by default");
+        assert_eq!(h.request("ui.key", json!({"key": "j", "cmd": true}), t)["ok"], true);
+        h.settle(SETTLE); // the dialog opens over a few frames
+        assert_eq!(h.request("ui.clickWidget", json!({"id": "check:viewOptions.loupeMessages"}), t)["ok"], true);
+        h.step();
+        assert!(!h.app.ui.settings.loupe_messages, "the tick box turns it off");
+        h.app.ui.dialog = None;
+        let open = Rc::new(Cell::new(false));
+        h.app.renderer.set_offload(Box::new(super::RenderGate::new(open.clone())));
+        h.request("engine.execute", json!({"command": "develop.set", "params": {"control": "light.exposure", "value": 0.5}}), t);
+        for _ in 0..45 {
+            h.step();
+        }
+        assert!(h.app.renderer.is_pending(Slot::Main), "the edit's render is held");
+        assert!(!pill(&h), "no message while it is off");
+
+        let r = h.request("engine.execute", json!({"command": "view.viewOptions", "params": {"loupeMessages": "yes"}}), t);
+        assert_eq!(r["ok"], false, "{r}");
+        assert!(!h.app.ui.settings.loupe_messages, "a refused change changes nothing");
+        let r = h.request("engine.execute", json!({"command": "view.viewOptions", "params": {"loupeMessages": true}}), t);
+        assert_eq!(r["result"]["loupeMessages"], true, "{r}");
+        assert_eq!(h.app.ui.dialog, None, "a value sets it without opening the window");
+        assert!(h.step_until(SETTLE, pill), "the message shows again while the render is held");
+        open.set(true);
+        assert!(h.step_until(SETTLE, |h| !pill(h)), "gone once the render lands");
+    }
+
+    /// With nothing to show yet, the loupe says "Rendering…" in its middle only while View Options'
+    /// Show message when loading or rendering photos is on.
+    #[test]
+    fn an_empty_loupe_says_rendering_only_with_the_message_on() {
+        use std::{cell::Cell, rc::Rc};
+        for on in [true, false] {
+            let mut h = demo([1000.0, 700.0]);
+            let t = Duration::from_secs(10);
+            h.app.ui.settings.loupe_messages = on;
+            h.app.renderer.set_offload(Box::new(super::RenderGate::new(Rc::new(Cell::new(false)))));
+            h.request("ui.set", json!({"view": "detail", "right": "none"}), t);
+            // drop every texture (quick previews and thumbnails land outside the gate) until a
+            // frame has nothing to show
+            let empty = (0..60).any(|_| {
+                h.app.renderer.textures.clear();
+                h.step();
+                h.app.loupe_shown.map(|l| l.1) == Some("none")
+            });
+            assert!(empty, "a frame with nothing rendered");
+            let said = h.painted_text().iter().any(|text| text == "Rendering…");
+            assert_eq!(said, on, "message on: {on}");
+        }
     }
 
     /// A render that fails while the loupe shows a stand-in (the embedded JPEG, a thumbnail) left
