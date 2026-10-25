@@ -463,17 +463,6 @@ fn photo_id_arg(args: &Value) -> Result<Option<u64>, String> {
     }
 }
 
-fn temp_path(tag: &str) -> std::path::PathBuf {
-    static N: AtomicU64 = AtomicU64::new(0);
-    std::env::temp_dir().join(format!("lcc-mcp-{}-{}-{tag}.png", std::process::id(), N.fetch_add(1, Ordering::Relaxed)))
-/// Where the backend writes a render or screenshot for us to read back: `<tag>.png` in a new
-/// `lightcraft-mcp-<pid>-<random>` folder in the temp dir, private to this user on Unix (0700).
-/// Straight in a shared /tmp, other users could read the PNG, and a name they took first made the
-/// render fail (#2573). Dropping this removes the folder and whatever is in it.
-struct TempPng {
-    dir: std::path::PathBuf,
-    file: std::path::PathBuf,
-}
 
 impl TempPng {
     fn new(tag: &str) -> Result<Self, String> {
@@ -482,7 +471,7 @@ impl TempPng {
         for _ in 0..100 {
             let mut h = RandomState::new().build_hasher();
             h.write_u64(N.fetch_add(1, Ordering::Relaxed));
-            let dir = temp.join(format!("lightcraft-mcp-{}-{:016x}", std::process::id(), h.finish()));
+            let dir = temp.join(format!("lcc-mcp-{}-{:016x}", std::process::id(), h.finish()));
             #[cfg(unix)]
             let builder = {
                 use std::os::unix::fs::DirBuilderExt;

@@ -215,7 +215,7 @@ fn a_link_at_the_lock_file_is_never_created_or_locked_through() {
     let victim = dir.join("victim.txt");
     std::fs::write(&victim, b"keep").unwrap();
     symlink(&victim, dir.join(LOCK)).unwrap();
-    let l = LibraryLock::acquire(&dir, "LightCraft").unwrap();
+    let l = LibraryLock::acquire(&dir, "the app").unwrap();
     assert!(!l.held(), "locked through the link");
     assert!(std::fs::File::open(&victim).unwrap().try_lock().is_ok(), "the link's target is locked");
     drop(l);
@@ -224,7 +224,7 @@ fn a_link_at_the_lock_file_is_never_created_or_locked_through() {
     let dangling = temp_dir("lock-dangling");
     let target = dangling.join("made-through-link");
     symlink(&target, dangling.join(LOCK)).unwrap();
-    assert!(!LibraryLock::acquire(&dangling, "LightCraft").unwrap().held());
+    assert!(!LibraryLock::acquire(&dangling, "the app").unwrap().held());
     assert!(!target.exists(), "a dangling link's target was created");
     for d in [&dir, &dangling] {
         let _ = std::fs::remove_dir_all(d);

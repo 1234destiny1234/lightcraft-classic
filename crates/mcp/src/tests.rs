@@ -586,7 +586,7 @@ impl Backend for PngWriter {
         let path = std::path::PathBuf::from(params["path"].as_str().unwrap());
         self.seen.push((path.clone(), path.parent().and_then(|d| std::fs::symlink_metadata(d).ok())));
         if self.dies_mid_write {
-            std::fs::write(path.with_file_name(".lightcraft-mcp-test.tmp"), b"half a png").unwrap();
+            std::fs::write(path.with_file_name(".lcc-mcp-test.tmp"), b"half a png").unwrap();
             return Err("connection closed".into());
         }
         crate::write_image(&path, &lcc_raster::Rgba8::new(1, 1), 92)?;
@@ -623,7 +623,7 @@ fn render_and_screenshot_pngs_go_through_a_private_folder() {
         assert!(meta.is_dir() && !meta.file_type().is_symlink(), "{}", dir.display());
         assert_ne!(dir, temp, "{} is right in the shared temp dir", file.display());
         assert_eq!(dir.parent(), Some(temp.as_path()), "{}", file.display());
-        assert!(dir.file_name().unwrap().to_string_lossy().starts_with("lightcraft-mcp-"), "{}", dir.display());
+        assert!(dir.file_name().unwrap().to_string_lossy().starts_with("lcc-mcp-"), "{}", dir.display());
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
