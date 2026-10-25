@@ -348,7 +348,7 @@ fn dont_ask_again_moves_the_next_drop_at_once() {
 fn dont_ask_again_is_kept_only_when_the_move_began() {
     let (root, trip, home) = folders("dont-ask-refused");
     let mut h = app(&[(trip.join("beach.png"), false), (home.join("garden.png"), false)]);
-    click(&mut h, &format!("libraryFolderToggle:{}", folder_key(&root)));
+    click(&mut h, &format!("libraryFolderToggle:{}", root.display()));
     let target = folder_row(&h, &home).unwrap();
     let beach = id_of(&h, "beach.png");
     // a file of that name is in the folder already (not in the library): the move is refused
@@ -369,7 +369,7 @@ fn dont_ask_again_is_kept_only_when_the_move_began() {
 fn dont_ask_again_is_kept_only_when_a_photo_moved() {
     let (root, trip, home) = folders("dont-ask-already");
     let mut h = app(&[(trip.join("beach.png"), false), (home.join("garden.png"), false)]);
-    click(&mut h, &format!("libraryFolderToggle:{}", folder_key(&root)));
+    click(&mut h, &format!("libraryFolderToggle:{}", root.display()));
     let target = folder_row(&h, &home).unwrap();
     let beach = id_of(&h, "beach.png");
     drop_beach(&mut h, beach, target);

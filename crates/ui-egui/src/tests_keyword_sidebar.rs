@@ -74,8 +74,9 @@ fn a_keyword_with_line_breaks_is_drawn_on_one_line() {
     s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     let app = LccApp::new(s, Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
-    let r = h.request("ui.set", json!({"view": "photoGrid", "leftPanel": true}), T);
+    let r = h.request("ui.set", json!({"view": "detail", "right": "edit", "leftPanel": true}), T);
     assert_eq!(r["ok"], true, "{r}");
+    crate::tests_panels::my_photos_only(&mut h);
     h.settle(SETTLE);
     let solo = h.app.widgets.iter().find(|(w, _)| w == "label:keyword:Solo").map(|(_, r)| *r).expect("the Solo row");
     let long = h.app.widgets.iter().find(|(w, _)| w.starts_with("label:keyword:Wedding Keyword 00")).map(|(_, r)| *r).expect("the long row");
