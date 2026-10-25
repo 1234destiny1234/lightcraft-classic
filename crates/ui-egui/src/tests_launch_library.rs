@@ -140,7 +140,16 @@ fn snapshot(dir: &Path) -> std::collections::BTreeMap<PathBuf, (Vec<u8>, std::ti
             if m.is_dir() {
                 todo.push(p.clone());
             }
-            let bytes = if m.is_file() { std::fs::read(&p).unwrap() } else { Vec::new() };
+            // A held library's lock file is byte-range locked (`LockFileEx` on Windows), and reading
+            // a locked range fails there: compare its length (plus the mtime below) instead.
+            let locked = p.file_name().is_some_and(|n| n == lcc_catalog::lock::LOCK);
+            let bytes = if !m.is_file() {
+                Vec::new()
+            } else if locked {
+                m.len().to_le_bytes().to_vec()
+            } else {
+                std::fs::read(&p).unwrap()
+            };
             out.insert(p.strip_prefix(dir).unwrap().to_path_buf(), (bytes, m.modified().unwrap()));
         }
     }
