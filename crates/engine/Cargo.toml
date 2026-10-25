@@ -109,6 +109,8 @@ ed25519-dalek = { workspace = true }
 base64 = { workspace = true }
 # Lossless synthetic HEIC files (the import test; decoded when the codecs' `heif` feature is on).
 lcc-heif = { workspace = true, features = ["testdata"] }
+# Synthetic VC-5 streams (the GoPro GPR import test).
+lcc-raw = { workspace = true, features = ["testdata"] }
 libc = { workspace = true }
 lcc-tiff = { workspace = true }
 wat = "1.228" # P4.3: plug-in test modules
