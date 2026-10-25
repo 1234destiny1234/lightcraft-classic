@@ -1,17 +1,336 @@
-//! A folder dragged from the file manager onto the window imports the way File ▸ Import from
-//! Folder… does: the folder is scanned (its subfolders too) and the import review opens; its
-//! activity row finishes. Dropped photo files are added straight away, as before.
+//! Files dragged from the file manager onto the window: while they hover, the window says what
+//! dropping will do; dropped photo files are added at once and a dropped folder opens the import
+//! review; a drop while a dialog is open, or while an import runs, is refused.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
+use serde_json::json;
+
 use crate::headless::Headless;
+use crate::state::Dialog;
 use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
+const SETTLE: Duration = Duration::from_secs(120);
+
+/// A scratch folder that goes away with the test, however it ends.
+struct Scratch(std::path::PathBuf);
+
+impl Scratch {
+    fn new(tag: &str) -> Scratch {
+        let dir = std::env::temp_dir().join(format!("lc-ui-drop-import-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Scratch(dir)
+    }
+    fn path(&self, rel: &str) -> String {
+        self.0.join(rel).to_string_lossy().to_string()
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn write_png(path: &str, seed: u8) {
+    let (w, h) = (24usize, 16usize);
+    let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 9) as u8, (i / w * 13) as u8, seed, 255]).collect();
+    let img = lcc_raster::Rgba8 { width: w, height: h, data };
+    let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
+    std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
+    std::fs::write(path, bytes).unwrap();
+}
+
+/// An empty library, a folder `trip` with two photos, a window big enough for the overlay.
+fn app(dir: &Scratch) -> Headless {
+    write_png(&dir.path("trip/a.png"), 1);
+    write_png(&dir.path("trip/b.png"), 2);
+    let session = lcc_engine::Session::new().with_fs();
+    let mut h = Headless::new(LccApp::new(session, Services { png: None, ..Default::default() }), [1300.0, 900.0], 1.0);
+    for _ in 0..4 {
+        h.step();
+    }
+    h
+}
+
+fn drop_files(h: &mut Headless, paths: &[String], hover: bool) {
+    let r = h.request("ui.dropFiles", json!({"paths": paths, "hover": hover}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    for _ in 0..3 {
+        h.step();
+    }
+}
+
+fn overlay(h: &Headless) -> bool {
+    h.app.widgets.iter().any(|(w, _)| w == "dropOverlay")
+}
+
+fn said(h: &Headless, word: &str) -> bool {
+    h.painted_text().iter().any(|t| t.contains(word))
+}
+
+fn photos(h: &Headless) -> usize {
+    h.app.session.catalog.photos().count()
+}
+
+#[test]
+fn hovering_says_photos_are_imported_and_a_folder_reviewed_and_lets_go_when_they_leave() {
+    let dir = Scratch::new("hover");
+    let mut h = app(&dir);
+    assert!(!overlay(&h), "nothing is dragged over the window");
+    drop_files(&mut h, &[dir.path("trip/a.png"), dir.path("trip/b.png")], true);
+    assert!(overlay(&h), "the window shows where to drop");
+    assert!(said(&h, "import 2 items"), "{:?}", h.painted_text());
+    drop_files(&mut h, &[dir.path("trip")], true);
+    assert!(said(&h, "review 1 item"), "a folder is reviewed: {:?}", h.painted_text());
+    drop_files(&mut h, &[], true);
+    assert!(!overlay(&h), "the files left the window");
+}
+
+#[test]
+fn hovering_presets_says_they_will_be_imported_as_presets() {
+    let dir = Scratch::new("hover-presets");
+    let mut h = app(&dir);
+    std::fs::write(dir.path("warm.lcpreset"), "{}").unwrap();
+    drop_files(&mut h, &[dir.path("warm.lcpreset")], true);
+    assert!(overlay(&h));
+    assert!(said(&h, "1 preset"), "{:?}", h.painted_text());
+    assert!(!said(&h, "review"), "presets are not reviewed");
+}
+
+#[test]
+fn hovering_unknown_files_says_only_that_dropping_imports() {
+    let dir = Scratch::new("hover-unknown");
+    let mut h = app(&dir);
+    drop_files(&mut h, &[String::new()], true);
+    assert!(overlay(&h));
+    assert!(said(&h, "Drop to import"), "{:?}", h.painted_text());
+}
+
+#[test]
+fn dropping_a_folder_opens_the_import_review_and_imports_nothing_yet() {
+    let dir = Scratch::new("review");
+    let mut h = app(&dir);
+    drop_files(&mut h, &[dir.path("trip")], false);
+    assert!(h.step_until(SETTLE, |h| matches!(h.app.ui.dialog, Some(Dialog::Import { .. }))), "the review opens");
+    let Some(Dialog::Import { opts }) = &h.app.ui.dialog else { panic!("no import review") };
+    assert_eq!(opts.candidates.len(), 2);
+    assert_eq!(photos(&h), 0, "nothing is imported until the review is confirmed");
+    assert!(!overlay(&h), "the files were let go");
+}
+
+#[test]
+fn dropped_photo_files_are_imported_at_once() {
+    let dir = Scratch::new("direct");
+    let mut h = app(&dir);
+    drop_files(&mut h, &[dir.path("trip/a.png"), dir.path("trip/b.png")], false);
+    assert!(h.step_until(SETTLE, |h| photos(h) == 2 && h.app.import.is_none()), "both photos arrive");
+    assert!(h.app.ui.dialog.is_none(), "no review");
+}
+
+#[test]
+fn a_drop_while_a_dialog_is_open_leaves_the_dialog_and_imports_nothing() {
+    let dir = Scratch::new("dialog");
+    let mut h = app(&dir);
+    h.app.ui.dialog = Some(Dialog::WhatsNew);
+    drop_files(&mut h, &[dir.path("trip/a.png")], true);
+    assert!(overlay(&h), "the window still answers the hover");
+    assert!(said(&h, "Close the open dialog"), "{:?}", h.painted_text());
+    drop_files(&mut h, &[dir.path("trip")], false);
+    for _ in 0..30 {
+        h.step();
+    }
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::WhatsNew)), "the open dialog stays");
+    assert!(h.app.scan.is_none() && h.app.import.is_none(), "no scan or import started");
+    assert_eq!(photos(&h), 0);
+    assert!(h.app.ui.toast.is_some(), "the person is told why");
+}
+
+/// The scan of a dropped folder finishing while another dialog is open (the face model's licence, Settings…)
+/// keeps that dialog; the review opens, with the scan's photos, once it is closed.
+#[test]
+fn a_finished_scan_waits_for_the_open_dialog_before_opening_the_review() {
+    let dir = Scratch::new("waits");
+    let mut h = app(&dir);
+    crate::import::open(&mut h.app, vec![dir.path("trip")]).unwrap();
+    h.app.ui.dialog = Some(Dialog::WhatsNew);
+    assert!(h.step_until(SETTLE, |h| h.app.scan.is_none()), "the scan ends");
+    for _ in 0..10 {
+        h.step();
+    }
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::WhatsNew)), "the dialog the person had open stays");
+    h.app.ui.dialog = None;
+    assert!(h.step_until(T, |h| matches!(h.app.ui.dialog, Some(Dialog::Import { .. }))), "the review opens once the dialog is closed");
+    let Some(Dialog::Import { opts }) = &h.app.ui.dialog else { panic!("no import review") };
+    assert_eq!(opts.candidates.len(), 2, "the scan's photos were kept");
+}
+
+/// A scan that finishes behind Settings, which then opens another library: the review of the first
+/// library's scan doesn't open over the second one once Settings closes, and nothing is imported into it.
+#[test]
+fn a_waiting_review_is_dropped_when_another_library_opens() {
+    let dir = Scratch::new("switch");
+    let mut h = app(&dir);
+    crate::import::open(&mut h.app, vec![dir.path("trip")]).unwrap();
+    h.app.ui.dialog = Some(Dialog::Settings { tab: "general".into() });
+    assert!(h.step_until(SETTLE, |h| h.app.scan.is_none()), "the scan ends");
+    h.step();
+    let stale = h.app.review_pending.clone().expect("the review waits behind Settings");
+    h.app.run("app.openLibrary", json!({"path": dir.path("other")})).unwrap();
+    h.app.ui.dialog = None;
+    for _ in 0..10 {
+        h.step();
+    }
+    assert!(h.app.ui.dialog.is_none(), "no review from the other library opens");
+    assert!(h.app.review_pending.is_none());
+    // a review confirmed after the switch (an agent holding it) imports nothing either
+    assert!(crate::panels::dialogs::confirm_dialog(&mut h.app, &stale).is_err());
+    for _ in 0..10 {
+        h.step();
+    }
+    assert!(h.app.import.is_none(), "nothing is imported");
+    assert_eq!(photos(&h), 0);
+}
+
+/// A review waiting behind another dialog counts as an import in progress: a direct drop meanwhile is
+/// refused, and the review's OK never replaces an import that runs when it is confirmed.
+#[test]
+fn a_waiting_review_never_replaces_a_running_import() {
+    let dir = Scratch::new("pending-running");
+    let mut h = app(&dir);
+    write_png(&dir.path("more/c.png"), 3);
+    crate::import::open(&mut h.app, vec![dir.path("trip")]).unwrap();
+    h.app.ui.dialog = Some(Dialog::WhatsNew);
+    assert!(h.step_until(SETTLE, |h| h.app.scan.is_none()), "the scan ends");
+    h.step();
+    assert!(h.app.review_pending.is_some(), "the review waits behind the dialog");
+    assert!(crate::import::start_paths(&mut h.app, vec![dir.path("more")]).is_err(), "no second import starts");
+    assert!(h.app.import.is_none());
+    h.app.ui.dialog = None;
+    h.step();
+    let Some(review) = h.app.ui.dialog.clone() else { panic!("the review opens once the dialog is closed") };
+    assert!(matches!(review, Dialog::Import { .. }));
+    // an import that started anyway (a Local folder browse, say) is the one that runs
+    h.app.import = Some(crate::import::ImportTask::new(vec![dir.path("more")], json!({"mode": "add"}), 0, false));
+    assert!(crate::panels::dialogs::confirm_dialog(&mut h.app, &review).is_err(), "the review's OK is refused");
+    assert_eq!(h.app.import.as_ref().map(|t| t.total), Some(1), "the running import stays");
+    assert!(h.step_until(SETTLE, |h| h.app.import.is_none()), "it runs to the end");
+    assert_eq!(photos(&h), 1, "only the running import's photo arrives");
+}
+
+/// A drop while an import runs would open a review whose OK replaces the running import: it is
+/// refused instead, and the card says so.
+#[test]
+fn a_drop_while_an_import_runs_is_refused() {
+    let dir = Scratch::new("running");
+    let mut h = app(&dir);
+    write_png(&dir.path("more/c.png"), 3);
+    let _scan = crate::import::stall_scan(&mut h.app);
+    drop_files(&mut h, &[dir.path("more/c.png")], true);
+    assert!(said(&h, "An import is running"), "{:?}", h.painted_text());
+    assert!(!said(&h, "review"), "{:?}", h.painted_text());
+    drop_files(&mut h, &[dir.path("more")], false);
+    for _ in 0..30 {
+        h.step();
+    }
+    assert!(h.app.ui.dialog.is_none(), "no review opened");
+    assert!(h.app.scan.is_some() && h.app.import.is_none(), "the running scan was left alone and nothing else started");
+    assert!(h.app.ui.toast.is_some(), "the person is told why");
+    assert_eq!(photos(&h), 0);
+}
+
+/// An import that is running stays the one that runs: a direct drop doesn't start a second.
+#[test]
+fn dropped_photo_files_while_an_import_runs_are_refused_too() {
+    let dir = Scratch::new("running-direct");
+    let mut h = app(&dir);
+    write_png(&dir.path("more/c.png"), 3);
+    let _scan = crate::import::stall_scan(&mut h.app);
+    drop_files(&mut h, &[dir.path("more/c.png")], false);
+    assert!(h.app.import.is_none(), "no second import");
+    assert!(h.app.ui.toast.is_some());
+}
+
+/// A Local folder browse scan counts too: a review-first drop would be rejected by `open`, and a
+/// direct drop would be replaced when the browse completes.
+#[test]
+fn a_drop_while_a_browse_scan_runs_is_refused_for_files_and_folders() {
+    for direct in [false, true] {
+        let dir = Scratch::new("running-browse");
+        let mut h = app(&dir);
+        write_png(&dir.path("more/c.png"), 3);
+        let _scan = crate::import::stall_scan_of(&mut h.app, true);
+        drop_files(&mut h, &[dir.path("more/c.png")], true);
+        assert!(said(&h, "An import is running"), "{:?}", h.painted_text());
+        let dropped = if direct { dir.path("more/c.png") } else { dir.path("more") };
+        drop_files(&mut h, &[dropped], false);
+        for _ in 0..30 {
+            h.step();
+        }
+        assert!(h.app.ui.dialog.is_none() && h.app.import.is_none(), "direct={direct}: nothing started");
+        assert!(h.app.scan.is_some(), "the browse was left alone");
+        assert!(h.app.ui.toast.is_some(), "the person is told why");
+    }
+}
+
+/// While a Lightroom catalog import is pending the drop is refused, and the card says so instead of
+/// promising a review.
+#[test]
+fn hovering_photos_while_a_lightroom_import_is_pending_says_they_will_be_refused() {
+    let dir = Scratch::new("lightroom");
+    let mut h = app(&dir);
+    let _task = crate::lightroom_import::stall_import(&mut h.app);
+    drop_files(&mut h, &[dir.path("trip")], true);
+    assert!(said(&h, "Finish Lightroom catalog import"), "{:?}", h.painted_text());
+    assert!(!said(&h, "review"), "{:?}", h.painted_text());
+    drop_files(&mut h, &[dir.path("trip")], false);
+    assert!(h.app.ui.dialog.is_none(), "no review opened");
+    assert!(h.app.ui.toast.is_some(), "the person is told why");
+    assert_eq!(photos(&h), 0);
+}
+
+/// A script is not told `ok` for the part of a `paths` list that was strings.
+#[test]
+fn drop_files_with_a_non_string_path_is_rejected_and_drops_nothing() {
+    let dir = Scratch::new("badpaths");
+    let mut h = app(&dir);
+    let r = h.request("ui.dropFiles", json!({"paths": [dir.path("trip"), 7]}), T);
+    assert_eq!(r["ok"], false, "{r}");
+    for _ in 0..30 {
+        h.step();
+    }
+    assert!(h.app.ui.dialog.is_none(), "nothing was dropped");
+    assert_eq!(photos(&h), 0);
+}
+
+/// No library open yet (the window of a library that failed to open, or the launch list): the
+/// card says the photos wait, and a drop keeps them for the library chosen instead of importing
+/// them into the session that library replaces.
+#[test]
+fn photos_dropped_with_no_library_open_wait_for_one() {
+    let dir = Scratch::new("no-library");
+    let mut h = app(&dir);
+    h.app.library_problem = Some(crate::panels::library_problem::LibraryProblem::new(dir.path("Gone"), "not found"));
+    std::fs::write(dir.path("warm.lcpreset"), "{}").unwrap();
+    drop_files(&mut h, &[dir.path("trip/a.png"), dir.path("warm.lcpreset")], true);
+    assert!(said(&h, "once a library is open"), "{:?}", h.painted_text());
+    assert!(said(&h, "drop the presets again") && !said(&h, "1 preset"), "{:?}", h.painted_text());
+    drop_files(&mut h, &[], true);
+    drop_files(&mut h, &[dir.path("trip/a.png"), dir.path("trip/b.png")], false);
+    assert_eq!(h.app.library_problem.as_ref().map(|p| p.pending_import.len()), Some(2));
+    assert!(h.app.ui.dialog.is_none() && h.app.import.is_none(), "no review, no import into the temporary session");
+    assert_eq!(photos(&h), 0);
+    // a preset belongs to a library: refused, not imported into the session the library replaces
+    h.app.ui.toast = None;
+    drop_files(&mut h, &[dir.path("warm.lcpreset")], false);
+    let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+    assert!(toast.contains("drop the presets again"), "{toast}");
+}
 
 /// A fresh temporary folder `tag` with a photo in it and one in a subfolder.
-fn folder(tag: &str) -> PathBuf {
+fn nested_folder(tag: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("lc-drop-import-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let sub = root.join("day 2");
@@ -25,7 +344,7 @@ fn folder(tag: &str) -> PathBuf {
     root
 }
 
-fn app() -> Headless {
+fn fs_app() -> Headless {
     let session = lcc_engine::Session::new().with_fs();
     let mut h = Headless::new(LccApp::new(session, Services { png: None, ..Default::default() }), [1200.0, 900.0], 1.0);
     h.settle(T);
@@ -33,7 +352,7 @@ fn app() -> Headless {
 }
 
 /// Run frames (without other input, as a window left alone) until `done` or the timeout.
-fn wait(h: &mut Headless, mut done: impl FnMut(&Headless) -> bool) -> bool {
+fn wait_for(h: &mut Headless, mut done: impl FnMut(&Headless) -> bool) -> bool {
     let t0 = std::time::Instant::now();
     while t0.elapsed() < T {
         h.step();
@@ -46,11 +365,11 @@ fn wait(h: &mut Headless, mut done: impl FnMut(&Headless) -> bool) -> bool {
 }
 
 #[test]
-fn a_dropped_folder_opens_the_import_review_like_add_folder() {
-    let dir = folder("review");
-    let mut h = app();
+fn a_dropped_folder_and_its_subfolders_are_scanned_into_the_review() {
+    let dir = nested_folder("review");
+    let mut h = fs_app();
     h.dropped.push(dir.clone());
-    let opened = wait(&mut h, |h| matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. })));
+    let opened = wait_for(&mut h, |h| matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. })));
     assert!(opened, "no import review after the drop: {:?}", h.app.ui.dialog);
     let Some(crate::state::Dialog::Import { opts }) = &h.app.ui.dialog else { panic!("no import review") };
     assert_eq!(opts.candidates.len(), 2, "both files, the subfolder's too");
@@ -59,31 +378,21 @@ fn a_dropped_folder_opens_the_import_review_like_add_folder() {
     // confirming the review adds the photos and the import's row finishes too
     let r = h.request("ui.dialog.confirm", serde_json::json!({}), T);
     assert_eq!(r["ok"], true, "{r}");
-    assert!(wait(&mut h, |h| h.app.import.is_none() && h.app.session.catalog.photos().count() == 2), "the import finished");
-    assert!(h.app.session.activity.list().is_empty(), "no row left behind: {:?}", h.app.session.activity.list());
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn dropped_photo_files_are_added_and_the_row_finishes() {
-    let dir = folder("files");
-    let mut h = app();
-    h.dropped.push(dir.join("a.png"));
-    assert!(wait(&mut h, |h| h.app.import.is_none() && h.app.session.catalog.photos().count() == 1), "the dropped photo was added");
+    assert!(wait_for(&mut h, |h| h.app.import.is_none() && h.app.session.catalog.photos().count() == 2), "the import finished");
     assert!(h.app.session.activity.list().is_empty(), "no row left behind: {:?}", h.app.session.activity.list());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn a_dropped_folder_that_vanished_says_so_and_leaves_nothing_running() {
-    let dir = folder("gone").join("missing");
-    let mut h = app();
+    let dir = nested_folder("gone").join("missing");
+    let mut h = fs_app();
     h.dropped.push(dir);
     for _ in 0..30 {
         h.step();
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert!(wait(&mut h, |h| h.app.scan.is_none() && h.app.import.is_none()), "nothing stays running");
+    assert!(wait_for(&mut h, |h| h.app.scan.is_none() && h.app.import.is_none()), "nothing stays running");
     assert!(h.app.session.activity.list().is_empty(), "no row left behind: {:?}", h.app.session.activity.list());
     assert!(h.app.ui.toast.is_some(), "the failure is shown");
 }

@@ -140,6 +140,22 @@ fn unsupported_wasm() -> Result<Value, String> {
     Err("Lightroom catalog import is unavailable in browser builds; open the catalog in the native app".into())
 }
 
+/// Tests: a catalog import that never ends while the returned value lives, so a drop meets it pending.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub(crate) fn stall_import(app: &mut LccApp) -> Box<dyn std::any::Any> {
+    let (tx, rx) = mpsc::channel::<Message>();
+    let task = LightroomTask::new(
+        &app.session,
+        Kind::Import,
+        PathBuf::from("catalog.lrcat"),
+        Arc::new(AtomicBool::new(false)),
+        LightroomProgress::default(),
+        rx,
+    );
+    app.lightroom = Some(task);
+    Box::new(tx)
+}
+
 /// Whether a Lightroom task currently owns the catalog transition.
 pub fn is_running(app: &LccApp) -> bool {
     app.lightroom.is_some()

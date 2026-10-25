@@ -26,12 +26,14 @@ pub mod credits;
 pub mod date_picker;
 pub mod dialog_frame;
 pub mod docking;
+mod drop_overlay;
 mod edit_in;
 mod enhance_pump;
 pub mod enhance_ui;
 pub mod export_task;
 mod focus_scan;
 pub mod folder_poll;
+mod frame_rate;
 pub mod headless;
 pub mod help_overlay;
 pub mod i18n;
@@ -41,6 +43,7 @@ pub mod import;
 pub mod import_report;
 mod import_screen;
 pub mod libtools;
+pub mod lightroom_destination;
 pub mod lightroom_import;
 pub mod links;
 pub mod map;
@@ -61,6 +64,8 @@ pub mod pick;
 pub mod plate;
 pub mod print_ui;
 pub mod print_view;
+pub mod progress;
+pub mod rating;
 pub mod recheck;
 pub mod region;
 pub mod reload;
@@ -114,6 +119,10 @@ mod tests_camera_colour;
 #[cfg(test)]
 mod tests_canvas_keys;
 #[cfg(test)]
+mod tests_canvas_pan;
+#[cfg(test)]
+mod tests_capture_time;
+#[cfg(test)]
 mod tests_catalog_ui;
 #[cfg(test)]
 mod tests_classic;
@@ -143,6 +152,8 @@ mod tests_develop_panels;
 mod tests_dialog_fit;
 #[cfg(test)]
 mod tests_dialog_frame;
+#[cfg(test)]
+mod tests_dialog_settings;
 #[cfg(test)]
 mod tests_dialog_tab;
 #[cfg(test)]
@@ -206,6 +217,8 @@ mod tests_keywording;
 #[cfg(test)]
 mod tests_labels;
 #[cfg(test)]
+mod tests_launch_library;
+#[cfg(test)]
 mod tests_layout_image;
 #[cfg(test)]
 mod tests_lens_db;
@@ -215,6 +228,8 @@ mod tests_library_grid;
 mod tests_library_problem;
 #[cfg(test)]
 mod tests_libtools;
+#[cfg(test)]
+mod tests_lightroom_destination;
 #[cfg(test)]
 mod tests_mask_effects;
 #[cfg(test)]
@@ -248,7 +263,11 @@ mod tests_profile_menu;
 #[cfg(test)]
 mod tests_profiles_layout;
 #[cfg(test)]
+mod tests_progress;
+#[cfg(test)]
 mod tests_quit_unsaved;
+#[cfg(test)]
+mod tests_rating;
 #[cfg(test)]
 mod tests_recheck;
 #[cfg(test)]
@@ -564,6 +583,11 @@ pub struct LccApp {
     headless_screenshotting: bool,
     /// Synthetic input events (from the control channel) injected one step per frame.
     pub synthetic: Vec<egui::Event>,
+    /// Files the control channel (`ui.dropFiles`) holds over the window: every frame reports them
+    /// as hovered, as the OS does while a drag is over the window.
+    drop_hover: Vec<String>,
+    /// Files the control channel dropped: delivered as `dropped_files` on the next frame.
+    drop_pending: Vec<String>,
     /// The text the UI last put on the clipboard (`ui.inspect` → `copied`).
     pub copied: Option<String>,
     /// Native file dialogs up for commands (`pick`): each command runs again when its closes.
@@ -651,6 +675,8 @@ pub struct LccApp {
     pub catalog_ui: catalog_ui::CatalogUi,
     /// A completed import result waiting for another modal dialog to close.
     pub(crate) lightroom_result: Option<state::Dialog>,
+    /// The import review of a finished scan, waiting for another dialog to close.
+    pub(crate) review_pending: Option<state::Dialog>,
     /// The library generation the window title and the recent list were last updated for.
     pub shown_library: Option<u64>,
     /// A background export in progress.
@@ -710,6 +736,12 @@ pub struct LccApp {
     pub peer_sync: panels::peer_sync::PeerSyncUi,
     /// The Print module's settings and job state.
     pub print: print_ui::PrintUi,
+    /// Alt/Option held as the window first appears offers the recent libraries once (issue
+    /// #1290); the desktop host arms it when nothing chose the library already.
+    pub alt_asks_for_library: bool,
+    /// Whether each recent library can be opened, answered by a worker (issue #1290): the launch
+    /// list and File ▸ Open Recent Library never look at a folder on the UI thread.
+    pub recent_checks: panels::library_problem::RecentChecks,
     /// The activity stack shows every task, not just the first few ("+N more" was clicked).
     pub activity_expanded: bool,
     /// The Map module's view state (P3.3).
@@ -765,6 +797,8 @@ impl LccApp {
             shadow: None,
             headless_screenshotting: false,
             synthetic: vec![],
+            drop_hover: vec![],
+            drop_pending: vec![],
             copied: None,
             pending_picks: vec![],
             pending_camera_roll: None,
@@ -808,6 +842,7 @@ impl LccApp {
             lightroom_last: None,
             catalog_ui: Default::default(),
             lightroom_result: None,
+            review_pending: None,
             shown_library: None,
             export: None,
             render_dng: None,
@@ -831,6 +866,8 @@ impl LccApp {
             screen_profile: None,
             screen_profile_read: None,
             library_problem: None,
+            alt_asks_for_library: false,
+            recent_checks: Default::default(),
             activity_expanded: false,
             model_setup: Default::default(),
         }
@@ -938,7 +975,7 @@ impl LccApp {
             // be invisible once the activity stack is gone. Never show success on error.
             let completed = match id {
                 "library.compact" => Some(format!("✓ {}", i18n::tr("Optimize Library"))),
-                "library.clearPreviews" => Some(format!("✓ {}", i18n::tr("Clear Preview Cache"))),
+                "library.clearPreviews" => Some(format!("✓ {}", i18n::tr("Discard Preview Cache"))),
                 "develop.autoSync" => Some(format!("{}: {}", i18n::tr("Auto Sync"), i18n::tr(if self.session.auto_sync { "On" } else { "Off" }))),
                 _ => None,
             };
@@ -1393,7 +1430,7 @@ impl LccApp {
         i18n::set_language(self.ui.language);
         widgets::sync_section_folds(ctx, &mut self.ui.section_open);
         let t0 = now_ms();
-        panels::library_problem::logic(self);
+        panels::library_problem::logic(self, ctx);
         // the display can switch between SDR and HDR (OS setting, another monitor) at any time
         if let Some(h) = self.services.hdr_output.as_mut() {
             self.hdr_headroom = h.headroom();
@@ -1583,27 +1620,45 @@ impl LccApp {
             shortcuts::handle(self, ctx);
         }
         #[cfg(not(target_arch = "wasm32"))]
+        self.handle_dropped_files(ctx);
+    }
+
+    /// Files dropped on the window: face models open their licence dialog, presets import as
+    /// presets, photos and folders go to the import review (or straight in, Settings ▸ Import).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        let dropped: Vec<String> =
+            ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_string_lossy().to_string()).filter(|p| !p.is_empty()).collect());
+        if dropped.is_empty() {
+            return;
+        }
+        // a dialog is on screen: the review would replace it, losing what it holds
+        if self.ui.dialog.is_some() {
+            self.toast(ctx, crate::i18n::tr("Close the open dialog, then drop the files again"));
+            return;
+        }
+        let drop = drop_overlay::classify(dropped);
+        if let Some(model) = drop.models.first()
+            && let Err(e) = panels::faces::open_dialog(self, model)
         {
-            let dropped: Vec<String> =
-                ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_string_lossy().to_string()).filter(|p| !p.is_empty()).collect());
-            // preset files import as presets, everything else as photos
-            // a dropped face model opens its licence dialog; presets and photos as before
-            let (models, dropped): (Vec<String>, Vec<String>) = dropped.into_iter().partition(|p| is_model_file(p));
-            if let Some(model) = models.first()
-                && let Err(e) = panels::faces::open_dialog(self, model)
-            {
-                self.toast(ctx, e);
-            }
-            let (presets, photos) = split_presets(dropped);
-            if !presets.is_empty() {
-                let _ = self.run("file.importPresets", serde_json::json!({"paths": presets}));
-            }
-            // a folder goes through File ▸ Import from Folder…'s scan and review; photo files are
-            // added on a worker thread
-            if !photos.is_empty() {
-                import::drop_paths(self, ctx, photos);
+            self.toast(ctx, e);
+        }
+        if !drop.presets.is_empty() {
+            // presets live in a library: with none open they would go with the session it replaces
+            if panels::library_problem::holds_drops(self) {
+                self.toast(ctx, crate::i18n::tr("Open a library first, then drop the presets again"));
+            } else {
+                let _ = self.run("file.importPresets", serde_json::json!({"paths": drop.presets}));
             }
         }
+        if drop.photos.is_empty() {
+            return;
+        }
+        // no library open yet (the launch list, a library that failed to open): they wait for one
+        let Some(photos) = panels::library_problem::hold_dropped(self, ctx, drop.photos) else { return };
+        // the import review (File ▸ Import from Folder…'s scan, then the review), or straight in
+        // on a worker thread (Settings ▸ Import)
+        import::drop_paths(self, ctx, photos);
     }
 
     /// Apply settings that act outside the UI state: GPU rendering and window full screen.
@@ -1724,6 +1779,16 @@ impl LccApp {
             self.synthetic_mods = egui::Modifiers::NONE;
             raw.events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
         }
+        let file = |p: &String| (!p.is_empty()).then(|| std::path::PathBuf::from(p));
+        if !self.drop_pending.is_empty() {
+            raw.dropped_files = std::mem::take(&mut self.drop_pending)
+                .into_iter()
+                .map(|p| std::sync::Arc::new(InjectedDrop(p.into())) as egui::DroppedFileHandle)
+                .collect();
+        }
+        if !self.drop_hover.is_empty() {
+            raw.hovered_files = self.drop_hover.iter().map(|p| egui::HoveredFile { path: file(p), ..Default::default() }).collect();
+        }
         if self.synthetic.is_empty() {
             shell::defer_tabs(self, raw);
             return;
@@ -1771,6 +1836,12 @@ impl LccApp {
         theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         self.text_focus = self.tasks.repaint.as_ref().is_some_and(|c| c.egui_wants_keyboard_input());
+        if self.ui.frame_rate {
+            frame_rate::show(ctx, self);
+        } else {
+            frame_rate::forget(ctx);
+        }
+        panels::edit::wheel_pointer_frame_end(ctx);
         ctx.output(|o| {
             for c in &o.commands {
                 if let egui::OutputCommand::CopyText(text) = c {
@@ -1794,6 +1865,12 @@ impl LccApp {
         if let Some(l) = self.session.library.as_ref().filter(|l| l.on_disk) {
             let path = l.dir.to_string_lossy().into_owned();
             panels::settings::remember_library(&mut self.ui.settings.recent_libraries, &path);
+            // it is open: whatever an earlier check said about it is over
+            self.recent_checks.opened(&path);
+            // when, for the launch window (issue #1290); only the listed libraries keep a time
+            let settings = &mut self.ui.settings;
+            settings.recent_opened.insert(path, (self.session.clock)());
+            settings.recent_opened.retain(|p, _| settings.recent_libraries.contains(p));
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
     }
@@ -1803,6 +1880,18 @@ impl LccApp {
         match panels::settings::open_library_name(self) {
             Some(name) => format!("{} — {name}", lcc_brand::DISPLAY_NAME),
             None => lcc_brand::DISPLAY_NAME.to_string(),
+        }
+    }
+
+    /// The browser page's title: "<file name>[ •] — <app>" for the active photo (• while
+    /// `unsaved`: changes not yet written to storage), else the window title. The web build has no
+    /// window for `ViewportCommand::Title`; a host embedding it reads this title to tell which
+    /// document a drop opened and whether it is saved (issue #2397).
+    pub fn page_title(&self, unsaved: bool) -> String {
+        let dot = if unsaved { " •" } else { "" };
+        match self.session.active().and_then(|id| self.session.catalog.photo(id)) {
+            Some(p) => format!("{}{dot} — {}", p.file_name, lcc_brand::DISPLAY_NAME),
+            None => format!("{}{dot}", self.window_title()),
         }
     }
 
@@ -1839,6 +1928,7 @@ impl LccApp {
             catalog_ui::show(self, &ctx);
             panels::library_problem::show(self, &ctx);
             panels::toast(self, &ctx);
+            drop_overlay::show(self, &ctx);
             self.widgets = widgets::take_registry(&ctx);
             self.end_frame(&ctx, t0);
             return;
@@ -1883,6 +1973,7 @@ impl LccApp {
         panels::left::section_drag_feedback(self, &ctx);
         panels::keyword_list::drag_feedback(self, &ctx);
         panels::toast(self, &ctx);
+        drop_overlay::show(self, &ctx);
         self.widgets = widgets::take_registry(&ctx);
         self.text_focus = ctx.egui_wants_keyboard_input();
         self.end_frame(&ctx, t0);
@@ -1951,6 +2042,26 @@ fn sam_download_ended(download: &lcc_engine::segment::DownloadStatus) -> Option<
         Some(e) => Some((crate::i18n::tr_format!("The SAM 3 download failed: {e}", e = e), true)),
         None if download.finished => Some((crate::i18n::tr("The SAM 3 model is installed: Object and Describe masks are ready.").to_string(), true)),
         None => None,
+    }
+}
+
+/// A file `ui.dropFiles` delivers as dropped, as a real OS drop arrives in `raw.dropped_files`.
+#[derive(Debug)]
+struct InjectedDrop(std::path::PathBuf);
+
+impl egui::DroppedFile for InjectedDrop {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn bytes_async(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, String>> + '_>> {
+        Box::pin(async { Err("the web build has no files to read".to_string()) })
     }
 }
 

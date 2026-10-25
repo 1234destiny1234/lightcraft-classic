@@ -45,6 +45,7 @@ pub mod publish;
 pub mod quick_develop;
 pub mod right;
 pub mod rules_editor;
+pub mod rules_move;
 pub mod second;
 pub mod settings;
 pub mod settings_folders;

@@ -510,13 +510,16 @@ mod in_the_loupe {
         assert!(main <= small, "the draft is {main} px, a small one at most {small}");
     }
 
-    // Given soft proofing (rendered on the CPU even with a GPU), a drag drafts small (#330)
+    // Given soft proofing against an output-device profile (rendered on the CPU even with a GPU), a
+    // drag drafts small (#330); proofs into an output space run on the GPU like any render
     #[test]
     fn a_soft_proofed_drag_drafts_small() {
         // the GPU device up front (the loupe never waits for it): with one, this is the case where
         // the GPU is there and the render still goes to the CPU
         let _ = lcc_engine::gpu::available();
         let (mut h, _) = detail();
+        let lut = lcc_pipeline::ProofLut::new(2, vec![[0.5, 0.5, 0.5, 0.0]; 8]).expect("a valid table");
+        h.app.ui.proof.profile = lcc_pipeline::register_proof_profile(0x5eed_9f01, lut);
         h.app.ui.soft_proof = true;
         h.settle(SETTLE);
         let (main, small) = drag_exposure(&mut h);

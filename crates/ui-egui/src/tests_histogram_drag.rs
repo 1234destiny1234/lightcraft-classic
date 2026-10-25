@@ -190,6 +190,31 @@ fn a_drag_below_the_plot_leaves_the_tones_alone() {
     assert!(h.app.session.interaction.is_none(), "no interaction was opened");
 }
 
+/// A drag that starts on a clipping chevron (shadows or highlights) changes no develop tone: the
+/// chevrons are clipping controls, not tonal zones, even though they sit inside the plot.
+#[test]
+fn a_drag_starting_on_a_clipping_chevron_changes_no_develop_value() {
+    let mut h = edit_panel();
+    let undo = h.app.session.undo.len();
+    // Drag starting on the shadow clipping indicator (which sits over the Blacks zone)
+    let p = json!({"id": "histogram:shadows", "dx": 40.0, "steps": 8});
+    let r = h.request("ui.dragWidget", p.clone(), T);
+    assert_eq!(r["ok"], true, "{p}: {r}");
+    h.settle(SETTLE);
+    assert_eq!(values(&h), [0.0; 5], "dragging from the shadow chevron moves no tone");
+    assert_eq!(h.app.session.undo.len(), undo, "and leaves undo alone");
+    assert!(h.app.session.interaction.is_none(), "no interaction was opened");
+
+    // Drag starting on the highlight clipping indicator (which sits over the Whites zone)
+    let p = json!({"id": "histogram:highlights", "dx": -40.0, "steps": 8});
+    let r = h.request("ui.dragWidget", p.clone(), T);
+    assert_eq!(r["ok"], true, "{p}: {r}");
+    h.settle(SETTLE);
+    assert_eq!(values(&h), [0.0; 5], "dragging from the highlight chevron moves no tone");
+    assert_eq!(h.app.session.undo.len(), undo, "undo remains untouched");
+    assert!(h.app.session.interaction.is_none(), "no interaction was opened");
+}
+
 /// Hovering a zone highlights it (the band covers that zone's share of the plot) and names it with
 /// its value in the readout; off the histogram both are gone.
 #[test]
@@ -254,6 +279,7 @@ fn a_drag_dispatches_live_and_commits_on_the_release() {
     assert!(exposure > 0.4, "the exposure followed the drag while it was still going: {exposure}");
     assert!(h.app.session.interaction.is_some(), "the drag holds the interaction open");
     assert_eq!(h.app.session.undo.len(), before, "nothing is committed mid-drag");
+    assert_eq!(h.app.ui.dragging_control.as_deref(), Some("light.exposure"), "the drag names the control it moves, as the sliders do");
     let d = (*h.app.session.develop_of(id).unwrap_or_default()).clone();
     assert_eq!(
         crate::panels::detail::view_overlay(&h.app, &d, true),
@@ -265,4 +291,5 @@ fn a_drag_dispatches_live_and_commits_on_the_release() {
     h.settle(SETTLE);
     assert!(h.app.session.interaction.is_none(), "the release commits the interaction");
     assert_eq!(h.app.session.undo.len() - before, 1, "the whole drag is one undo step");
+    assert!(h.app.ui.dragging_control.is_none(), "and no control is left dragged");
 }

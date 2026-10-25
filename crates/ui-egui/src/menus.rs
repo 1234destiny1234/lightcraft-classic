@@ -82,7 +82,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.gridToggle", "Grid", Some("G"), ""),
     ("library.selectOnlyActive", "Select Only Active Photo", Some("Cmd+Shift+D"), "Edit"),
     ("tool.guidedUpright", "Guided Upright", Some("Shift+G"), "Window>Tools"),
-    ("view.detail", "Detail", Some("D"), "View"),
+    ("view.detail", "Detail View", Some("D"), "View"),
     ("view.compare", "Compare", Some("Shift+C"), "View"),
     ("view.survey", "Survey", Some("N"), "View"),
     ("view.people", "People", None, "View"),
@@ -145,6 +145,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // Overlay and the Remove panel list the modes.
     ("view.toolOverlay", "Cycle Tool Overlay", Some("Shift+H"), ""),
     ("view.visualizeSpots", "Visualize Spots", Some("A"), "View>Tool Overlay"),
+    // A while the Crop panel is open: the aspect lock as a first-class row. Visualize Spots keeps
+    // the key outside the panel; the two are a contextual pair in shortcuts::handle
+    ("crop.lockAspect", "Lock Aspect Ratio", Some("A"), ""),
     ("view.cropOverlay", "Cycle Crop Overlay", Some("Shift+O"), "View>Tool Overlay"),
     ("view.cropOverlayOrientation", "Cycle Crop Overlay Orientation", None, "View>Tool Overlay"),
     ("view.back", "Back to Grid", Some("Escape"), ""),
@@ -158,7 +161,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.infoOverlay", "Cycle Info Overlay", Some("Cmd+I"), "View>Loupe Info"),
     ("view.viewOptions", "View Options…", None, "View>Loupe Info"),
     ("view.chooseLayoutImage", "Choose Layout Image…", None, "View"),
-    ("view.layoutImage", "Show Layout Image", Some("Cmd+Alt+O"), "View"),
+    ("view.layoutImage", "Layout Image", Some("Cmd+Alt+O"), "View"),
     ("view.layoutImageOpacity", "Layout Image Opacity", None, ""),
     ("view.layoutImageMatte", "Layout Image Matte", None, ""),
     ("view.navigator", "Navigator", None, "Window>Panels"),
@@ -270,6 +273,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("merge.focusStackLast", "Focus Stack with Last Settings", None, "Photo>Photo Merge"),
     ("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File"),
     ("file.addFolder", "Import from Folder…", None, "File"),
+    // {path?, into?: open | new, name?, location?}: asks where the catalog goes unless `into` (or
+    // Settings) says (#2672, `lightroom_destination`)
     ("file.importLightroom", "Import Lightroom Catalog…", None, "File>More Imports"),
     ("file.importImmich", "Import from Immich…", None, "File>More Imports"),
     ("immich.connections", "Immich Settings…", None, "Library>Immich"),
@@ -324,6 +329,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.allFilesAccess", "Allow Access to All Files…", None, ""),
     ("app.systemInfo", "System Info…", None, "Help"),
     ("app.openLogFolder", "Open Log Folder", None, "Help"),
+    // the frame-rate display (`frame_rate`): a debugging aid, never saved
+    ("view.frameRate", "Frame Rate", None, "Help>Debug"),
     ("app.whatsNew", "What's New", None, "Help"),
     ("dialog.cull", "Assisted Culling…", None, "Library"),
     ("app.help", "{app} Help", Some("F1"), "Help"),
@@ -968,6 +975,11 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             app.ui.filmstrip = !app.ui.filmstrip;
             Ok(Value::Null)
         }
+        "view.frameRate" => {
+            // {show?: bool} (toggles when omitted)
+            app.ui.frame_rate = p.get("show").and_then(Value::as_bool).unwrap_or(!app.ui.frame_rate);
+            Ok(json!({"show": app.ui.frame_rate}))
+        }
         "view.leftPanel" => {
             app.ui.left_panel = !app.ui.left_panel;
             Ok(Value::Null)
@@ -1321,6 +1333,8 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             }
             Ok(Value::Null)
         }
+        // A under the Crop panel: the aspect lock (the panel's button runs the same toggle)
+        "crop.lockAspect" => app.run("crop.aspect", json!({"aspect": "toggle"})),
         "view.cropOverlay" => {
             use crate::state::CropOverlay::*;
             app.ui.crop_overlay = match app.ui.crop_overlay {
@@ -1606,7 +1620,15 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(Value::Null)
         }
         "dialog.captureTime" => {
-            let time = app.session.active().and_then(|id| app.session.catalog.photo(id)).map(|p| p.date().replace('T', " ")).unwrap_or_default();
+            // a time that doesn't fully read isn't offered as the starting point (`10:0` would read as midnight)
+            let time = app
+                .session
+                .active()
+                .and_then(|id| app.session.catalog.photo(id))
+                .map(|p| p.date())
+                .filter(|d| lcc_catalog::dates::shift_iso(d, 0).is_some())
+                .map(|d| d.replace('T', " "))
+                .unwrap_or_default();
             let mode = p.get("mode").and_then(Value::as_str).unwrap_or("set").to_string();
             app.ui.dialog =
                 Some(Dialog::CaptureTime { mode, time: time.get(..19).unwrap_or(&time).to_string(), days: 0, hours: 0, minutes: 0, zone: 0.0 });
@@ -1824,7 +1846,8 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         }
         "photo.openOriginalInExternal" => open_original_in(app, &ctx, p),
         "dialog.cull" => {
-            app.ui.dialog = Some(Dialog::Cull { reject_below: 0.0, pick_best: true });
+            let (burst_gap, similarity) = app.ui.cull_burst.unwrap_or((10.0, 0.93));
+            app.ui.dialog = Some(Dialog::Cull { reject_below: 0.0, pick_best: true, burst_gap, similarity });
             Ok(Value::Null)
         }
         "app.whatsNew" => {
@@ -1915,6 +1938,11 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             import_into_album(app, p, r)
         }
         "file.importLightroom" => {
+            // where the catalog goes (#2672): checked before a file dialog opens
+            let req = match crate::lightroom_destination::Request::parse(p) {
+                Ok(req) => req,
+                Err(e) => return Some(Err(e)),
+            };
             let path = match p.get("path").and_then(Value::as_str).map(str::to_string) {
                 Some(path) => Some(path),
                 None => {
@@ -1927,7 +1955,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 }
             };
             match path {
-                Some(path) => app.run("library.importLightroom", json!({"path":path})),
+                Some(path) => crate::lightroom_destination::import(app, &path, &req),
                 None => Ok(Value::Null),
             }
         }
@@ -2873,7 +2901,8 @@ fn show_in_folders(app: &mut LccApp, id: Option<lcc_catalog::PhotoId>) -> Result
 /// Photo ▸ Edit In: render a copy of each selected photo with its edits (stacked on its original)
 /// as Settings ▸ External Editing asks for that editor, then open them there. `p` may override the
 /// file (`format`, `colorSpace`, `bitDepth`) and the editor (`app`). PhotoCraft is checked first,
-/// so a missing editor leaves no copy behind.
+/// so a missing editor leaves no copy behind. Once the copies exist, an editor that won't open them
+/// is reported in the result's `failed` (and a toast), not as an error.
 fn edit_in(app: &mut LccApp, ctx: &egui::Context, p: &Value, photocraft: bool) -> Result<Value, String> {
     // every way in (menu, shortcut, context menu, the control channel) says why nothing opened
     edit_in_inner(app, ctx, p, photocraft).inspect_err(|e| app.toast(ctx, crate::i18n::tr_format!("Couldn't open the editor: {e}", e = e)))
@@ -2919,8 +2948,15 @@ fn edit_in_inner(app: &mut LccApp, ctx: &egui::Context, p: &Value, photocraft: b
             }
         }
     }
+    let mut r = r;
+    if let Some(o) = r.as_object_mut() {
+        o.insert("failed".into(), json!(failed));
+    }
     if let Some(e) = failed {
-        return Err(e);
+        // the copies are in the library already (one undo step): an error would invite a retry
+        // that makes another set, so the result says what failed and the toast says why
+        app.toast(ctx, crate::i18n::tr_format!("Couldn't open the editor: {e}", e = e));
+        return Ok(r);
     }
     match copies.as_slice() {
         [(path, _)] => {

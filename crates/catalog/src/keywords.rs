@@ -65,7 +65,11 @@ pub fn reparent(k: &str, from: &str, to: &str) -> String {
 /// name, its parents' and synonyms flat besides its path). Each once, cleaned.
 pub fn from_file(flat: &[String], hierarchical: &[String]) -> Vec<String> {
     let mut out: Vec<String> = hierarchical.iter().map(|k| clean(k)).collect();
-    out.extend(flat.iter().map(|k| clean(k)).filter(|k| !hierarchical.iter().any(|h| h.split(SEP).any(|level| same(level.trim(), k)))));
+    // One lowered set of every hierarchical level, not a search of `hierarchical` for each flat
+    // keyword: disjoint lists from sidecars made the old approach quadratic in both (CWE-407), and
+    // `same` allocates two lower-cased strings per comparison.
+    let levels: std::collections::HashSet<String> = hierarchical.iter().flat_map(|h| h.split(SEP).map(|l| l.trim().to_lowercase())).collect();
+    out.extend(flat.iter().map(|k| clean(k)).filter(|k| !levels.contains(&k.to_lowercase())));
     dedupe(&mut out);
     out
 }
@@ -99,6 +103,9 @@ pub fn parse_keyword_list(text: &str) -> Result<Vec<(String, KeywordInfo)>> {
     let mut out: Vec<(String, KeywordInfo)> = Vec::new();
     // where each keyword is in `out`, by lower-case path (a search of `out` per line was quadratic)
     let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    // synonyms already accepted, by keyword (a search of each keyword's growing synonym list per
+    // line was quadratic and re-allocated both spellings every comparison — CWE-407)
+    let mut synonyms: std::collections::HashMap<usize, std::collections::HashSet<String>> = std::collections::HashMap::new();
     // the keyword at each level above the line: its path and where it is in `out`
     let mut above: Vec<(String, usize)> = Vec::new();
     for (i, line) in text.split('\n').enumerate() {
@@ -124,9 +131,9 @@ pub fn parse_keyword_list(text: &str) -> Result<Vec<(String, KeywordInfo)>> {
             if synonym.contains(SEP) {
                 return Err(bad(n, "“|” separates a keyword's levels: a synonym can't hold one"));
             }
-            if let Some((_, info)) = out.get_mut(at)
-                && !synonym.is_empty()
-                && !info.synonyms.iter().any(|s| same(s, synonym))
+            if !synonym.is_empty()
+                && synonyms.entry(at).or_default().insert(synonym.to_lowercase())
+                && let Some((_, info)) = out.get_mut(at)
             {
                 info.synonyms.push(synonym.to_string());
             }
@@ -1614,6 +1621,25 @@ mod tests {
         assert_eq!(s, ["parade"]);
         let s = c.keyword_suggestions(&[], "E", 5);
         assert_eq!(s, ["eagle", "beach", "parade"], "prefix matches before substring matches");
+    }
+
+    /// A flat keyword already covered by a hierarchical level only in another spelling is not kept
+    /// again, whatever the size of either list (the per-flat-keyword search of every level, twice
+    /// lower-cased per comparison, was quadratic: CWE-407).
+    #[test]
+    fn from_file_matches_levels_in_any_case() {
+        let flat = ["Rome".to_string(), "Seaside".to_string()];
+        let hierarchical = ["travel|ITALY|rome".to_string()];
+        assert_eq!(from_file(&flat, &hierarchical), ["travel|ITALY|rome", "Seaside"]);
+    }
+
+    /// The same synonym, in any spelling, is kept once (the search of each keyword's growing
+    /// synonym list per line was quadratic, with lower-cased copies made per comparison).(CWE-407)
+    #[test]
+    fn parse_keyword_list_keeps_a_synonym_once() {
+        let read = parse_keyword_list("Travel\n\t{Trip}\n\t{journey}\n\t{TRIP}\n").unwrap();
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].1.synonyms, ["Trip", "journey"]);
     }
 }
 

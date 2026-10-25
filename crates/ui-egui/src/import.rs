@@ -103,6 +103,10 @@ pub struct ImportDialog {
     pub last_clicked: Option<usize>,
     /// The source is a connected Immich server (browsed in the dialog) instead of the scanned files.
     pub immich: bool,
+    /// The library the scan was made in ([`lcc_engine::Session::library_generation`]): its duplicate
+    /// decisions and album ids belong to that catalog, so the review is not shown or confirmed in another.
+    #[serde(skip)]
+    pub library: Option<u64>,
 }
 
 /// A candidate's file type, as the review groups them: its format, or its extension when the
@@ -125,6 +129,11 @@ impl ImportDialog {
     pub fn new(candidates: Vec<ImportCandidate>) -> Self {
         let checked = candidates.iter().map(|c| c.duplicate.is_none() && c.error.is_none()).collect();
         ImportDialog { candidates, checked, on_deleted: "restore".into(), ..Default::default() }
+    }
+
+    /// Whether the library the scan was made in is still the open one (a review that names none counts).
+    fn in_library(&self, app: &LccApp) -> bool {
+        self.library.is_none_or(|g| g == app.session.library_generation())
     }
     /// Mark the candidates whose photo is in Recently Deleted. They are checked when the choice
     /// for them (`on_deleted`) imports them — by default it restores them, so a photo deleted by
@@ -501,6 +510,9 @@ pub fn open(app: &mut LccApp, paths: Vec<String>) -> Result<Value, String> {
     if app.scan.is_some() {
         return Err("a scan is already running".into());
     }
+    if app.review_pending.is_some() {
+        return Err("an import review is waiting for the open dialog to close".into());
+    }
     let sources = paths.clone();
     let (input, paths) = ScanInput::new(&mut app.session, &paths);
     let progress = std::sync::Arc::new(ScanProgress::default());
@@ -584,6 +596,7 @@ pub fn browse(app: &mut LccApp, path: &str, subfolders: Option<bool>) -> Result<
 
 /// Collect a finished scan and open the review (called every frame).
 pub fn poll_scan(app: &mut LccApp, ctx: &egui::Context) {
+    show_pending_review(app, ctx);
     let Some(task) = app.scan.as_ref() else { return };
     ctx.request_repaint_after(std::time::Duration::from_millis(100));
     let out = match task.rx.try_recv() {
@@ -656,7 +669,52 @@ pub fn poll_scan(app: &mut LccApp, ctx: &egui::Context) {
     {
         d.metadata_preset = mp.clone();
     }
-    app.ui.dialog = Some(crate::state::Dialog::Import { opts: Box::new(d) });
+    d.library = Some(app.session.library_generation());
+    app.review_pending = Some(crate::state::Dialog::Import { opts: Box::new(d) });
+    show_pending_review(app, ctx);
+}
+
+/// Open the review of a finished scan once no other dialog is open (a face model's licence, Settings…
+/// opened while the scan ran stays), checked again shortly while it waits. A review whose library was
+/// closed meanwhile (Settings can open another) is dropped.
+fn show_pending_review(app: &mut LccApp, ctx: &egui::Context) {
+    if app.review_pending.is_none() {
+        return;
+    }
+    if let Some(crate::state::Dialog::Import { opts }) = &app.review_pending
+        && !opts.in_library(app)
+    {
+        app.review_pending = None;
+        return;
+    }
+    if app.ui.dialog.is_none() {
+        app.ui.dialog = app.review_pending.take();
+    } else {
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+    }
+}
+
+/// Tests: a review scan that never ends while the returned value lives, so a drop meets it running.
+#[cfg(test)]
+pub(crate) fn stall_scan(app: &mut LccApp) -> Box<dyn std::any::Any> {
+    stall_scan_of(app, false)
+}
+
+/// Tests: the same, for a Local folder browse scan (`browse`) instead of the review's scan.
+#[cfg(test)]
+pub(crate) fn stall_scan_of(app: &mut LccApp, browse: bool) -> Box<dyn std::any::Any> {
+    let progress = std::sync::Arc::new(ScanProgress::default());
+    let (tx, rx) = std::sync::mpsc::channel::<ScanOutput>();
+    let guard = scan_guard(app, &progress, false);
+    app.scan = Some(ScanTask { progress, rx, copy: false, album: None, browse, sources: Vec::new(), guard });
+    Box::new(tx)
+}
+
+/// Whether an import or any scan (the review's, or a Local folder browse) is running, or a finished scan's
+/// review waits for a dialog to close, which a drop of photos must not replace: `open` refuses while a scan
+/// runs, and a browse that finishes replaces `app.import`.
+pub fn running(app: &LccApp) -> bool {
+    app.import.is_some() || app.scan.is_some() || app.review_pending.is_some()
 }
 
 impl ScanTask {
@@ -666,12 +724,20 @@ impl ScanTask {
     }
 }
 
-/// Start importing the dialog's checked files (the dialog's OK / `ui.dialog.confirm`).
+/// Start importing the dialog's checked files (the dialog's OK / `ui.dialog.confirm`). Refused while another
+/// import runs: replacing `app.import` would stop its worker.
 pub fn start(app: &mut LccApp, d: &ImportDialog) -> Result<Value, String> {
     busy_synchronizing(app)?;
     #[cfg(not(target_arch = "wasm32"))]
     if d.immich {
         return crate::panels::connections::start_import(app);
+    }
+    if !d.in_library(app) {
+        return Err("another library was opened since the photos were scanned: nothing was imported".into());
+    }
+    // a browse scan that finishes starts its own import, replacing this one
+    if app.import.is_some() || app.scan.as_ref().is_some_and(|t| t.browse) {
+        return Err(crate::i18n::tr("An import is running").to_string());
     }
     let queue = d.selected_paths();
     if queue.is_empty() {
@@ -747,8 +813,8 @@ pub fn start(app: &mut LccApp, d: &ImportDialog) -> Result<Value, String> {
 /// Start importing `paths` (files or folders) in the background, e.g. dropped on the window.
 pub fn start_paths(app: &mut LccApp, paths: Vec<String>) -> Result<Value, String> {
     busy_synchronizing(app)?;
-    if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
-        return Err("an import is running".into());
+    if running(app) {
+        return Err(crate::i18n::tr("An import is running").to_string());
     }
     let undo0 = app.session.undo.len();
     let total = paths.len();
@@ -756,29 +822,29 @@ pub fn start_paths(app: &mut LccApp, paths: Vec<String>) -> Result<Value, String
     Ok(json!({"importing": total}))
 }
 
-/// Photos or folders dropped on the window. A drop with a folder in it is scanned and reviewed
-/// exactly as File ▸ Import from Folder… does (one walk with progress, then the review); plain
-/// photo files are added at once. Errors are shown, and a frame is asked for so the scan or
-/// import starts even if the window then sits idle (no input follows a drop).
+/// Photos or folders dropped on the window. They are scanned and reviewed exactly as File ▸ Import
+/// from Folder… does (one walk with progress, then the review), or, with Settings ▸ Import ▸ Import
+/// dropped files without review, added at once on a worker thread. A drop while an import or any
+/// scan runs is refused (a browse that finishes replaces `app.import`). Errors are shown, and a
+/// frame is asked for so the scan or import starts even if the window then sits idle (no input
+/// follows a drop).
 pub fn drop_paths(app: &mut LccApp, ctx: &egui::Context, paths: Vec<String>) {
     ctx.request_repaint();
     if app.lightroom.is_some() {
         app.toast(ctx, crate::i18n::tr("Finish Lightroom catalog import before adding photos"));
         return;
     }
+    // an import (or a scan, a review waiting behind a dialog) stays the one that runs: a drop
+    // meanwhile would replace it
+    if running(app) {
+        app.toast(ctx, crate::i18n::tr("An import is running"));
+        return;
+    }
+    // a folder opens the import review; photo files are added at once
     let r = if paths.iter().any(|p| std::path::Path::new(p).is_dir()) {
-        busy_synchronizing(app).and_then(|_| {
-            if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
-                return Err("an import is running".to_string());
-            }
-            // a Local folder being read gives way, as Import from Folder… does
-            if let Some(t) = app.scan.take() {
-                t.progress.cancel.store(true, Ordering::Relaxed);
-            }
-            open(app, paths)
-        })
+        busy_synchronizing(app).and_then(|_| open(app, paths).map(|_| ()))
     } else {
-        start_paths(app, paths)
+        start_paths(app, paths).map(|_| ())
     };
     if let Err(e) = r {
         log::warn!("drop: {e}");
@@ -1500,7 +1566,7 @@ pub(crate) fn candidate_cell(app: &mut LccApp, ui: &mut egui::Ui, d: &mut Import
     crate::widgets::announce(&resp, c.name.clone());
     register(ui.ctx(), format!("import:{i}"), img);
     let p = ui.painter();
-    p.rect_filled(img, 3.0, Color32::from_gray(30));
+    p.rect_filled(img, 3.0, t.skeleton);
     // thumbnail (background job; the grid only asks for the cells in view)
     let slot = Slot::Import(i as u32);
     if !app.renderer.textures.contains_key(&slot)
