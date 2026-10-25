@@ -423,6 +423,13 @@ pub fn to_partial(props: &Props, target: Target) -> Value {
         put(o, "grain.seed", json!(seed as u32));
     }
 
+    // ---- Camera profile: Lightroom's profile name picks the camera's calibrated look of that name
+    // (`cal:<slug>`); a camera without one falls back to its default (`lcc_raw::dcp::resolve`). Photos only: a
+    // preset (`Target::Any`) leaves each photo's camera profile as it is, and reports the field
+    if let Some(name) = (target != Target::Any).then(|| first(props, "crs:CameraProfile")).flatten() {
+        put(o, "profile.camera", json!(lcc_camdb::calibration::look_id(name)));
+    }
+
     // ---- Optics (manual corrections; lens profiles are ours, only the switch carries over).
     // Our profile corrections are the file's own (DNG-embedded) ones, which Lightroom applies
     // whatever its "Enable Profile Corrections" box says [inferred]: so only an enabling switch
@@ -572,6 +579,15 @@ pub fn camera_profile_name(props: &Props) -> Option<&str> {
     first(props, "crs:CameraProfile")
 }
 
+/// Keep a photo's explicitly chosen imported `.dcp` (`dcp:…`) when Lightroom's settings are applied over it
+/// (`base` the settings before, `out` after): a Lightroom profile name maps to a calibrated look, never to a
+/// person's own profile.
+pub fn keep_chosen_dcp(base: &lcc_develop::DevelopSettings, out: &mut lcc_develop::DevelopSettings) {
+    if base.profile.camera.starts_with("dcp:") {
+        out.profile.camera.clone_from(&base.profile.camera);
+    }
+}
+
 /// Whether an XMP packet contains a saved Lightroom Upright matrix. Lightroom's matrix uses a
 /// coordinate convention that the app does not currently import.
 pub fn has_saved_upright_transform(props: &Props) -> bool {
@@ -631,6 +647,23 @@ mod tests {
   </rdf:Description>
  </rdf:RDF>
 </x:xmpmeta>"#;
+
+    #[test]
+    fn camera_profile_name_picks_a_calibrated_look_but_keeps_a_chosen_dcp() {
+        let mut p = Props::new();
+        p.insert("crs:CameraProfile".into(), vec!["Adobe Color".into()]);
+        let (partial, unmapped) = to_partial_report(&p, None, Target::RawAbsolute, 1.5);
+        assert!(!unmapped.iter().any(|k| k == "CameraProfile"), "{unmapped:?}");
+        // a preset leaves the camera profile alone
+        assert!(to_partial_report(&p, None, Target::Any, 1.5).1.iter().any(|k| k == "CameraProfile"));
+        let fresh = apply_partial(&DevelopSettings::default(), &partial, 1.0);
+        assert_eq!(fresh.profile.camera, "cal:adobe-color");
+        let mut base = DevelopSettings::default();
+        base.profile.camera = "dcp:mine".into();
+        let mut out = apply_partial(&base, &partial, 1.0);
+        keep_chosen_dcp(&base, &mut out);
+        assert_eq!(out.profile.camera, "dcp:mine");
+    }
 
     fn props(x: &str) -> Props {
         lcc_meta::parse_xmp(x).unwrap().properties

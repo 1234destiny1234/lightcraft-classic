@@ -31,7 +31,7 @@ fn source_report(s: &mut Session, p: &Value) -> Result<Value> {
                 Some(read) => read(path),
                 None => std::fs::read(path).map_err(|e| format!("{path}: {e}")),
             };
-            match bytes.and_then(|b| crate::source_report::report(&b)) {
+            match bytes.and_then(|b| crate::source_report::report(&b, &ph.develop.profile.camera)) {
                 Ok(r) => json!({"id": id.0, "path": path, "report": r}),
                 Err(e) => json!({"id": id.0, "path": path, "error": e}),
             }
@@ -46,7 +46,7 @@ pub fn specs() -> Vec<CommandSpec> {
         "Source Report",
         [],
         None,
-        "{ids? (default: the active photo; at most 10)} → {photos: [{id, path, report: {raw, format, make, model, decode: {kind: sensor | embeddedPreview | image, reason?}, colour: {kind: file | measuredDatabase | cameraJpeg | cameraProfile | database | spectralStandIn | neutralFallback, make?, model?, provenance?, cameraProfile?}, matrixIsFallback, look: {hueSat} | null, tone: none | cameraJpeg | monochromeJpeg | dngToneFit | profilePooled | default | canonMedian | dngProfileCurve, whiteBalance: relative | absolute, dngProfile: {toneCurve, lookTable, gainTableMap}, dynamicRangeOptimizer, lens: {source: embedded | chosen | found | none, profile?, warp, warpStages, vignette}} | error}]} — how each original is read before any edit: sensor data or the embedded preview, where its starting colour and tone come from, and the lens correction that applies by itself. Read-only; decodes each file again",
+        "{ids? (default: the active photo; at most 10)} → {photos: [{id, path, report: {raw, format, make, model, decode: {kind: sensor | embeddedPreview | image, reason?}, colour: {kind: file | measuredDatabase | cameraJpeg | cameraProfile | database | spectralStandIn | neutralFallback, make?, model?, provenance?, cameraProfile?}, cameraProfile: {name, model, source: dcp | calibrated, look: cal:… | null} | null, matrixIsFallback, look: {hueSat} | null, tone: none | cameraJpeg | monochromeJpeg | dngToneFit | profilePooled | default | canonMedian | dngProfileCurve, whiteBalance: relative | absolute, dngProfile: {toneCurve, lookTable, gainTableMap}, dynamicRangeOptimizer, lens: {source: embedded | chosen | found | none, profile?, warp, warpStages, vignette}} | error}]} — how each original is read before any edit: sensor data or the embedded preview, where its starting colour and tone come from, and the lens correction that applies by itself. Read-only; decodes each file again",
         always,
         source_report
     )]

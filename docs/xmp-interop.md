@@ -204,7 +204,7 @@ application's renderer and is ignored: the photo keeps the app's own process, th
 
 Values pass through our control specs, so anything outside our slider ranges gets clamped.
 
-`crs:CameraProfile` is kept as the selected name in the photo's import warning and the active profile is left as it is: the name carries no rendering data and never selects an Adobe profile. Import reports such a profile as not applied (colours may differ from Lightroom), except Lightroom's default profiles (`Adobe Standard`, `Adobe Color`), which every sidecar names and which the app's own starting look stands in for.
+`crs:CameraProfile` sets the photo's camera-profile choice to the camera's Lightroom-matched calibrated look of that name (`profile.camera = "cal:<slug>"`, e.g. `Adobe Color` → `cal:adobe-color`; bundled calibrations, `crates/camdb/data/calibrations/`). A camera without that look falls back to its default (a person's own `.dcp`, else the calibration's first look, else the app's own colour); a photo whose choice is an imported `.dcp` (`dcp:…`) keeps it. Presets don't carry it (each photo keeps its camera profile; the field is reported as not carried over). The name never selects an Adobe profile. Import still warns about a profile other than Lightroom's defaults (`Adobe Standard`, `Adobe Color`), as colours may differ from Lightroom where no calibration covers the camera.
 
 **Profiles named by presets (`Look`, issue #1001).** A preset keeps the profile it names (`crs:Look`: `Name`, `Group`,
 `UUID`, `Amount`; in `.lrtemplate` files the `Look` table) as `profile.look` in its settings. When the user has imported
@@ -217,7 +217,7 @@ is; import reports either per preset (`Profile “Name” (Lightroom's own)` / `
 References are resolved again whenever profiles are imported or deleted, so a pack's profiles and presets can come in
 either order. The look's embedded `Parameters` are not read.
 
-**Not mapped:** camera profiles (`CameraProfile`; we have our own profile set), red eye, lens blur,
+**Not mapped:** red eye, lens blur,
 process-version 2010 field names, and AI features. Local adjustments and spot removal are read as described below.
 
 ## Spot removal
