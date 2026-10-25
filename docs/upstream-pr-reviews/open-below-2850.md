@@ -38,7 +38,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2804 | fix(ui): wrap the Edit header buttons instead of letting Reset cover HDR | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2803 | chore(deps): bump the cargo-dependencies group across 1 directory with 19 updates | SKIP | dependabot: we manage our own dependencies |  |
 | #2802 | Add an Android app shell | SKIP | the fork has its own Android port (own design) |  |
-| #2798 | LR-LIB-SMARTALBUM: the catalog refuses an edit that makes a smart album include itself | LEARN | catalog refuses a smart album that includes itself: worth porting to the fork's catalog | fork #PRN |
+| #2798 | LR-LIB-SMARTALBUM: the catalog refuses an edit that makes a smart album include itself | LEARN | catalog refuses a smart album that includes itself: worth porting to the fork's catalog | fork #525 |
 | #2797 | LR-BEHAV-AUTOSAVE: a change that could only be partly taken back is saved and can be undone | LEARN | autosave of partly-undoable changes: idea for the fork's undo model |  |
 | #2796 | docs: gap 9 — the CI gate runs the tests on Linux x64; macOS, Windows and the GPU tests still don't | SKIP | upstream docs/roadmap only |  |
 | #2789 | Grading lgg vectorscope | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
@@ -222,7 +222,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2305 | Group unnamed faces and improve face assignment review | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2303 | xtask warm: start a new worktree's target/ from a clone of the main checkout's | SKIP | upstream CI/packaging/tooling |  |
 | #2290 | #2284: read the Exif and XMP items of HEIF files | SKIP | HEIF Exif/XMP items already read by the fork (meta::heif) |  |
-| #2289 | Rate, flag and label every photo of a collapsed stack | LEARN | rate/flag/label all photos of a collapsed stack: fork library.rs diverged; re-implement mark_targets | fork #PRN |
+| #2289 | Rate, flag and label every photo of a collapsed stack | LEARN | rate/flag/label all photos of a collapsed stack: fork library.rs diverged; re-implement mark_targets | fork #525 |
 | #2287 | LR-CROP-DIMMING: adjustable crop-mask opacity | SKIP | upstream docs/roadmap only |  |
 | #2283 | LR-LIB-CULL: Assisted Culling measures focus on the subject — face regions, focus point (#2276, stacked on #2279) | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
 | #2281 | LR-LIB-CULL: Assisted Culling can stack each burst, best photo on top (#2277, stacked on #2279) | SKIP | mostly UI (fork-owned ui-egui) with engine plumbing tied to it; low value against the fork's layout |  |
