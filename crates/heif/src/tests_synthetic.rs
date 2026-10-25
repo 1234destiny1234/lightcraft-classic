@@ -235,4 +235,15 @@ fn declared_sizes_and_dimensions_are_checked_not_trusted() {
         // probe only reports the declaration (callers check their limits against it).
         let _ = probe(&b);
     }
+/// CodeRabbit #44: heic-rs keeps every associated transform and each one re-allocates the
+/// whole picture, so 13 of them are over the [`crate::MAX_TRANSFORMS`] cap and refused.
+#[test]
+fn too_many_transform_properties_are_refused() {
+    let bytes = build(&Spec { props: std::iter::repeat_n(Prop::Irot(0), 13).collect(), ..Spec::new(32, 32, &grey) });
+    let r = decode(&bytes, &Options::default());
+    assert!(matches!(r, Err(Error::Limit(ref m)) if m.contains("transform")), "{r:?}");
+    // At the cap they're not: 12 identity rotations decode normally.
+    let bytes = build(&Spec { props: std::iter::repeat_n(Prop::Irot(0), 12).collect(), ..Spec::new(32, 32, &grey) });
+    let d = decode(&bytes, &Options::default()).unwrap();
+    assert_eq!((d.width, d.height), (32, 32));
 }
