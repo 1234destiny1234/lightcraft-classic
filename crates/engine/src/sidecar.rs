@@ -92,12 +92,58 @@ pub fn find_sidecar(original: &str, naming: SidecarNaming) -> Option<PathBuf> {
 /// (issue #1905): [`find_sidecar`] with the library's naming, except that a file which does not
 /// own its stem sidecar reads its own `<file>.xmp` (the name it writes) and never the packet of
 /// the sibling that owns the stem one.
-pub(crate) fn find_sidecar_for_import(stems: &ImportStems, naming: SidecarNaming, original: &str) -> Option<PathBuf> {
+pub(crate) fn find_sidecar_for_import(stems: &ImportStems, naming: SidecarNaming, original: &str, listing: &mut FolderListing) -> Option<PathBuf> {
     if stems.owns(original) {
-        return find_sidecar(original, naming);
+        return sidecar_candidates(original, naming).find(|p| listing.is_file(p));
     }
     let shared = xmp_cases(sidecar_path(original, SidecarNaming::Stem));
-    sidecar_candidates(original, SidecarNaming::Full).filter(|p| !shared.contains(p)).find(|p| p.is_file())
+    sidecar_candidates(original, SidecarNaming::Full).filter(|p| !shared.contains(p)).find(|p| listing.is_file(p))
+}
+
+/// The folders an import has listed, so a sidecar name it looks for is answered from one listing
+/// per folder instead of one round trip per name (each one costs on a network share, found or
+/// not). A listing vouches only for a name it lacks in every case: a name it holds, or holds in
+/// another case (a case-insensitive volume answers to that too), is asked of the disk as before,
+/// and so is every name in a folder that can't be listed.
+#[derive(Default)]
+pub(crate) struct FolderListing {
+    /// Folder → the lower-cased names in it (`None`: it could not be listed).
+    folders: HashMap<PathBuf, Option<HashSet<String>>>,
+}
+
+/// The most folders an import keeps listed (a big import walks folder by folder).
+const MAX_LISTED_FOLDERS: usize = 256;
+
+/// The most names one folder listing holds; a bigger folder is asked name by name.
+const MAX_LISTED_NAMES: usize = 200_000;
+
+impl FolderListing {
+    /// Whether `p` is a file, from the listing of its folder where that says it can't be.
+    pub(crate) fn is_file(&mut self, p: &Path) -> bool {
+        let (Some(dir), Some(name)) = (p.parent(), p.file_name().and_then(|n| n.to_str())) else { return p.is_file() };
+        if !self.folders.contains_key(dir) {
+            if self.folders.len() >= MAX_LISTED_FOLDERS {
+                self.folders.clear();
+            }
+            let names = std::fs::read_dir(if dir.as_os_str().is_empty() { Path::new(".") } else { dir }).ok().and_then(|rd| {
+                let mut names = HashSet::new();
+                for entry in rd {
+                    let entry = entry.ok()?;
+                    // a name that isn't Unicode can't be told apart: the folder is asked name by name
+                    names.insert(entry.file_name().to_str()?.to_lowercase());
+                    if names.len() > MAX_LISTED_NAMES {
+                        return None;
+                    }
+                }
+                Some(names)
+            });
+            self.folders.insert(dir.to_path_buf(), names);
+        }
+        match self.folders.get(dir) {
+            Some(Some(names)) if !names.contains(&name.to_lowercase()) => false,
+            _ => p.is_file(),
+        }
+    }
 }
 
 /// The names `original`'s sidecar can have, in the order they are looked for: under `naming`,
@@ -1542,6 +1588,25 @@ mod tests {
         assert_eq!(super::file_orientation(&dir.join("over-xmp.webp").to_string_lossy()), None);
         assert_eq!(super::file_orientation(&dir.join("missing.webp").to_string_lossy()), None);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A folder listing answers as asking the disk does: present names (in any case the volume
+    /// answers to) are found, absent ones are not, and an unlisted folder is asked name by name.
+    #[test]
+    fn folder_listing_answers_as_the_disk() {
+        let dir = std::env::temp_dir().join(format!("sidecar-listing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub.xmp")).unwrap();
+        std::fs::write(dir.join("IMG_1.XMP"), b"x").unwrap();
+        std::fs::write(dir.join("img_2.xmp"), b"x").unwrap();
+        let mut listing = FolderListing::default();
+        for name in ["IMG_1.XMP", "IMG_1.xmp", "img_1.xmp", "img_2.xmp", "IMG_2.XMP", "IMG_3.xmp", "sub.xmp", "none"] {
+            let p = dir.join(name);
+            assert_eq!(listing.is_file(&p), p.is_file(), "{name}");
+        }
+        let missing = dir.join("gone").join("a.xmp");
+        assert!(!listing.is_file(&missing));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
