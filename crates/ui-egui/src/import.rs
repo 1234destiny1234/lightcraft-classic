@@ -687,7 +687,9 @@ fn show_pending_review(app: &mut LccApp, ctx: &egui::Context) {
         app.review_pending = None;
         return;
     }
-    if app.ui.dialog.is_none() {
+    // (a review over the Import screen's own review takes its place: picking another source there
+    // is what asked for it; any other dialog stays and the review waits)
+    if app.ui.dialog.is_none() || matches!(app.ui.dialog, Some(crate::state::Dialog::Import { .. })) {
         app.ui.dialog = app.review_pending.take();
     } else {
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
