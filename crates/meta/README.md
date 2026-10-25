@@ -24,6 +24,10 @@ user fields (artist, copyright, title, caption, keywords, hierarchical keywords,
 JPEG ICC data is exposed only when its APP2 chunks form a complete, consistent, uniquely numbered sequence;
 malformed or truncated ICC sequences leave unrelated readable metadata available and produce no profile.
 
+EXIF capture-time candidates are tried in order: DateTimeOriginal, DateTimeDigitized, then IFD0 DateTime. A clock
+with more than three colon-separated components is rejected as a whole, allowing the next valid candidate or XMP
+fallback to supply the capture time. The original tag remains available in All Metadata.
+
 ## XMP namespaces
 
 Written: `dc`, `xmp`, `photoshop`, `exif`, `exifEX`, `tiff`, `lr` (`hierarchicalSubject`) and ours,

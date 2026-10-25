@@ -470,6 +470,7 @@ const HIDDEN: &[&str] = &[
     "photo.reject",
     "photo.unflag",
     "photo.label",
+    "photo.clearLabel",
     "library.sort",
     "library.shuffle",
     "album.addPhotos",
@@ -719,7 +720,8 @@ pub(crate) fn expanded(app: &LccApp, name: &str) -> Option<Vec<MenuNode>> {
                 })
                 .collect();
             v.push(MenuNode::Separator);
-            v.push(item("photo.label", json!({"label": "none"}), "None", None, has, Some(active.as_ref().is_some_and(|p| p.label.is_none()))));
+            let clear_key = crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "photo.clearLabel");
+            v.push(item("photo.clearLabel", Value::Null, "None", clear_key, has, Some(active.as_ref().is_some_and(|p| p.label.is_none()))));
             v.push(MenuNode::Separator);
             // label sets: each a checkable item; Edit… names them
             let sets = lcc_engine::cmd::manage::label_sets_json(&app.session);
@@ -1153,6 +1155,7 @@ pub fn run_item(app: &mut LccApp, id: &str, params: Value) -> Result<Value, Stri
         "photo.rate"
             | "photo.flag"
             | "photo.label"
+            | "photo.clearLabel"
             | "photo.pick"
             | "photo.reject"
             | "photo.unflag"
