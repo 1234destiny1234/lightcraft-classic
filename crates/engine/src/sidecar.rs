@@ -251,9 +251,11 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
         None if crate::crs::has_adjustments(&d.properties) => {
             let (partial, unmapped) = crate::crs::to_partial_report(&d.properties, Some(&d.values), target, crate::crs_masks::DEFAULT_ASPECT);
             // Lightroom's default profiles are named by nearly every sidecar; our own starting look stands
-            // in for them, so only another profile is worth a warning
-            let profile = crate::crs::camera_profile_name(&d.properties)
+            // in for them, so only another profile is worth a warning, and not one an installed calibration
+            // has a look for (the photo picks it up through `profile.camera`)
+            let profile = crate::crs::lightroom_profile_name(&d.properties)
                 .filter(|name| !matches!(name.trim(), "Adobe Standard" | "Adobe Color"))
+                .filter(|name| !calibrated_look_for(&d.properties, name))
                 .map(str::to_string);
             if let Some(name) = profile {
                 out.warnings.push(crate::import::ImportWarning {
@@ -323,6 +325,18 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
 
 /// Apply sidecar data to a photo record (the sidecar wins, except that a capture time embedded in
 /// the file is kept). Returns true if develop changed.
+/// Whether the photo's camera has a calibrated look for Lightroom profile `name`: the packet's own camera
+/// (`tiff:Make` / `tiff:Model`) when it names one, else any installed calibration (a sidecar is parsed
+/// before its photo's camera is known).
+fn calibrated_look_for(props: &crate::crs::Props, name: &str) -> bool {
+    let id = lcc_camdb::calibration::look_id(name);
+    let field = |k: &str| props.get(k).and_then(|v| v.first()).map(|s| s.trim()).filter(|s| !s.is_empty());
+    match field("tiff:Model") {
+        Some(model) => lcc_raw::dcp::calibrated_for(field("tiff:Make"), model).is_some_and(|c| c.looks.iter().any(|(i, _)| *i == id)),
+        None => lcc_raw::dcp::calibrated_look_exists(&id),
+    }
+}
+
 pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
     // (a date import guessed from the file's modification time is no capture time: the sidecar's wins)
     if p.captured_stated().is_none() && sc.captured.is_some() {
@@ -391,7 +405,9 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
             if p.width > 0 && p.height > 0 {
                 crate::crs_masks::refit_radials(&mut v, crate::crs_masks::DEFAULT_ASPECT, p.width as f64 / p.height as f64);
             }
-            lcc_develop::apply_partial(&p.develop, &v, 1.0)
+            let mut out = lcc_develop::apply_partial(&p.develop, &v, 1.0);
+            crate::crs::keep_chosen_dcp(&p.develop, &mut out);
+            out
         }
         None if sc.plugin_filters.is_some() => (*p.develop).clone(),
         None => return false,
@@ -1238,6 +1254,45 @@ mod tests {
 
     use super::*;
     use lcc_catalog::Meta;
+
+    #[test]
+    fn a_profile_with_a_calibrated_look_is_not_warned_about() {
+        let xmp = |model: &str| {
+            format!(
+                r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" xmlns:tiff="http://ns.adobe.com/tiff/1.0/"
+                  tiff:Make="LOOKTEST" tiff:Model="{model}" crs:Exposure2012="+0.5" crs:CameraProfile="Adobe Standard">
+                <crs:Look rdf:parseType="Resource"><crs:Name>Adobe Vivid</crs:Name><crs:Amount>1</crs:Amount></crs:Look>
+                </rdf:Description></rdf:RDF></x:xmpmeta>"#
+            )
+        };
+        let warned = |model: &str| {
+            parse_sidecar(&xmp(model), crate::crs::Target::RawAbsolute)
+                .unwrap()
+                .warnings
+                .iter()
+                .any(|w| w.code == crate::import::ImportWarningCode::CameraProfile && w.profile.as_deref() == Some("Adobe Vivid"))
+        };
+        // add a calibrated camera to whatever is installed (the registry is process-wide), and take it out again
+        let dcp = std::sync::Arc::new(lcc_raw::dcp::Dcp {
+            model: "LOOKTEST ONE".into(),
+            name: "Adobe Vivid".into(),
+            copyright: String::new(),
+            color: lcc_raw::ColorData::default(),
+        });
+        let others = || lcc_raw::dcp::calibrated().iter().filter(|c| c.make != "LOOKTEST").map(|c| (**c).clone()).collect::<Vec<_>>();
+        let mut list = others();
+        list.push(lcc_raw::dcp::Calibrated {
+            make: "LOOKTEST".into(),
+            names: vec!["LOOKTEST ONE".into()],
+            looks: vec![("cal:adobe-vivid".into(), dcp)],
+        });
+        lcc_raw::dcp::install_calibrated(list);
+        let (calibrated, other_camera) = (warned("ONE"), warned("TWO"));
+        lcc_raw::dcp::install_calibrated(others());
+        assert!(!calibrated, "the camera has a calibrated Adobe Vivid");
+        assert!(other_camera, "another camera has none: the stand-in is reported as before");
+    }
 
     fn photo() -> Photo {
         let mut p = Photo::new(PhotoId(7), Source::File { path: "/x/IMG_1.jpg".into() }, "IMG_1.jpg", "JPEG", 40, 30, "2026-01-01T00:00:00");

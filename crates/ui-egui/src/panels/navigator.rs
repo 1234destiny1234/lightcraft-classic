@@ -125,7 +125,18 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         return;
     };
     let inner = well.shrink(10.0);
-    let aspect = app.session.catalog.photo(id).map(|ph| ph.width.max(1) as f32 / ph.height.max(1) as f32).unwrap_or(1.5);
+    // Ask for the thumbnail ourselves (launched straight into Develop, no grid or filmstrip has
+    // requested it yet), only when missing so we don't fight the grid over its size.
+    if app.renderer.thumb(id).is_none() {
+        super::grid::request_thumb(app, id, 256, 8);
+    }
+    // The thumbnail is rendered with the photo's edits, crop included, so its own shape is the
+    // shape to show (issue #455); the catalog's pixel size is the uncropped original, used only
+    // until the thumbnail arrives.
+    let aspect = match app.renderer.thumb(id).map(|t| t.tex.size()) {
+        Some([tw, th]) if tw > 0 && th > 0 => tw as f32 / th as f32,
+        _ => app.session.catalog.photo(id).map(|ph| ph.width.max(1) as f32 / ph.height.max(1) as f32).unwrap_or(1.5),
+    };
     let aspect = if aspect.is_finite() && aspect > 0.0 { aspect } else { 1.5 };
     let (iw, ih) = if inner.width() / inner.height().max(1.0) > aspect {
         (inner.height() * aspect, inner.height())
@@ -133,11 +144,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         (inner.width(), inner.width() / aspect)
     };
     let img = Rect::from_center_size(inner.center(), vec2(iw, ih));
-    // Ask for the thumbnail ourselves: launched straight into Develop, no grid or filmstrip has
-    // requested it yet. Only when missing, so we don't fight the grid over its size.
-    if app.renderer.thumb(id).is_none() {
-        super::grid::request_thumb(app, id, 256, 8);
-    }
     match app.renderer.thumb(id) {
         Some(tex) => p.image(tex.tex.id(), img, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE),
         None => p.rect_filled(img, 0.0, Color32::from_gray(40)),

@@ -116,9 +116,11 @@ unsupported schemas are ignored. A needed
 WITHOUT ROWID or virtual table produces an explicit error, handled as a warning when optional.
 
 Develop settings reuse the existing XMP/preset mapper. Supported sliders, curves and supported
-mask structures remain editable, but this is approximate rendering: camera profiles, Adobe AI
+mask structures remain editable, but this is approximate rendering: Adobe AI
 models, some masking/retouch fields and process-version algorithms are not reproduced. Unmapped
-fields are reported. Lightroom's `ProcessVersion` is not mapped: newly imported photos are on
+fields are reported. The profile the person picked (the `Look` table's `Name` when there is one, else `CameraProfile`) selects the camera's Lightroom-matched calibrated look of that
+name (`profile.camera = "cal:<slug>"`, see [xmp-interop.md](xmp-interop.md)); a camera without one
+keeps its default colour, and a photo already on an imported `.dcp` keeps it. Lightroom's `ProcessVersion` is not mapped: newly imported photos are on
 the app's latest rendering process, and photos already in the library keep theirs
 ([process-versions.md](process-versions.md)). When a recovery archive is saved, it retains source settings/history/snapshots
 and original smart-collection rules. Smart collections become smart albums when every rule has an exact equivalent: rating, pick

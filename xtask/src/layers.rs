@@ -94,6 +94,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("slideshow", Class::Layer(1)),
     ("ui-egui", Class::Layer(5)),
     ("mcp", Class::Layer(5)),
+    ("colourfit", Class::Layer(5)),
     ("testkit", Class::Testkit),
     ("fuzzkit", Class::Testkit),
     // L6 apps and tooling

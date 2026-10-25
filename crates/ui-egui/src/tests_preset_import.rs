@@ -86,3 +86,37 @@ fn a_broken_cube_says_why() {
     assert!(t.contains("1 profile") && t.contains("Broken"), "{t}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Importing presets while Develop's left column shows the Presets panel keeps them there: the
+/// presets column does not open and move the panel to the right (issue #469).
+#[test]
+fn importing_presets_in_develop_keeps_them_in_the_left_column() {
+    let dir = temp_dir("left");
+    let xmp = dir.join("Soft.xmp");
+    std::fs::write(
+        &xmp,
+        r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+         <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+           crs:PresetType="Normal" crs:Name="Soft" crs:UUID="AB12" crs:Exposure2012="0.5"/>
+         </rdf:RDF></x:xmpmeta>"#,
+    )
+    .unwrap();
+    let mut h = app();
+    h.request("engine.execute", json!({"command": "module.develop", "params": {}}), T);
+    h.settle(SETTLE);
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
+    h.app.ui.left_panel = true;
+    h.settle(SETTLE);
+    let r = import(&mut h, &[&xmp]);
+    assert_eq!(r["ok"], true, "{r}");
+    assert!(toast(&h).contains("Imported 1 preset"), "{}", toast(&h));
+    assert!(!h.app.ui.presets, "the presets column must not open while the left column lists them");
+    // with the left column hidden, the presets column opens to show them
+    h.app.ui.left_panel = false;
+    h.settle(SETTLE);
+    let other = dir.join("Other.xmp");
+    std::fs::write(&other, std::fs::read_to_string(&xmp).unwrap().replace("Soft", "Other").replace("AB12", "CD34")).unwrap();
+    import(&mut h, &[&other]);
+    assert!(h.app.ui.presets, "{}", toast(&h));
+    let _ = std::fs::remove_dir_all(&dir);
+}

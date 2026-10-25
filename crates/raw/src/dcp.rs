@@ -129,6 +129,18 @@ fn matches(profile_model: &str, make: Option<&str>, model: &str) -> bool {
     !first.is_empty() && p == key(&format!("{first} {m}"))
 }
 
+/// A camera calibrated against Lightroom (`lcc_camdb::calibration`): bundled with the app, below a person's own
+/// `.dcp` default. Each look is a profile chosen per photo as `cal:<id>`; the first is the camera's default.
+#[derive(Clone, Debug)]
+pub struct Calibrated {
+    /// First word of the Exif make, upper case.
+    pub make: String,
+    /// Every name the camera goes by, as "make model" (profile-model form, see [`matches`]).
+    pub names: Vec<String>,
+    /// `(cal:<id>, profile)`, the default first.
+    pub looks: Vec<(String, Arc<Dcp>)>,
+}
+
 fn registry() -> &'static RwLock<Vec<Arc<Dcp>>> {
     static R: OnceLock<RwLock<Vec<Arc<Dcp>>>> = OnceLock::new();
     R.get_or_init(Default::default)
@@ -190,15 +202,66 @@ pub fn library_get(id: &str) -> Option<Arc<Dcp>> {
     library_registry().read().unwrap_or_else(PoisonError::into_inner).iter().find(|(i, _)| i == id).map(|(_, d)| d.clone())
 }
 
+fn calibrated_registry() -> &'static RwLock<Vec<Arc<Calibrated>>> {
+    static R: OnceLock<RwLock<Vec<Arc<Calibrated>>>> = OnceLock::new();
+    R.get_or_init(Default::default)
+}
+
+/// Install the cameras calibrated against Lightroom (a later one for a camera with the same first name wins).
+pub fn install_calibrated(list: Vec<Calibrated>) {
+    let mut out: Vec<Arc<Calibrated>> = Vec::new();
+    for c in list {
+        let first = c.names.first().map(|n| key(n));
+        out.retain(|x| x.names.first().map(|n| key(n)) != first);
+        out.push(Arc::new(c));
+    }
+    *calibrated_registry().write().unwrap_or_else(PoisonError::into_inner) = out;
+}
+
+/// The installed calibrations.
+pub fn calibrated() -> Vec<Arc<Calibrated>> {
+    calibrated_registry().read().unwrap_or_else(PoisonError::into_inner).clone()
+}
+
+/// The calibration for a camera (Exif make and model): one of its names [`matches`] the camera.
+pub fn calibrated_for(make: Option<&str>, model: &str) -> Option<Arc<Calibrated>> {
+    calibrated_registry().read().unwrap_or_else(PoisonError::into_inner).iter().find(|c| c.names.iter().any(|n| matches(n, make, model))).cloned()
+}
+
+/// [`calibrated_for`] for a camera written as one string (see [`covers_camera`]).
+pub fn calibrated_for_camera(camera: &str) -> Option<Arc<Calibrated>> {
+    calibrated_registry().read().unwrap_or_else(PoisonError::into_inner).iter().find(|c| c.names.iter().any(|n| covers_model(n, camera))).cloned()
+}
+
+/// Whether some installed calibration has a look with id `id` (`cal:…`).
+pub fn calibrated_look_exists(id: &str) -> bool {
+    calibrated_registry().read().unwrap_or_else(PoisonError::into_inner).iter().any(|c| c.looks.iter().any(|(i, _)| i == id))
+}
+
+/// The look id (`cal:…`) of a profile that came from a calibration, if it did.
+pub fn calibrated_look_id(dcp: &Arc<Dcp>) -> Option<String> {
+    let reg = calibrated_registry().read().unwrap_or_else(PoisonError::into_inner);
+    reg.iter().flat_map(|c| c.looks.iter()).find(|(_, d)| Arc::ptr_eq(d, dcp)).map(|(id, _)| id.clone())
+}
+
+/// A camera's default profile: the person's own `.dcp` ([`for_camera`]), else its calibration's first look.
+fn default_for(make: Option<&str>, model: &str) -> Option<Arc<Dcp>> {
+    for_camera(make, model).or_else(|| calibrated_for(make, model).and_then(|c| c.looks.first().map(|(_, d)| d.clone())))
+}
+
 /// The profile a photo's camera-profile choice (`profile.camera`) gives a camera (Exif make and
 /// model): `lc` none (the app's own colour); `dcp:<id>` that imported profile when it exists and
-/// is for this camera; anything else (empty, or a profile that is gone or for another camera) the
-/// camera's default ([`for_camera`]). The decoder and the catalog both decide through this.
+/// is for this camera; `cal:<id>` that calibrated look of this camera's calibration; anything else
+/// (empty, or a profile that is gone or for another camera) the camera's default: the person's own
+/// `.dcp` ([`for_camera`]), else its calibration's first look. The decoder and the catalog both decide through this.
 pub fn resolve(choice: &str, make: Option<&str>, model: &str) -> Option<Arc<Dcp>> {
     match choice {
         "lc" => None,
-        c if c.starts_with("dcp:") => library_get(c).filter(|d| matches(&d.model, make, model)).or_else(|| for_camera(make, model)),
-        _ => for_camera(make, model),
+        c if c.starts_with("dcp:") => library_get(c).filter(|d| matches(&d.model, make, model)).or_else(|| default_for(make, model)),
+        c if c.starts_with("cal:") => calibrated_for(make, model)
+            .and_then(|cal| cal.looks.iter().find(|(id, _)| id == c).map(|(_, d)| d.clone()))
+            .or_else(|| default_for(make, model)),
+        _ => default_for(make, model),
     }
 }
 
@@ -307,5 +370,33 @@ mod tests {
         assert!(!covers_camera("TESTCAM CO TESTCAM ONE"));
         assert!(resolve_camera("dcp:two", "TESTCAM CO TESTCAM TWO").is_some(), "a chosen profile needs no default");
         install_library(Vec::new());
+
+        // calibrated cameras (one test: the registries are process-wide)
+        let look = |name: &str| {
+            let mut d = parse(&tiny_dcp("CALCAM ONE")).unwrap();
+            d.name = name.into();
+            Arc::new(d)
+        };
+        let names = vec!["CALCAM ONE".into(), "CALCAM ONE II".into()];
+        install_calibrated(vec![Calibrated { make: "CALCAM".into(), names, looks: vec![("cal:a".into(), look("A")), ("cal:b".into(), look("B"))] }]);
+        let cam = "CALCAM CORP CALCAM ONE";
+        assert!(covers_camera(cam) && covers_camera("CALCAM CORP ONE II"));
+        assert_eq!(resolve_camera("", cam).unwrap().name, "A", "the first look is the default");
+        assert_eq!(resolve_camera("cal:b", cam).unwrap().name, "B");
+        assert_eq!(resolve_camera("cal:gone", cam).unwrap().name, "A");
+        assert!(resolve_camera("lc", cam).is_none());
+        assert!(resolve_camera("cal:b", "TESTCAM CO TESTCAM ONE").is_none(), "another camera's look is not used");
+        assert_eq!(calibrated_for_camera(cam).unwrap().looks.len(), 2);
+        assert!(calibrated_look_exists("cal:b") && !calibrated_look_exists("cal:gone"));
+        let b = resolve_camera("cal:b", cam).unwrap();
+        assert_eq!(calibrated_look_id(&b).as_deref(), Some("cal:b"));
+        // a person's own .dcp outranks the calibration as default, not an explicit look
+        install(vec![parse(&tiny_dcp("CALCAM ONE")).unwrap()]);
+        assert_eq!(resolve_camera("", cam).unwrap().name, "Test Look");
+        assert_eq!(resolve_camera("cal:b", cam).unwrap().name, "B");
+        assert!(calibrated_look_id(&resolve_camera("", cam).unwrap()).is_none());
+        install(Vec::new());
+        install_calibrated(Vec::new());
+        assert!(!covers_camera(cam));
     }
 }

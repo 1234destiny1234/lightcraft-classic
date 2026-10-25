@@ -215,7 +215,7 @@ Not decoded yet — preview only (no permissively licensed description; black-bo
 **Camera colour matrices:** ARW, NEF, RW2, RAF, CR3, CR2, PEF, Samsung SRW and Olympus ORF files can use guarded, separate chromaticity and tone estimates from their own embedded JPEG (see `docs/camera-preview-colour.md`); this is a per-file camera-look estimate with relative WB, not measured calibration or absolute-Kelvin WB. 52 models whose fit is rejected (or that have no usable JPEG) start from matrices fitted to their measured spectral sensitivities instead (rawtoaces-data, Apache-2.0; `crates/raw/src/spectral.rs`). Other non-DNG raws and rejected fits use the documented neutral fallback (camera RGB ≈ linear sRGB, flagged
 `matrix_is_fallback`) with the file's as-shot white-balance multipliers. Clean sources to evaluate next: manufacturer
 matrices stored in the files themselves (Olympus ImageProcessing `ColorMatrix`, Pentax equivalents; Panasonic RW2 files carry none) and our
-own chart-based calibration (M11.4). Adobe matrices are never used.
+own calibration (M11.4): `<cli> calibrate-lightroom` fits a camera's colour model and looks black-box to Lightroom's exports of a contributor's own photos (maintainer decision 2026-10-25; [docs/calibrate-lightroom.md](docs/calibrate-lightroom.md)); no camera is calibrated yet. Adobe DCP/LCP files and matrices from Adobe-converted DNGs are never used.
 
 ## Lightroom Classic catalog migration
 
@@ -230,6 +230,8 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-25: M11.4: `<cli> calibrate-lightroom` (preset, fit, add, list): camera calibrations matched to Lightroom
+  by black-box fits to its exports of contributors' own photos; data rules amended (gaps 1 and 3; 0 cameras so far).
 - 2026-10-22 (upstream): Print page setup and PDF output gain the Japanese photo and postcard papers (L判, 2L判,
   KG判, はがき, 往復はがき, 六切, 四切, 名刺) at their exact metric sizes, by their customary names in the Print dialog
   and `print.set`.

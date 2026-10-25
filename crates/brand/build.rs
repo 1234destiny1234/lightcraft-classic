@@ -85,6 +85,9 @@ const OPTIONAL: &[(&str, &str, &str)] = &[
     ("updates.public_keys", "UPDATES_PUBLIC_KEYS", "&[&str] = &[]"),
     // no community chat: no Discord link in the Help menu or About
     ("product.discord", "DISCORD", "&str = \"\""),
+    // no calibration channel: contributors attach calibrations to an issue on `product.repository`
+    ("product.calibration_discord", "CALIBRATION_DISCORD", "&str = \"\""),
+    ("product.calibration_thread", "CALIBRATION_THREAD", "&str = \"\""),
     // no upstream: the About window credits no upstream project
     ("upstream.name", "UPSTREAM_NAME", "&str = \"\""),
     ("upstream.repository", "UPSTREAM_REPOSITORY", "&str = \"\""),
