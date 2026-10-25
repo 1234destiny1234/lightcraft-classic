@@ -238,6 +238,33 @@ fn mark_deleted(s: &mut Session, ids: &[PhotoId], label: &str) -> Result<usize> 
 /// Apply one op per target as a single undo step.
 fn for_targets(s: &mut Session, p: &Value, label: &str, f: impl Fn(PhotoId) -> Option<Op>) -> Result<Value> {
     let targets = s.targets(p)?;
+    apply_each(s, &targets, label, f)
+}
+
+/// Targets of rating, flag and label commands: [`Session::targets`], where a selected photo of a
+/// collapsed stack stands for the whole stack (issue #2232). Explicit `ids` / `id` are kept as given.
+fn mark_targets(s: &Session, p: &Value) -> Result<Vec<PhotoId>> {
+    let targets = s.targets(p)?;
+    let explicit = |k: &str| p.get(k).is_some_and(|v| !v.is_null());
+    if explicit("ids") || explicit("id") {
+        return Ok(targets);
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<PhotoId> = Vec::with_capacity(targets.len());
+    for id in targets {
+        let members = s.catalog.stack_of(id).filter(|st| st.collapsed).map_or_else(|| vec![id], |st| st.photos.clone());
+        out.extend(members.into_iter().filter(|m| seen.insert(*m)));
+    }
+    Ok(out)
+}
+
+/// [`for_targets`] on [`mark_targets`].
+fn for_marks(s: &mut Session, p: &Value, label: &str, f: impl Fn(PhotoId) -> Option<Op>) -> Result<Value> {
+    let targets = mark_targets(s, p)?;
+    apply_each(s, &targets, label, f)
+}
+
+fn apply_each(s: &mut Session, targets: &[PhotoId], label: &str, f: impl Fn(PhotoId) -> Option<Op>) -> Result<Value> {
     let ops: Vec<Op> = targets.iter().filter_map(|id| f(*id)).collect();
     let n = ops.len();
     if n > 0 {
@@ -249,7 +276,7 @@ fn for_targets(s: &mut Session, p: &Value, label: &str, f: impl Fn(PhotoId) -> O
 /// Adjust each target's own rating; unchanged bounds do not create an undo step.
 fn change_rating(s: &mut Session, p: &Value, delta: i8, label: &str) -> Result<Value> {
     let mut ops = Vec::new();
-    for id in s.targets(p)? {
+    for id in mark_targets(s, p)? {
         let old = s.catalog.photo(id).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?.rating;
         let rating = (i16::from(old) + i16::from(delta)).clamp(0, 5) as u8;
         if rating != old {
@@ -267,7 +294,7 @@ fn change_rating(s: &mut Session, p: &Value, delta: i8, label: &str) -> Result<V
 /// raising/lowering clamps on reject < unflagged < pick. Unchanged photos make no history step.
 fn change_flag(s: &mut Session, p: &Value, label: &str, step: impl Fn(Flag) -> Flag) -> Result<Value> {
     let mut ops = Vec::new();
-    for id in s.targets(p)? {
+    for id in mark_targets(s, p)? {
         let old = s.catalog.photo(id).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?.flag;
         let flag = step(old);
         if flag != old {
@@ -913,7 +940,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     .ok()
                     .filter(|r| *r <= 5)
                     .ok_or_else(|| bad("photo.rate", "rating must be a whole number 0..5"))?;
-                cull(s, p, |s| for_targets(s, p, "Set Rating", |id| Some(Op::SetRating { id, rating: r as u8 })))
+                cull(s, p, |s| for_marks(s, p, "Set Rating", |id| Some(Op::SetRating { id, rating: r as u8 })))
             }
         ),
         cmd!(
@@ -943,7 +970,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_selection,
             |s, p| {
                 let f = str_param(p, "flag").and_then(Flag::parse).ok_or_else(|| bad("photo.flag", "flag must be pick|reject|none"))?;
-                cull(s, p, |s| for_targets(s, p, "Set Flag", |id| Some(Op::SetFlag { id, flag: f })))
+                cull(s, p, |s| for_marks(s, p, "Set Flag", |id| Some(Op::SetFlag { id, flag: f })))
             }
         ),
         // Classic: ` cycles the flag; Cmd+Up / Cmd+Down raise / lower it (Ctrl on Windows and Linux)
@@ -989,7 +1016,7 @@ pub fn specs() -> Vec<CommandSpec> {
             Some("P"),
             "{ids?, advance?: bool} — without `ids`, the selection moves on when this takes the active photo out of the view",
             has_selection,
-            |s, p| { cull(s, p, |s| for_targets(s, p, "Flag as Pick", |id| Some(Op::SetFlag { id, flag: Flag::Pick }))) }
+            |s, p| { cull(s, p, |s| for_marks(s, p, "Flag as Pick", |id| Some(Op::SetFlag { id, flag: Flag::Pick }))) }
         ),
         cmd!(
             "photo.reject",
@@ -998,7 +1025,7 @@ pub fn specs() -> Vec<CommandSpec> {
             Some("X"),
             "{ids?, advance?: bool} — without `ids`, the selection moves on when this takes the active photo out of the view",
             has_selection,
-            |s, p| { cull(s, p, |s| for_targets(s, p, "Flag as Reject", |id| Some(Op::SetFlag { id, flag: Flag::Reject }))) }
+            |s, p| { cull(s, p, |s| for_marks(s, p, "Flag as Reject", |id| Some(Op::SetFlag { id, flag: Flag::Reject }))) }
         ),
         cmd!(
             "photo.unflag",
@@ -1007,7 +1034,7 @@ pub fn specs() -> Vec<CommandSpec> {
             Some("U"),
             "{ids?, advance?: bool} — without `ids`, the selection moves on when this takes the active photo out of the view",
             has_selection,
-            |s, p| { cull(s, p, |s| for_targets(s, p, "Unflag", |id| Some(Op::SetFlag { id, flag: Flag::None }))) }
+            |s, p| { cull(s, p, |s| for_marks(s, p, "Unflag", |id| Some(Op::SetFlag { id, flag: Flag::None }))) }
         ),
         cmd!(
             "photo.label",
@@ -1026,7 +1053,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     Some(_) => return Err(bad("photo.label", "label must be red|yellow|green|blue|purple|none")),
                 };
                 cull(s, p, |s| {
-                    let targets = s.targets(p)?;
+                    let targets = mark_targets(s, p)?;
                     if bool_or(p, "toggle", false) && l.is_some() {
                         let all_have = !targets.is_empty() && targets.iter().all(|id| s.catalog.photo(*id).and_then(|ph| ph.label) == l);
                         if all_have {
