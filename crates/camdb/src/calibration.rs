@@ -172,6 +172,22 @@ pub fn look_id(name: &str) -> String {
     format!("{LOOK_PREFIX}{}", slug.join("-"))
 }
 
+/// The name the app shows for a look: Lightroom's profile name (kept in the file, and what photos are matched by)
+/// with the vendor's mark replaced by our own look family's and British spelling, so "Adobe Color" shows as
+/// "Eboda Colour". Other names keep their words.
+pub fn display_name(name: &str) -> String {
+    let words: Vec<String> = name
+        .split_whitespace()
+        .map(|w| match w {
+            "Adobe" => "Eboda".to_string(),
+            "Color" => "Colour".to_string(),
+            "color" => "colour".to_string(),
+            other => other.to_string(),
+        })
+        .collect();
+    words.join(" ")
+}
+
 /// A short text field: trimmed, not empty, at most `max` characters, no control characters and nothing that reads
 /// as a path.
 fn check_text(what: &str, s: &str, max: usize) -> Result<(), Error> {
@@ -362,7 +378,7 @@ impl Calibration {
     pub fn look_dcp(&self, look: &Look) -> Dcp {
         Dcp {
             model: format!("{} {}", super::brand(&self.make), self.model.trim()),
-            name: format!("{} (matched)", look.name),
+            name: display_name(&look.name),
             copyright: self.contributor.clone().unwrap_or_default(),
             color: self.color_data(look),
         }
@@ -541,6 +557,18 @@ mod tests {
         assert_eq!(look_id("Camera  Neutral v2"), "cal:camera-neutral-v2");
         assert_eq!(c.look("cal:adobe-standard").map(|l| l.name.as_str()), Some("Adobe Standard"));
         assert_eq!(c.default_look().map(|l| l.name.as_str()), Some("Adobe Color"));
+    }
+
+    #[test]
+    fn looks_show_our_names_but_match_lightrooms() {
+        assert_eq!(display_name("Adobe Color"), "Eboda Colour");
+        assert_eq!(display_name("Adobe Vivid"), "Eboda Vivid");
+        assert_eq!(display_name("Adaptive Color"), "Adaptive Colour");
+        assert_eq!(display_name("Camera Standard"), "Camera Standard");
+        let c = sample();
+        // the profile shows our name, the id still matches Lightroom's `crs:Look` name
+        assert_eq!(c.look_dcp(&c.looks[0]).name, "Eboda Colour");
+        assert_eq!(c.calibrated().looks[0].0, "cal:adobe-color");
     }
 
     #[test]

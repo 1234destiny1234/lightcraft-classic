@@ -42,7 +42,7 @@ fn camera_profile_row(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, 
             options.push((pid, name));
         }
     }
-    // the camera's Lightroom-matched calibrated looks ("Adobe Color (matched)")
+    // the camera's Lightroom-matched calibrated looks (Lightroom's "Adobe Color" shown as "Eboda Colour", `lcc_camdb::calibration::display_name`)
     if let Some(cal) = lcc_raw::dcp::calibrated_for_camera(&camera) {
         options.extend(cal.looks.iter().map(|(pid, p)| (pid.clone(), p.name.clone())));
     }
