@@ -248,3 +248,61 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2176 | feat(mcp): confine file access to configured roots | LEARN | MCP file access confined to configured roots: security idea for the fork's MCP |  |
 | #2174 | Twenty-five small fixes: NEF bit depth, colour labels, planar TIFF, light-mode UI, masks, spiral, Show in Folders, window fit, web title, no-keyword filter, radial feather, preset groups, people sort, preset highlight, clipping overlay, base curve, capture time, dehaze, culling, grid shortcut | SKIP | upstream CI/packaging/tooling |  |
 | #2170 | never-crash: deny the panic lints in every crate root; GPU asserts become fail paths (#2137) | LEARN | panic lints in every crate root, GPU asserts as fail paths: check the fork covers the same crates |  |
+
+## Missed in the first pass (1907–2168)
+
+Still-open upstream PRs in this range that the first pass left out, reviewed 2026-10-26.
+
+| PR | Title | Decision | Reason | Fork PR |
+|---|---|---|---|---|
+| #1907 | LR-META-XMP: Write automatic XMP sidecars off the UI thread | LEARN | a background sidecar writer keeps saves off the UI thread; the fork still writes inline (no `sidecar_writer`) |  |
+| #1910 | i18n: add Lao (lo) translation support | SKIP | a new locale needs Lao fonts in craft-fonts and a translator to maintain it; revisit on request |  |
+| #1916 | LR-BEHAV-ACCESS: red-eye corrections by keyboard | LEARN | keyboard placement of red-eye spots: accessibility idea, the fork's red-eye tool differs |  |
+| #1926 | sidebar and bottom bar icons from Tabler Icons | SKIP | the fork keeps its own code-drawn icon set and Classic look |  |
+| #1928 | Restore font-free GNOME Wayland window controls | LEARN | Wayland CSD caption buttons on GNOME; check the fork's winit features against GNOME before porting |  |
+| #1931 | Library: a cropped photo's thumbnail reads the source its crop needs | SKIP | already in the fork (`media.rs` sizes the source by the crop) |  |
+| #1933 | LR-BEHAV-BG-TASKS: preview builds queue, failed tasks can be retried | SKIP | stacked on unmerged upstream PRs; the fork's activity stack differs |  |
+| #1936 | LR-BEHAV-TOAST: toasts stack instead of replacing one another | LEARN | stacked toasts: worth doing on the fork's own toast code |  |
+| #1938 | Files on an SMB share: imports, moves and sidecar backups use the fsync fallback | SKIP | already in the fork (fork #375, `crates/sysmem` fsync fallback) |  |
+| #1953 | Process V3: bright saturated colours keep their saturation | LEARN | tone-mapping change that would need a new process version so existing edits don't move; not ported blind |  |
+| #1958 | M12: SAM 3 on the CPU ~3x faster | LEARN | large `crates/segment` rewrite; take after the fork's SAM 3 worker settles (upstream #2191 already ported) |  |
+| #1961 | Remember Windows window geometry through eframe | SKIP | the fork has its own window-geometry handling |  |
+| #1962 | Print: network printers, Grayscale and queue paper through craft-libs | SKIP | blocked on unmerged print-stack repos; the fork prints through `crates/winspool` |  |
+| #1970 | Control port: require a per-run token before any request | ADOPT | already ported (commit 094401501) |  |
+| #1971 | export EXIF Make and Model separately; camera label drops a repeated maker | LEARN | separate Make/Model on export is correct metadata; touches many crates, port by hand |  |
+| #1973 | GPU: recover safely after readback timeouts | SKIP | already in the fork (`crates/gpu/src/ctx.rs` readback timeout recovery) |  |
+| #1978 | Apple gain-map reconstruction and reference probes | LEARN | Apple legacy gain maps (linear ratio) for HEIC HDR; useful when the fork's HDR import reaches Apple files |  |
+| #1995 | Import: preserve embedded rating, flag and label from file metadata | SKIP | the fork already takes rating, flag and label from embedded metadata on import |  |
+| #2010 | LR-MERGE-HDRPANO: merge previews without the memory spike | ADOPT | already merged (commit 943d35a26) |  |
+| #2018 | Workspace: rust-version 1.95 | SKIP | already in the fork (upstream #1859) |  |
+| #2020 | LR-LIB-SMARTALBUM: keyword edits no longer freeze the window while albums are counted | LEARN | cached smart-album counts; check the fork's sidebar on a large library first |  |
+| #2021 | Fix Lightroom catalog video classification and filtering | LEARN | video rows from a Lightroom catalog import; small, port with the next catalog-import work |  |
+| #2029 | LR-MERGE-PANO: residual vignetting, flare offsets and seam leveling | LEARN | seam levelling for panoramas; sizeable, port with the next merge work |  |
+| #2030 | LR-MERGE-PANO: merged DNGs open with sliders at 0 and their auto crop as default crop | LEARN | merged DNG opens neutral; port with #2029 |  |
+| #2034 | LRC-LIB-LIBFOLDERS: Synchronize Folder can bring in files already in the library elsewhere | LEARN | duplicate handling in Synchronize Folder, remembered choice |  |
+| #2043 | LRC-LIB-SMARTCOLL: Same Content as Another Photo rule | LEARN | smart-collection rule for twin files; small once #2034's duplicates exist |  |
+| #2048 | CI: trigger platform checks for application changes | SKIP | upstream CI; the fork runs its own self-hosted CI |  |
+| #2051 | LRC-LIB-CATALOG-IMPORT: header reads in fewer, larger reads | SKIP | stacked on unmerged upstream #1735 |  |
+| #2060 | Wire to CollabCraft for Open, Save, and Share | SKIP | cloud service the fork does not ship |  |
+| #2065 | KEY-TOGGLEZOOM: hold Space over a tool to pan and click-zoom | ADOPT | already ported (commit 448d88d9d) |  |
+| #2068 | raw(orf): decode lossless compressed Olympus ORF files | SKIP | the fork already decodes compressed ORF (`orf::decode_compressed`) |  |
+| #2073 | LC-SAFETY: refuse Photo Merge inputs beyond the memory budget | LEARN | never-crash: budget check before decoding merge inputs; the fork has decoder budgets (fork #527) but not this planner check |  |
+| #2074 | Cobalt profiles | SKIP | the fork has its own profile picker and DCP import |  |
+| #2075 | LR-BEHAV-DIALOGS: dialog confirm buttons name their action | LEARN | wording idea (Export, Rename… instead of OK) for the fork's dialogs |  |
+| #2078 | LR-BEHAV-ACCESS: one tick box, radio and toggle component | SKIP | upstream widget refactor across its UI; conflicts with the fork's Classic UI and the egui 0.37 question |  |
+| #2079 | LR-BEHAV-ACCESS: action buttons share one Button component | SKIP | same as #2078 |  |
+| #2080 | MENU-BAR: one menu row and shortcut component | SKIP | same as #2078 |  |
+| #2086 | LR-META-XMP: hierarchical keywords saved as names and paths | SKIP | already in the fork (`sidecar.rs`: names in `dc:subject`, paths in `lr:hierarchicalSubject`) |  |
+| #2087 | LR-IMP-FORMATS: a HEIC's EXIF is read, and a file-date guess never reaches a sidecar | ADOPT | sidecar part already ported (commit 1a12f8149); HEIC EXIF part LEARN |  |
+| #2088 | LR-META-XMP: a sidecar's GPS wins over the camera's | SKIP | already in the fork (`OWNED_IF_STATED` GPS tags) |  |
+| #2092 | LR-PROF-CAMERACOLOR: color and tone in pushed shadows | ADOPT | already ported (fork #258) |  |
+| #2093 | LR-PROF-CAMERACOLOR: bundled Nikon D780, D750 and D90 camera profiles | ADOPT | already in the fork (`assets/camera-profiles/NIKON_D7*0.json`, `NIKON_D90.json`) |  |
+| #2102 | Handle macOS native picker failures without aborting | LEARN | never-crash on macOS picker errors; the fork's dialog code differs, port by hand |  |
+| #2110 | LR-BEHAV-LOCALIZE: Hebrew file and folder names get glyphs | LEARN | Hebrew fallback face through craft-fonts |  |
+| #2111 | LR-MASK-CURVE: a Curve in every mask | ADOPT | already ported (commit a6e822b4c) |  |
+| #2143 | MIDI controller input: TOML map to Develop sliders and commands | LEARN | MIDI surface over the command layer; worthwhile but needs a pure-Rust MIDI crate review |  |
+| #2155 | Never crash: refuse an ERF or MEF whose raw strip runs past the file | ADOPT | already ported (commit 3737f8504) |  |
+| #2160 | LR-PROF-CAMERACOLOR: bundled X20, X100T, X-T1, D700 and D70 profiles | ADOPT | fitted by the contributor with `calibrate` from their own raws and in-camera JPEGs, no Adobe data | fork #555 |
+| #2161 | Never crash: cap the property names one XMP packet can produce | SKIP | the fork already caps flattened keys (`MAX_KEY_BYTES` in `meta/src/xmp.rs`) |  |
+| #2162 | LR-VIEW-PHOTOGRID: the active photo's selection ring shows on light themes | LEARN | grid ring contrast on light themes; apply to the fork's grid colours |  |
+| #2168 | LRC-LIB-CATALOG-IMPORT: import a creation saved inside a collection | ADOPT | fixes a whole catalog import failing on a print/book saved inside a collection | fork #551 |
