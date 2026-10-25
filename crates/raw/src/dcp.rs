@@ -129,6 +129,18 @@ fn matches(profile_model: &str, make: Option<&str>, model: &str) -> bool {
     !first.is_empty() && p == key(&format!("{first} {m}"))
 }
 
+/// A camera calibrated against Lightroom (`lcc_camdb::calibration`): bundled with the app, below a person's own
+/// `.dcp` default. Each look is a profile chosen per photo as `cal:<id>`; the first is the camera's default.
+#[derive(Clone, Debug)]
+pub struct Calibrated {
+    /// First word of the Exif make, upper case.
+    pub make: String,
+    /// Every name the camera goes by, as "make model" (profile-model form, see [`matches`]).
+    pub names: Vec<String>,
+    /// `(cal:<id>, profile)`, the default first.
+    pub looks: Vec<(String, Arc<Dcp>)>,
+}
+
 fn registry() -> &'static RwLock<Vec<Arc<Dcp>>> {
     static R: OnceLock<RwLock<Vec<Arc<Dcp>>>> = OnceLock::new();
     R.get_or_init(Default::default)
