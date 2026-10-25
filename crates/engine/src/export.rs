@@ -2022,11 +2022,24 @@ impl PreparedExport {
                         // fail closed: a PSD whose metadata can't be read might hide a location
                         let metadata = lcc_meta::try_extract(&bytes)
                             .map_err(|e| format!("{label}: can't verify location metadata in this original file: {e}"))?;
-                        if metadata.gps.is_some() || lcc_meta::embeds_location(&bytes) {
+                        if !bytes.starts_with(b"8BPS") {
+                            let embedded = lcc_meta::embedded(&bytes);
+                            if let Some(xmp) = embedded.xmp.as_deref() {
+                                lcc_meta::parse_xmp(xmp).map_err(|e| {
+                                    format!("{label}: can't verify location metadata in this original file: malformed embedded XMP: {e}")
+                                })?;
+                            }
+                        }
+                        let embeds_place_name =
+                            [metadata.sublocation.as_deref(), metadata.city.as_deref(), metadata.state.as_deref(), metadata.country.as_deref()]
+                                .into_iter()
+                                .flatten()
+                                .any(|value| !value.trim().is_empty());
+                        if metadata.gps.is_some() || embeds_place_name || lcc_meta::embeds_location(&bytes) {
                             // DNG only for what the DNG export below takes
                             let instead = if lcc_raw::probe(&bytes).is_some() { "JPEG, TIFF or DNG" } else { "JPEG or TIFF" };
                             return Err(format!(
-                                "{label}: can't remove the location from an original file that embeds GPS; export as {instead} instead"
+                                "{label}: can't remove the location from an original file that embeds GPS or place names; export as {instead} instead"
                             ));
                         }
                     }
