@@ -68,8 +68,7 @@ fn keywords_section_draws_only_the_rows_near_the_screen() {
 fn a_keyword_with_line_breaks_is_drawn_on_one_line() {
     let mut s = Session::new();
     let list: Vec<String> = (0..20).map(|i| format!("Wedding Keyword {i:02}")).collect();
-    let mut p =
-        Photo::new(PhotoId(1), Source::File { path: "/lcc-kw-test/IMG_1.jpg".into() }, "IMG_1.jpg", "JPEG", 60, 40, "2026-01-01T00:00:00");
+    let mut p = Photo::new(PhotoId(1), Source::File { path: "/lcc-kw-test/IMG_1.jpg".into() }, "IMG_1.jpg", "JPEG", 60, 40, "2026-01-01T00:00:00");
     p.meta.keywords = vec![list.join("\r\n "), "Solo".into()];
     s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     let app = LccApp::new(s, Services { png: None, ..Default::default() });
