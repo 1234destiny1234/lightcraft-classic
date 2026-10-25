@@ -286,8 +286,11 @@ detail says which. dcraw's black and white levels are left out. The table gives 
 or Lightroom's look. It replaces the neutral fallback when a JPEG fit fails or a raw has no usable JPEG, and the
 Colorimetric camera colour starts from it for models without spectral data (maintainer decision 2026-10-26). dcraw
 matched names by prefix; the database matches exact models, so a body dcraw only covered through a shorter name (its
-"Minolta DYNAX 5" row for the DYNAX 5D, say) isn't matched. White balance stays on the relative scale for these
-models: absolute Kelvin through dcraw's matrices is a follow-up.
+"Minolta DYNAX 5" row for the DYNAX 5D, say) isn't matched. White balance on these models is edited in Kelvin: the as-shot multipliers are
+read through dcraw's matrix, as through the spectral matrices, after the spectral table and the camera's own Kelvin
+presets (those come first where they exist). White balances edited before on the relative scale are read as
+`legacy` and render as they did until the next edit converts them (`lcc_pipeline::local::normalize_wb`). One D65
+matrix reads tungsten-lit multipliers less exactly than a two-illuminant pair would.
 
 Data rules: what ships must be legal to redistribute, with its source named. No Adobe DCP/LCP files, no matrices
 harvested from Adobe-converted DNGs, no Adobe-rendered pixels, and no tables from GPL or other copyleft projects

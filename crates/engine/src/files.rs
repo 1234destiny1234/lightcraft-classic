@@ -766,7 +766,8 @@ fn load_bytes_now(
 /// A file with colour matrices of its own (DNG) has an absolute scale from its tags. A file without
 /// (`camera_preview::file_local_look`) has one when its camera's matrices are measured
 /// (`lcc_raw::spectral`), else when its camera's white-balance presets give one
-/// (`lcc_raw::kelvin_presets`): either turns its as-shot multipliers into Kelvin and tint, nothing else — the
+/// (`lcc_raw::kelvin_presets`), else when the camera database has matrices for it (`lcc_camdb`, dcraw's table):
+/// each turns its as-shot multipliers into Kelvin and tint, nothing else — the
 /// look stays the file's fit. Any other raw is edited relative to its as-shot look (6500 K / 0 means as shot).
 pub(crate) struct WbScaleOf {
     own_matrix: bool,
@@ -777,6 +778,8 @@ pub(crate) struct WbScaleOf {
     scale_white: Option<lcc_color::Xy>,
     /// The camera's measured matrices, when they give the scale.
     camera: Option<&'static lcc_raw::spectral::Camera>,
+    /// The camera database entry whose matrices give the scale, when neither the spectral table nor presets do.
+    db: Option<lcc_camdb::Entry>,
 }
 
 /// The white balance a DNG of a raw's camera RGB (Photo Merge) declares so that it shows as its source does
@@ -802,8 +805,14 @@ impl WbScaleOf {
             None if presets => lcc_raw::kelvin_presets::as_shot_white(color, shot),
             None => None,
         };
-        let covered = camera.is_some() || presets;
-        WbScaleOf { own_matrix, relative: fitted && !covered, legacy_relative: fitted && covered, scale_white, camera }
+        // else the camera database's matrices (dcraw's table, …), the last way to a Kelvin reading
+        let db = (camera.is_none() && !presets)
+            .then(|| model.and_then(|model| lcc_camdb::find(meta.make.as_deref(), model)))
+            .flatten()
+            .filter(|e| lcc_raw::color::has_matrix(&e.color_data()));
+        let scale_white = scale_white.or_else(|| db.as_ref().and_then(|e| e.as_shot_white_through(color, shot)));
+        let covered = camera.is_some() || presets || db.is_some();
+        WbScaleOf { own_matrix, relative: fitted && !covered, legacy_relative: fitted && covered, scale_white, camera, db }
     }
 
     /// What a DNG of this raw's camera RGB declares so that it shows the white balance as this scale does: the
@@ -813,6 +822,12 @@ impl WbScaleOf {
         if let Some(camera) = self.camera {
             let mut c = lcc_raw::ColorData { profile: Default::default(), kelvin_presets: None, ..color.clone() };
             if camera.fill(&mut c) {
+                return DngWhite::Matrices(Box::new(c));
+            }
+        }
+        if let Some(e) = &self.db {
+            let mut c = lcc_raw::ColorData { profile: Default::default(), kelvin_presets: None, ..color.clone() };
+            if e.fill(&mut c) {
                 return DngWhite::Matrices(Box::new(c));
             }
         }
@@ -1484,11 +1499,19 @@ pub(crate) mod tests {
             let (t, tint) = xy_to_temp_tint(d65);
             (t.round(), tint.round())
         });
-        // a camera without measured matrices or presets (the DSLR-A100 predates them): relative, whatever the multipliers
+        // a camera with neither measured matrices nor presets but a row of dcraw's matrix table (the DSLR-A100):
+        // Kelvin through that matrix, edits from before marked legacy, a daylight-ish reading of daylight multipliers
         let a100 = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), mul, &meta("SONY", "DSLR-A100"));
-        assert!(a100.relative && !a100.legacy_relative && a100.scale_white.is_none());
-        assert_eq!(a100.as_shot(d65), (6500.0, 0.0));
-        assert!(lcc_catalog::relative_wb_camera("ARW", "SONY DSLR-A100"));
+        assert!(!a100.relative && a100.legacy_relative && a100.scale_white.is_some());
+        let (t, _) = a100.as_shot(d65);
+        assert!((3000.0..9000.0).contains(&t), "{t}");
+        assert!(!lcc_catalog::relative_wb_camera("ARW", "SONY DSLR-A100"));
+        assert!(matches!(a100.dng_white(&ColorData::default(), d65), DngWhite::Matrices(_)));
+        // a camera no table covers: relative, whatever the multipliers
+        let none = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), mul, &meta("HASSELBLAD", "Lunar"));
+        assert!(none.relative && !none.legacy_relative && none.scale_white.is_none());
+        assert_eq!(none.as_shot(d65), (6500.0, 0.0));
+        assert!(lcc_catalog::relative_wb_camera("ARW", "HASSELBLAD Lunar"));
         // a camera without matrices whose presets give the scale: Kelvin through them, Sony's daylight preset as
         // 5500 K or so; without presets in the file the scale is Kelvin still, the white the tags' (D65)
         let g = |r: f32, b: f32| [r / 1024.0, 1.0, b / 1024.0];
