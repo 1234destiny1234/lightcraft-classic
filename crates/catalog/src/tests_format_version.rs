@@ -272,8 +272,8 @@ fn op_variants_are_versioned() {
             Op::SetHistoryCursor { .. } => 11,
         }
     }
-    /// v14: the `RegionKind::IgnoredFace` value in metadata regions.
-    const NEWEST_FIELDS: u32 = 14;
+    /// v15: `Analysis.eyes_open` / `aesthetic` / `cull_score`.
+    const NEWEST_FIELDS: u32 = 15;
     let newest = since(&Op::SetHistoryCursor { id: crate::PhotoId(1), cursor: None });
     assert_eq!(newest.max(NEWEST_FIELDS), VERSION, "the newest op's or fields' version must be the current format version");
 }
@@ -338,4 +338,12 @@ fn v13_library_upgrades_and_ignored_faces_round_trip() {
     let (_, reopened, report) = Journal::open(Box::new(m)).unwrap();
     assert_eq!(report.upgraded_from, None);
     assert_eq!(reopened.photo(id).unwrap().meta, meta);
+}
+
+/// A format-14 `Analysis` object without the score fields still loads (serde default).
+#[test]
+fn v14_analysis_json_gains_optional_score_fields() {
+    let a: crate::Analysis = serde_json::from_str(r#"{"sharpness":50.0,"clipped":0.01,"group":null,"best":false}"#).unwrap();
+    assert!(a.eyes_open.is_none() && a.aesthetic.is_none() && a.cull_score.is_none());
+    assert_eq!(a.sharpness, 50.0);
 }

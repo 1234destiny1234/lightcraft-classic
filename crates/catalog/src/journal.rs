@@ -57,6 +57,7 @@
 //! | 12 | upstream merge: preview-only recheck (upstream's 9, #662), the camera's focus point (#1480) | `Photo.preview_checked`, `Op::SetContent.preview_checked`, `Meta.focus` |
 //! | 13 | a cleared GPS position stays cleared in the sidecar (upstream PR #2088) | `Meta.gps_removed` |
 //! | 14 | persistent Ignore Faces (upstream PR #2416) | `RegionKind::IgnoredFace` |
+//! | 15 | assisted culling scores (upstream PR #2855) | `Analysis.eyes_open` / `aesthetic` / `cull_score` |
 //!
 //! Rules:
 //! - **Bump [`VERSION`]** (and add a row above) in the change that adds an [`Op`] variant or a
@@ -86,7 +87,7 @@ pub(crate) const FORMAT: &str = "lcc-catalog";
 pub(crate) const V4_FORMAT: &str = "lcc-catalog-db";
 /// The catalog format this build writes (and the newest it reads). See the module docs →
 /// *Format versions*; bump it whenever an [`Op`] variant or a serialized field is added.
-pub const VERSION: u32 = 14;
+pub const VERSION: u32 = 15;
 
 /// When [`Journal::wants_snapshot`] says it's time to compact the log.
 #[derive(Clone, Copy, Debug)]

@@ -1243,7 +1243,7 @@
   "Scale": "縮放",
   "Scan failed": "掃描失敗",
   "Scanning": "正在掃描",
-  "Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.": "分數會保留在照片上：可依焦點與相似照片中的最佳照片篩選，或建立智慧型相簿。",
+  "Scores stay on the photos: filter or make smart albums with Focus, Eyes Open, Aesthetic and Cull Score.": "分數會保留在照片上：可依焦點、睜眼、審美與挑選分數篩選或建立智慧型相簿。",
   "Screen": "螢幕",
   "Scroll menu down": "向下捲動選單",
   "Scroll menu up": "向上捲動選單",
@@ -2199,5 +2199,9 @@
   "Import dropped files without review": "不經檢查直接匯入拖放的檔案",
   "An import is running": "正在匯入",
   "An import is running. Drop photos when it has finished": "正在匯入。匯入完成後再拖放照片",
-  "Finish Lightroom catalog import before adding photos": "新增照片前，請先完成 Lightroom 目錄的匯入"
+  "Finish Lightroom catalog import before adding photos": "新增照片前，請先完成 Lightroom 目錄的匯入",
+  "Aesthetic": "審美",
+  "Clipped (assisted culling)": "裁切（輔助挑選）",
+  "Cull Score": "挑選分數",
+  "Eyes Open": "睜眼"
 }

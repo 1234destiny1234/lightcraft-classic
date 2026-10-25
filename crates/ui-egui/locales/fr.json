@@ -1237,7 +1237,7 @@
   "Scale": "Échelle",
   "Scan failed": "Échec de l'analyse",
   "Scanning": "Analyse en cours",
-  "Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.": "Les scores restent sur les photos : filtrez ou créez des albums intelligents avec Mise au point et Meilleure des prises similaires.",
+  "Scores stay on the photos: filter or make smart albums with Focus, Eyes Open, Aesthetic and Cull Score.": "Les scores restent sur les photos : filtrez ou créez des albums intelligents avec Mise au point, Yeux ouverts, Esthétique et Score de tri.",
   "Screen": "Écran",
   "Scroll menu down": "Faire défiler le menu vers le bas",
   "Scroll menu up": "Faire défiler le menu vers le haut",
@@ -3583,5 +3583,9 @@
   "you come back; un-zoom it and it goes back to the size it had before.": "vous revenez ; dézoomez-la et elle retrouve la taille qu'elle avait avant.",
   "yours (issues #610, #1066). They were ordinary `.jpg` files in the library's `thumbs` folder, which is usually": "vous appartenant (tickets #610, #1066). C'étaient de simples fichiers `.jpg` dans le dossier `thumbs` de la bibliothèque, qui se trouve généralement",
   "zoom, so it goes by the window's size, and when in doubt takes the window for a window of the size it has: it": "zoom ; {app} se fie donc à la taille de la fenêtre et, dans le doute, la prend pour une simple fenêtre de cette taille : elle",
-  "⇧-click and the line tapers from the old values to the new ones. The whole line is one undo step.": "⇧-clic et la ligne passe progressivement des anciennes valeurs aux nouvelles. La ligne entière forme une seule étape d'annulation."
+  "⇧-click and the line tapers from the old values to the new ones. The whole line is one undo step.": "⇧-clic et la ligne passe progressivement des anciennes valeurs aux nouvelles. La ligne entière forme une seule étape d'annulation.",
+  "Aesthetic": "Esthétique",
+  "Clipped (assisted culling)": "Écrêté (tri assisté)",
+  "Cull Score": "Score de tri",
+  "Eyes Open": "Yeux ouverts"
 }
