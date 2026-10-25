@@ -257,7 +257,15 @@ fn config_dir() -> Option<std::path::PathBuf> {
 /// The window at the size it was last used at, zoomed if it was (`window`), or at the usual size
 /// when nothing is remembered, where it was left if that is known (issue #153). A zoomed window is
 /// given the size and place it goes back to.
-fn as_remembered(builder: egui::ViewportBuilder, window: Option<lcc_ui_egui::window_place::WindowPlace>) -> egui::ViewportBuilder {
+///
+/// Windows: a window built maximized could open covering half the screen while
+/// the system took it for maximized, so there (`maximize_later`) it is built at its size and
+/// maximized once it shows ([`lcc_ui_egui::window_place::StartPlace`]).
+fn as_remembered(
+    builder: egui::ViewportBuilder,
+    window: Option<lcc_ui_egui::window_place::WindowPlace>,
+    maximize_later: bool,
+) -> egui::ViewportBuilder {
     let builder = builder.with_inner_size(window.map_or(lcc_ui_egui::window_place::DEFAULT_SIZE, |w| w.size));
     let builder = match window.and_then(|w| w.position) {
         Some(at) => builder.with_position(at),
@@ -265,8 +273,11 @@ fn as_remembered(builder: egui::ViewportBuilder, window: Option<lcc_ui_egui::win
     };
     // (only ever asked to zoom: asked not to, macOS un-zooms a window whose size fills the screen
     // to a size of its own choosing)
-    if window.is_some_and(|w| w.zoomed) { builder.with_maximized(true) } else { builder }
+    if window.is_some_and(|w| w.zoomed) && !maximize_later { builder.with_maximized(true) } else { builder }
 }
+
+/// Windows maximizes a remembered maximized window once it shows (see [`as_remembered`]).
+const MAXIMIZE_LATER: bool = cfg!(target_os = "windows");
 
 /// `<config>/ui.json`, the saved UI state and app settings — `None` when nothing is read or
 /// written: `<PREFIX>_NO_PREFS` (tests, scripts) or no home folder.
@@ -416,6 +427,9 @@ struct PrefsWriter {
     /// When the window was first looked at: its watch goes by the clock from then on, not by
     /// the interface's time, which stands still while the window is hidden.
     window_since: Option<std::time::Instant>,
+    /// The window as it first shows: maximized then on Windows, fitted to a smaller screen.
+    /// `None` once done, and in tests.
+    start: Option<lcc_ui_egui::window_place::StartPlace>,
 }
 
 impl PrefsWriter {
@@ -467,7 +481,20 @@ impl PrefsWriter {
         // the settings hold is checked first: a script may have set it (`ui.set`)
         let remembered = app.ui.window.and_then(lcc_ui_egui::window_place::WindowPlace::checked);
         let at = self.window_since.get_or_insert_with(std::time::Instant::now).elapsed().as_secs_f64();
-        app.ui.window = self.window.note(remembered, &seen, at);
+        // (while the window is being placed it is not remembered: it may not be as it will be)
+        let placing = self.start.is_some();
+        if let Some(start) = &mut self.start {
+            for command in start.step(&seen, at, zoom) {
+                ctx.send_viewport_cmd(command);
+            }
+            match start.waits() {
+                Some(wait) => ctx.request_repaint_after(wait),
+                None => self.start = None,
+            }
+        }
+        if !placing {
+            app.ui.window = self.window.note(remembered, &seen, at);
+        }
         if let Some(wait) = self.window.waits(at) {
             // (a size is only remembered once the window has rested at it: look again then, though
             // nothing else asks for a frame)
@@ -891,7 +918,8 @@ fn open_library_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_d
 const HELP: &str = "\
 {bin} — photo library + raw developer
 
-USAGE: {bin} [OPTIONS] [FILES/FOLDERS…]   (files and folders are imported)
+USAGE: {bin} [OPTIONS] [FILES/FOLDERS…]   (files and folders are imported; a library's catalog.snap or
+                                          folder opens that library)
        {bin} [OPTIONS] {scheme}://sync?path=FOLDER   (open Synchronize Folder for a library folder)
 
 OPTIONS:
@@ -933,17 +961,33 @@ fn help() -> String {
 
 /// The launch arguments' files and folders to import (absolute), and a notice for each one that
 /// is not imported (see [`lcc_engine::import::launch_path`]; issue #374).
-fn launch_imports(args: &[String]) -> (Vec<String>, Vec<String>) {
+fn launch_imports(args: &[String]) -> LaunchArgs {
     let cwd = std::env::current_dir().ok();
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).filter(|h| !h.is_empty()).map(std::path::PathBuf::from);
     launch_imports_in(args, cwd.as_deref(), home.as_deref())
 }
 
-fn launch_imports_in(args: &[String], cwd: Option<&std::path::Path>, home: Option<&std::path::Path>) -> (Vec<String>, Vec<String>) {
+/// What the launch arguments ask for: files and folders to import, a library to open (a library's `catalog.snap`
+/// or folder, double-clicked in the file manager), and a notice for each argument
+/// left alone.
+#[derive(Debug, Default, PartialEq)]
+struct LaunchArgs {
+    files: Vec<String>,
+    library: Option<std::path::PathBuf>,
+    notices: Vec<String>,
+}
+
+fn launch_imports_in(args: &[String], cwd: Option<&std::path::Path>, home: Option<&std::path::Path>) -> LaunchArgs {
     use lcc_engine::import::{LaunchPath, launch_path};
-    let (mut files, mut notices) = (Vec::new(), Vec::new());
+    let (mut files, mut notices, mut library) = (Vec::new(), Vec::new(), None);
     for a in args {
         match launch_path(a, cwd, home, lcc_engine::devices::dcim_in) {
+            Some(LaunchPath::Library(dir)) if library.is_none() => library = Some(std::path::PathBuf::from(dir)),
+            Some(LaunchPath::Library(dir)) => {
+                log::warn!("one library at a time: not opening {dir} given at launch");
+                notices
+                    .push(lcc_brand::fill(&format!("{dir} was not opened: {{app}} opens one library at a time. Open it with File ▸ Open Library…")));
+            }
             Some(LaunchPath::Import(p)) => files.push(p),
             Some(LaunchPath::Refused { path, why }) => {
                 log::warn!("not importing {path} given at launch: {why}");
@@ -953,7 +997,7 @@ fn launch_imports_in(args: &[String], cwd: Option<&std::path::Path>, home: Optio
             None => {}
         }
     }
-    (files, notices)
+    LaunchArgs { files, library, notices }
 }
 
 /// Where the log files live: `logs` in the settings folder, next to `ui.json` (see `logging`).
@@ -1088,7 +1132,10 @@ fn main() -> eframe::Result {
     }
     // what the arguments name, resolved now: an empty or relative argument never becomes a drive
     // root, and a whole drive or home folder is not walked (issue #374)
-    let (files, launch_notices) = launch_imports(&files);
+    let LaunchArgs { files, library: launch_library, notices: launch_notices } = launch_imports(&files);
+    // a library double-clicked (its catalog.snap or folder) is the one that opens, not the last one used
+    let opened_by_argument = launch_library.is_some() && library_dir.is_none();
+    let library_dir = library_dir.or(launch_library);
     let (prefs, prefs_warning, keep_prefs_file) = load_prefs(in_memory);
     // the saved language from the start, so a failed start is reported in it too
     if let Some(ui) = &prefs {
@@ -1152,7 +1199,7 @@ fn main() -> eframe::Result {
     let opens_as = prefs.as_ref().and_then(|ui| ui.window).and_then(lcc_ui_egui::window_place::WindowPlace::checked);
     let options = eframe::NativeOptions {
         renderer,
-        viewport: as_remembered(egui::ViewportBuilder::default().with_title(lcc_brand::DISPLAY_NAME), opens_as)
+        viewport: as_remembered(egui::ViewportBuilder::default().with_title(lcc_brand::DISPLAY_NAME), opens_as, MAXIMIZE_LATER)
             .with_min_inner_size(lcc_ui_egui::window_place::MIN_SIZE)
             .with_drag_and_drop(true)
             .with_transparent(window_gpu::composes_window(compose_window, window_renderer))
@@ -1239,8 +1286,23 @@ fn main() -> eframe::Result {
                     written: serde_json::to_vec_pretty(&app.ui).unwrap_or_default(),
                     library: app.ui.settings.library_path.clone(),
                     keep_file: keep_prefs_file,
+                    start: Some(lcc_ui_egui::window_place::StartPlace::new(MAXIMIZE_LATER && opens_as.is_some_and(|w| w.zoomed))),
                     ..Default::default()
                 };
+                // a library opened from its catalog file is the one in use from now on, as Open Library makes it
+                // (after the snapshot above, so the writer saves it)
+                if opened_by_argument
+                    && problem.is_none()
+                    && let Some(dir) = app.session.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.to_string_lossy().into_owned())
+                {
+                    let settings = &mut app.ui.settings;
+                    if settings.library_path != dir && !settings.library_path.is_empty() {
+                        let previous = settings.library_path.clone();
+                        lcc_ui_egui::panels::settings::remember_library(&mut settings.recent_libraries, &previous);
+                    }
+                    lcc_ui_egui::panels::settings::remember_library(&mut settings.recent_libraries, &dir);
+                    settings.library_path = dir;
+                }
                 // after the snapshot above, so the writer saves the switched-off preference
                 if let Some(notice) = gpu_crash {
                     app.ui.settings.gpu = false;
@@ -1411,14 +1473,41 @@ mod tests {
         let home = dir("launch");
         std::fs::create_dir_all(home.join("Trip")).unwrap();
         let args: Vec<String> = ["", "  ", ".", "Trip", &home.to_string_lossy()].iter().map(|s| s.to_string()).collect();
-        let (files, notices) = launch_imports_in(&args, Some(&home), Some(&home));
+        let LaunchArgs { files, notices, library } = launch_imports_in(&args, Some(&home), Some(&home));
+        assert_eq!(library, None);
         assert_eq!(files, [home.join("Trip").to_string_lossy().to_string()]);
         assert_eq!(notices.len(), 2, "{notices:?}");
         assert!(notices.iter().all(|n| n.contains("was not imported")), "{notices:?}");
         // the working folder is a drive root (a launcher's choice): `.` is never the whole drive
         let root = home.ancestors().last().unwrap().to_path_buf();
-        let (files, notices) = launch_imports_in(&[".".to_string()], Some(&root), None);
+        let LaunchArgs { files, notices, .. } = launch_imports_in(&[".".to_string()], Some(&root), None);
         assert!(files.iter().all(|f| f.ends_with("DCIM")) && files.len() + notices.len() == 1, "{files:?} {notices:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A library's catalog.snap (double-clicked in Explorer) or its folder given at
+    /// launch opens that library and is never imported as photos; a second library is left with a notice.
+    #[test]
+    fn a_librarys_catalog_given_at_launch_opens_that_library() {
+        let home = dir("launch-library");
+        let lib = home.join("Wedding LC");
+        let mut s = lcc_engine::Session::new().with_fs();
+        s.open_library(&lib, false).unwrap();
+        s.close_library().unwrap();
+        let snap = lib.join("catalog.snap");
+        assert!(snap.is_file(), "a library keeps its catalog.snap");
+        let other = home.join("Other LC");
+        let mut s = lcc_engine::Session::new().with_fs();
+        s.open_library(&other, false).unwrap();
+        s.close_library().unwrap();
+        for arg in [snap.to_string_lossy().to_string(), lib.to_string_lossy().to_string(), "Wedding LC/catalog.snap".to_string()] {
+            let got = launch_imports_in(std::slice::from_ref(&arg), Some(&home), Some(&home.join("elsewhere")));
+            assert_eq!(got.library.as_deref(), Some(lib.as_path()), "{arg}");
+            assert!(got.files.is_empty() && got.notices.is_empty(), "{arg}: never imported: {got:?}");
+        }
+        let got = launch_imports_in(&[snap.to_string_lossy().to_string(), other.to_string_lossy().to_string()], Some(&home), None);
+        assert_eq!(got.library.as_deref(), Some(lib.as_path()), "the first one");
+        assert_eq!(got.notices.len(), 1, "{got:?}");
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -1794,17 +1883,21 @@ mod tests {
     #[test]
     fn the_window_opens_as_it_was() {
         use lcc_ui_egui::window_place::{DEFAULT_SIZE, WindowPlace};
-        let fresh = as_remembered(egui::ViewportBuilder::default(), None);
+        let fresh = as_remembered(egui::ViewportBuilder::default(), None, false);
         assert_eq!((fresh.inner_size, fresh.position, fresh.maximized), (Some(egui::Vec2::from(DEFAULT_SIZE)), None, None));
-        let b = as_remembered(egui::ViewportBuilder::default(), Some(WindowPlace { size: [1300.0, 800.0], zoomed: true, position: None }));
+        let b = as_remembered(egui::ViewportBuilder::default(), Some(WindowPlace { size: [1300.0, 800.0], zoomed: true, position: None }), false);
         assert_eq!((b.inner_size, b.position, b.maximized), (Some(egui::vec2(1300.0, 800.0)), None, Some(true)));
+        // Windows: built at its size, maximized once it shows
+        let b = as_remembered(egui::ViewportBuilder::default(), Some(WindowPlace { size: [1300.0, 800.0], zoomed: true, position: None }), true);
+        assert_eq!((b.inner_size, b.maximized), (Some(egui::vec2(1300.0, 800.0)), None));
         // (not asked to un-zoom: macOS would then resize a window that fills its screen)
-        let b = as_remembered(egui::ViewportBuilder::default(), Some(WindowPlace { size: [1300.0, 800.0], zoomed: false, position: None }));
+        let b = as_remembered(egui::ViewportBuilder::default(), Some(WindowPlace { size: [1300.0, 800.0], zoomed: false, position: None }), false);
         assert_eq!((b.inner_size, b.position, b.maximized), (Some(egui::vec2(1300.0, 800.0)), None, None));
         // where it was left (issue #153)
         let b = as_remembered(
             egui::ViewportBuilder::default(),
             Some(WindowPlace { size: [1300.0, 800.0], zoomed: false, position: Some([-900.0, 40.0]) }),
+            false,
         );
         assert_eq!((b.inner_size, b.position), (Some(egui::vec2(1300.0, 800.0)), Some(egui::pos2(-900.0, 40.0))));
     }
