@@ -758,14 +758,55 @@ fn steady_hdr_histogram(ctx: &egui::Context, id: PhotoId, hdr_edit: bool, hist: 
     }
 }
 
-pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
-    let t = Tokens::get(ui.ctx());
-    let w = ui.available_width();
+/// How long (s) after a drag its live histogram is kept when the loupe has no render on its way
+/// (the release frame, before the loupe asks for its render).
+const HISTOGRAM_HOLD_S: f64 = 0.25;
+
+/// The histogram both of the panel's plots draw: a drag's live HDR histogram, else the loupe render
+/// of this photo, else its thumbnail (grid view before the loupe has rendered it). On an HDR display
+/// a drag of an HDR edit sends the loupe only float drafts, so its 8-bit render (and that histogram)
+/// stays as it was until the release.
+fn current_histogram(app: &LccApp, ctx: &egui::Context, id: PhotoId, hdr_edit: bool) -> Option<Histogram> {
+    // (only while the edit is HDR: one left from a drag before HDR was turned off would bring the
+    // HDR layout back for each later drag, #277)
+    let interacting = app.session.interaction.is_some();
+    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && hdr_edit && l.0 == id).map(|l| l.2.clone());
+    // After such a drag its last live histogram stays until the loupe's render of the released edit
+    // lands: until then the loupe render there is (on an HDR display) the one from before the drag,
+    // and showing it would make the plots jump back for a moment on release.
+    let hold = egui::Id::new(("histogramHold", id));
+    let now = ctx.input(|i| i.time);
+    let main_key = app.renderer.textures.get(&Slot::Main).filter(|t| t.photo == id).map(|t| t.key);
+    let live = match live {
+        Some(h) => {
+            ctx.data_mut(|d| d.insert_temp(hold, (main_key, h.clone(), now)));
+            Some(h)
+        }
+        None if !interacting && hdr_edit => {
+            let held = ctx.data(|d| d.get_temp::<(Option<u64>, Histogram, f64)>(hold));
+            // (released once the loupe's texture is replaced, or once nothing renders it: a release
+            // that changed nothing renders nothing)
+            let pending = app.renderer.is_pending(Slot::Main);
+            match held.filter(|(key, _, at)| *key == main_key && (pending || now - *at < HISTOGRAM_HOLD_S)) {
+                Some((_, h, _)) => Some(h),
+                None => {
+                    ctx.data_mut(|d| d.remove::<(Option<u64>, Histogram, f64)>(hold));
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+    live.or_else(|| preview_histogram(app, id))
+}
+
+/// What a histogram of photo `id` drawn in `mode` shows this frame (the panel's first plot, the
+/// Modern layout's floating one), asking for the renders it needs.
+pub(crate) fn shown_histogram(app: &mut LccApp, ctx: &egui::Context, id: PhotoId, mode: HistogramMode) -> Option<Histogram> {
     let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
     // a drag of an HDR edit: its drafts have no HDR histogram, so a small render beside them
     // gives one (at its own pace: the drafts don't wait for it)
-    let interacting = app.session.interaction.is_some();
-    if interacting && hdr_edit {
+    if app.session.interaction.is_some() && hdr_edit {
         let edge = lcc_pipeline::HDR_HISTOGRAM_DRAG_EDGE;
         if let Some(job) = app.session.render_job(id, edge, edge, false, app.ui.right != RightPanel::Crop)
             && app.renderer.live_hdr_histogram.as_ref().is_none_or(|l| l.1 != job.key)
@@ -773,15 +814,17 @@ pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             app.renderer.request(Slot::HdrHistogram, job, 95);
         }
     }
-    // (only while the edit is HDR: one left from a drag before HDR was turned off would bring the
-    // HDR layout back for each later drag, #277)
-    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && hdr_edit && l.0 == id).map(|l| l.2.clone());
-    // else the loupe render of this photo, else its thumbnail (grid view before the loupe has
-    // rendered it)
-    let mode = super::histogram::mode_of(app);
-    let hist = live.or_else(|| preview_histogram(app, id));
+    let hist = current_histogram(app, ctx, id, hdr_edit);
     let hist = panel_render_histogram(app, id, mode, hist);
-    let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
+    steady_hdr_histogram(ctx, id, hdr_edit, hist)
+}
+
+pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    let t = Tokens::get(ui.ctx());
+    let w = ui.available_width();
+    let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
+    let mode = super::histogram::mode_of(app);
+    let hist = shown_histogram(app, ui.ctx(), id, mode);
     let scale = super::histogram::scale_of(app);
     // an HDR edit's 1D histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR
     // label row under the plot; a 2D scope gets a taller plot instead so its disc has room
@@ -1007,7 +1050,7 @@ fn histogram_height(mode: HistogramMode) -> f32 {
 /// warnings stay on the first.
 fn second_histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, mode: HistogramMode, scale: HistogramScale, hdr_edit: bool) {
     let t = Tokens::get(ui.ctx());
-    let hist = preview_histogram(app, id);
+    let hist = current_histogram(app, ui.ctx(), id, hdr_edit);
     let hist = panel_render_histogram(app, id, mode, hist);
     let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist).map(|h| if mode.is_scope() { h } else { Histogram { hdr: None, ..h } });
     ui.add_space(2.0);
