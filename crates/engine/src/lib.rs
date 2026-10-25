@@ -334,6 +334,8 @@ pub struct Session {
     pub copy_groups: Vec<lcc_develop::SettingsGroup>,
     /// Built-in then user presets; its generation tells savers and caches when it changed.
     pub presets: presets::PresetList,
+    /// User-created preset folders (subfolders separated by `/`); empty ones stay until deleted.
+    pub preset_folders: Vec<String>,
     /// Favourite profile ids (persisted with the library, like preset favourites).
     pub profile_favorites: Vec<String>,
     /// Recently applied profile ids, newest first (at most [`presets::RECENT_PROFILES`]).
@@ -566,6 +568,7 @@ impl Session {
             previous_active: None,
             copy_groups: lcc_develop::SettingsGroup::default_copy(),
             presets: presets::PresetList::new(presets::builtin()),
+            preset_folders: Vec::new(),
             profile_favorites: Vec::new(),
             profile_recent: Vec::new(),
             journal: Vec::new(),
