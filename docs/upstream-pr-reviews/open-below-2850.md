@@ -18,7 +18,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2841 | Write sidecar keywords as names in dc:subject and paths in lr:hierarchicalSubject | LEARN | keywords as names in dc:subject, paths in lr:hierarchicalSubject: interop fix worth checking against the fork's sidecar writer |  |
 | #2839 | Docking: side panels in dock columns, on craft-ui's shared docking | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2838 | Lightroom import: keep compressed history-step and snapshot settings in the archive | LEARN | Lightroom catalog import keeps compressed history-step and snapshot settings |  |
-| #2835 | raw: decode lossy single-plane (grey) JPEG XL LinearRaw DNGs (Lightroom monochrome merges) | LEARN | grey lossy JPEG XL LinearRaw DNGs (Lightroom monochrome merges): fork jxl.rs diverged; worth re-implementing | fork #PRN |
+| #2835 | raw: decode lossy single-plane (grey) JPEG XL LinearRaw DNGs (Lightroom monochrome merges) | LEARN | grey lossy JPEG XL LinearRaw DNGs (Lightroom monochrome merges): fork jxl.rs diverged; worth re-implementing | fork #529 |
 | #2834 | Clamp negative signals to zero in hlg_decode | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2833 | Strip trailing NULs from non-UTF-8 IPTC text | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2831 | Docs: link the lens profile gap and roadmap priority to #329 | SKIP | upstream docs/roadmap only |  |
@@ -45,7 +45,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2787 | LR-IMP-FORMATS: decode GoPro GPR (VC-5) | LEARN | GoPro GPR (VC-5) decoder: raw format support worth porting |  |
 | #2781 | LR-LIB-VIRTUALCOPY: prevent numbering overflow in copy batches | LEARN | virtual-copy numbering overflow: small never-crash fix, conflicts; port by hand |  |
 | #2780 | security/raw: bound hostile-memory paths in the raw decoders | LEARN | raw hostile-memory bounds (SonarCloud): good findings, but conflicts with the fork's reworked tiffraw/mef/exif; port per finding later | fork #522 |
-| #2777 | LR-EDIT-OPTICS-PROFILE: Fujifilm X-S20 embedded lens corrections and spectral matrices | LEARN | Fujifilm X-S20 embedded lens corrections and spectral matrices: camera support | fork #PRN |
+| #2777 | LR-EDIT-OPTICS-PROFILE: Fujifilm X-S20 embedded lens corrections and spectral matrices | LEARN | Fujifilm X-S20 embedded lens corrections and spectral matrices: camera support | fork #529 |
 | #2776 | Reject signed numeric character references in XML entity decoding | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
 | #2772 | Logging: each render request and how it ended, at debug level (#2682) | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2771 | Read Canon maker-note lens when LensModel is missing | ADOPT | never-crash / hostile-input / correctness fix in a shared crate | fork #510 |
@@ -74,7 +74,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2736 | LR-BEHAV-DRAGDROP: the message after a drop that moved, added or tagged photos has an Undo button | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2735 | LR-BEHAV-DRAGDROP: a drop's destination is named with its parent when another folder or album has the same name | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2734 | LR-BEHAV-DRAGDROP: the photos being dragged are dimmed in the grid | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
-| #2733 | LR-EDIT-OPTICS-PROFILE: Sigma 10-18 mm exception on the ILCE-6700 (stacked on #2732) | LEARN | Sigma 10-18 on ILCE-6700 (stacked on #2732) | fork #PRN |
+| #2733 | LR-EDIT-OPTICS-PROFILE: Sigma 10-18 mm exception on the ILCE-6700 (stacked on #2732) | LEARN | Sigma 10-18 on ILCE-6700 (stacked on #2732) | fork #529 |
 | #2732 | LR-EDIT-OPTICS-PROFILE: Sony ILCE-6700 in-file distortion | LEARN | Sony ILCE-6700 in-file distortion: camera support | already in the fork (ILCE-6700 in-file distortion) |
 | #2731 | Brush dabs: build only as far as the caller will look (#1520) | ADOPT | safety / correctness fix in engine, develop or catalog | fork #513 |
 | #2726 | LR-BEHAV-LOCALIZE: panel layout toasts, face recognition prompts and the second window title are translated | SKIP | upstream locale catalogs; the fork keeps its own overlay |  |
@@ -99,7 +99,7 @@ Totals: 36 adopted, 75 learn, 125 skipped (236 PRs).
 | #2691 | LR-PREF-GENERAL: Esc in a Settings text box gives the text back instead of closing Settings | SKIP | UI-only change; ui-egui is fork-owned (Modern layout) and UI reworks are skipped per the upstream policy |  |
 | #2676 | LR-EDIT-OPTICS-PROFILE: preserve unknown crop factors in lens profiles | LEARN | keep unknown crop factors in lens profiles |  |
 | #2675 | LR-PROF-CAMERACOLOR: align lens-corrected camera JPEG training pairs | LEARN | align lens-corrected camera JPEG training pairs |  |
-| #2664 | raw: read Canon CR3/CR2 preview colour space from the maker note (#2654) | LEARN | CR3/CR2 preview colour space from the maker note: conflicts with the fork's camera_preview.rs; worth porting by hand | fork #PRN |
+| #2664 | raw: read Canon CR3/CR2 preview colour space from the maker note (#2654) | LEARN | CR3/CR2 preview colour space from the maker note: conflicts with the fork's camera_preview.rs; worth porting by hand | fork #529 |
 | #2661 | LR-EDIT-LENSBLUR: camera-like Lens Blur with AI subject focus and per-mask bokeh | SKIP | large AI-mask stack (thousands of lines across fork-owned UI); revisit as a whole when it lands upstream |  |
 | #2660 | LR-PROF-IMPORT: export a look as a 3D LUT | LEARN | export a look as a 3D LUT: feature idea |  |
 | #2659 | LR-META-LOCATION: place names always download into the settings folder (#2575) | ADOPT | place names only download into the settings folder; geonames links removed before the fork's write-through atomic write | fork #513 |
