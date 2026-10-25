@@ -41,6 +41,8 @@ the file (the Metadata Working Group's rule: XMP over Exif), so a photo geotagge
 one exception is the **capture time**: a time embedded in the file (EXIF/IPTC) always wins; when the file
 has none, the sidecar's `exif:DateTimeOriginal`, else `photoshop:DateCreated`, else `xmp:CreateDate` (ISO 8601) is
 used — on import (it then also files a copied photo in its date folder) and by `photo.readMetadataFromFile` (undoable).
+An incomplete or malformed XMP timestamp is not projected as a capture time, remains available in the raw property
+map, and does not prevent the next valid capture-time property from being used.
 `xmp:Rating="-1"` (the XMP convention for rejected) sets the reject flag. Develop settings come from
 `lc:settings` when present (exact); otherwise from the `crs:` fields below (approximate).
 

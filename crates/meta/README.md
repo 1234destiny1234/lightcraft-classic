@@ -47,6 +47,10 @@ four values). The HEIF reader's boxes, items and gathered bytes are bounded and 
 image-resource records with hostile declared lengths.
 PSD/PSB XMP resources require valid UTF-8; trailing NUL padding is trimmed after validation.
 
+ISO capture-time parsing requires a complete clock and consumes every clock and fractional-second character. Invalid
+XMP capture-time values remain available in the raw property map but are not projected into `Metadata`; a later valid
+capture-time property can still supply the metadata value. Invalid GPX point times are treated as untimed.
+
 ## Sources
 
 CIPA DC-008 (Exif 2.32), TIFF 6.0, Adobe DNG 1.7 (tag numbers), ISO 16684-1 / Adobe XMP Specification
