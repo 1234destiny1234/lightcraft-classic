@@ -206,13 +206,59 @@ fn set_label_width(ui: &Ui, width: f32) {
 
 /// The x offset of the control column from the form's left edge.
 pub fn control_indent(ui: &Ui) -> f32 {
+    if stacked(ui) {
+        return 0.0;
+    }
     label_width(ui) + LABEL_GAP
+}
+
+/// The form in `ui` puts each row's label above its controls (a narrow touch screen, see
+/// [`stacked_form`]).
+pub fn stacked(ui: &Ui) -> bool {
+    ui.ctx().data(|d| d.get_temp::<bool>(Id::new("dialog-form-stacked"))).unwrap_or(false)
+}
+
+/// Controls drawn in `ui` are finger-sized (the touch Settings screen; see [`set_finger_sized`]).
+pub fn finger_sized(ui: &Ui) -> bool {
+    ui.ctx().data(|d| d.get_temp::<bool>(Id::new("dialog-finger-sized"))).unwrap_or(false)
+}
+
+/// Sets whether controls drawn from now on are finger-sized; returns the previous setting (put it
+/// back when done).
+pub fn set_finger_sized(ctx: &egui::Context, on: bool) -> bool {
+    let key = Id::new("dialog-finger-sized");
+    let was = ctx.data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
+    ctx.data_mut(|d| d.insert_temp(key, on));
+    was
+}
+
+/// A [`form`] for a narrow screen: each row's label sits above its controls, which take the
+/// whole width, and checkboxes and help text start at the left edge. The same rows as a
+/// two-column form, laid out for a phone (the touch Settings screen).
+pub fn stacked_form<R>(ui: &mut Ui, label_w: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let key = Id::new("dialog-form-stacked");
+    let outer = stacked(ui);
+    ui.ctx().data_mut(|d| d.insert_temp(key, true));
+    let out = form(ui, label_w, add);
+    ui.ctx().data_mut(|d| d.insert_temp(key, outer));
+    out
 }
 
 /// One form row: `label` right-aligned in the label column, then the control(s) `add` draws.
 pub fn form_row<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
     let w = label_width(ui);
     let t = Tokens::get(ui.ctx());
+    if stacked(ui) {
+        return ui
+            .vertical(|ui| {
+                if !label.is_empty() {
+                    ui.add(egui::Label::new(RichText::new(crate::i18n::tr(label)).color(t.text_label)).wrap());
+                }
+                let room = vec2(ui.available_width().max(40.0), ROW_H);
+                ui.allocate_ui_with_layout(room, Layout::left_to_right(Align::Center).with_main_wrap(true), add).inner
+            })
+            .inner;
+    }
     ui.horizontal(|ui| {
         let gap = ui.spacing().item_spacing.x;
         ui.allocate_ui_with_layout(vec2(w, ROW_H), Layout::right_to_left(Align::Center), |ui| {
@@ -302,15 +348,62 @@ pub fn group_begin(ui: &mut Ui, title: Option<&str>) {
         }
         return;
     }
-    ui.add_space(4.0);
+    ui.add_space(6.0);
     if let Some(title) = title.filter(|s| !s.is_empty()) {
-        ui.label(RichText::new(crate::i18n::tr(title)).font(t.semibold(12.0)).color(t.text));
+        heading(ui, title);
     }
     let shape = ui.painter().add(Shape::Noop);
     let rect = ui.max_rect();
     let open = OpenGroup { shape, top: ui.cursor().top(), left: rect.left() - GROUP_PAD, right: rect.right() + GROUP_PAD };
     ui.ctx().data_mut(|d| d.insert_temp(group_key(ui), open));
     ui.add_space(4.0);
+}
+
+/// The card every dialog and tool window is drawn on: rounded, a faint light edge, a soft shadow
+/// (the title goes inside it: [`card_header`]; the window has no title bar).
+pub fn card_frame(ctx: &egui::Context) -> egui::Frame {
+    egui::Frame::window(&ctx.global_style())
+        .inner_margin(egui::Margin { left: 18, right: 18, top: 14, bottom: 14 })
+        .corner_radius(16.0)
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
+        .shadow(egui::epaint::Shadow { offset: [0, 10], blur: 32, spread: 0, color: egui::Color32::from_black_alpha(110) })
+}
+
+/// A card's title row: the (translated) `title` left-aligned and, with `close` (a widget id), a ✕
+/// on the right. True when the ✕ was clicked.
+pub fn card_header(ui: &mut Ui, title: &str, close: Option<&str>) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let mut closed = false;
+    ui.horizontal(|ui| {
+        let h = ui.label(RichText::new(title).font(t.semibold(16.5)).color(t.text));
+        crate::widgets::register(ui.ctx(), "dialog:title", h.rect);
+        if let Some(id) = close {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let b = crate::button::Button::icon_only(crate::icons::Icon::Close, "Close").kind(crate::button::Kind::Ghost).widget(id);
+                closed = b.show(ui).clicked();
+            });
+        }
+    });
+    ui.add_space(4.0);
+    closed
+}
+
+/// Esc for a tool window (Edit In Presets, Actions, Plug-ins): true, and the key taken, when it
+/// should close: no popup is open, no text is being typed and no dialog sits over it.
+pub fn esc_closes(app_dialog_open: bool, ctx: &egui::Context) -> bool {
+    !app_dialog_open
+        && !egui::Popup::is_any_open(ctx)
+        && !ctx.egui_wants_keyboard_input()
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+}
+
+/// A group's heading: small spaced capitals in the dim text colour, above its card.
+fn heading(ui: &mut Ui, title: &str) {
+    let t = Tokens::get(ui.ctx());
+    let text = crate::i18n::tr(title).to_uppercase();
+    let mut job = egui::text::LayoutJob::default();
+    job.append(&text, 4.0, egui::TextFormat { font_id: t.semibold(10.5), color: t.text_dim, extra_letter_spacing: 1.0, ..Default::default() });
+    ui.label(job);
 }
 
 /// Closes the open group (if any), painting its panel.
@@ -326,7 +419,8 @@ pub fn group_end(ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let bottom = ui.cursor().top() - ui.spacing().item_spacing.y + 2.0;
     let rect = Rect::from_min_max(egui::pos2(open.left, open.top), egui::pos2(open.right, bottom.max(open.top)));
-    let panel = egui::epaint::RectShape::new(rect, 4.0, t.inset, egui::Stroke::new(1.0, t.divider), StrokeKind::Inside);
+    // a rounded card with a faint edge
+    let panel = egui::epaint::RectShape::new(rect, 12.0, t.inset, egui::Stroke::new(1.0, t.divider.gamma_multiply(0.7)), StrokeKind::Inside);
     ui.painter().set(open.shape, panel);
     ui.add_space(6.0);
 }
@@ -462,4 +556,30 @@ pub fn footer_rule(ui: &mut Ui) {
     let w = ui.available_width().max(ui.min_rect().width());
     let (rect, _) = ui.allocate_exact_size(vec2(w, 1.0), egui::Sense::hover());
     ui.painter().hline(rect.x_range(), rect.center().y, egui::Stroke::new(1.0, t.divider));
+}
+
+/// Whether `dialog` is shown as a bottom sheet: on a phone (Android with the window's short side
+/// under 600 points, or any window under 600 points wide), every dialog but the full-window screens
+/// (Settings, Import, Export) and Print. A short, wide desktop window keeps centred cards.
+pub fn phone_sheet(ctx: &egui::Context, dialog: &crate::state::Dialog) -> bool {
+    use crate::state::Dialog;
+    let size = ctx.content_rect().size();
+    let phone = size.x < 600.0 || (cfg!(target_os = "android") && size.x.min(size.y) < 600.0);
+    phone && !matches!(dialog, Dialog::Settings { .. } | Dialog::Import { .. } | Dialog::Export { .. } | Dialog::Print)
+}
+
+/// A bottom sheet's grab handle across its top (`dialog:grab`): true when it was tapped or pulled
+/// down, which closes the sheet (as Cancel).
+pub fn grab_handle(ui: &mut Ui) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), egui::Sense::click_and_drag());
+    crate::widgets::register(ui.ctx(), "dialog:grab", r);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::i18n::tr("Close")));
+    ui.painter().rect_filled(Rect::from_center_size(r.center(), vec2(40.0, 5.0)), 2.5, t.text_dim.gamma_multiply(0.7));
+    let pulled = resp.drag_stopped()
+        && ui.input(|i| match (i.pointer.press_origin(), i.pointer.interact_pos()) {
+            (Some(a), Some(b)) => b.y - a.y > 40.0,
+            _ => false,
+        });
+    resp.clicked() || pulled
 }

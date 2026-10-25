@@ -35,6 +35,7 @@ import android.os.FileObserver;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.DocumentsContract;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.text.InputType;
@@ -139,6 +140,7 @@ public class MainActivity extends NativeActivity {
         super.onCreate(savedInstanceState);
         hideSystemBars();
         addKeyboardView();
+        watchBackAndEdges();
         try {
             WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
             if (wifi != null) {
@@ -150,12 +152,16 @@ public class MainActivity extends NativeActivity {
             Log.w(TAG, "no multicast lock: " + e);
         }
         startReceiving(getIntent());
-        askAllFilesAccessOnce();
+        // "All files access" is asked once the native side has drawn its first frame
+        // (firstFrameShown): asking here covered the activity while the native thread was still
+        // creating its window and GPU surface, and on some devices the first backgrounding after
+        // that left the app frozen.
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        Log.i(TAG, "lifecycle: resume");
         resumed = true;
         ui.removeCallbacks(rescan);
         ui.post(rescan);
@@ -163,13 +169,27 @@ public class MainActivity extends NativeActivity {
 
     @Override
     protected void onPause() {
+        Log.i(TAG, "lifecycle: pause");
         resumed = false;
         ui.removeCallbacks(rescan);
         super.onPause();
     }
 
     @Override
+    protected void onStop() {
+        Log.i(TAG, "lifecycle: stop");
+        super.onStop();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        Log.i(TAG, "lifecycle: start");
+    }
+
+    @Override
     protected void onDestroy() {
+        Log.i(TAG, "lifecycle: destroy");
         if (multicast != null && multicast.isHeld()) multicast.release();
         super.onDestroy();
     }
@@ -303,7 +323,7 @@ public class MainActivity extends NativeActivity {
                         try {
                             out.add(stagedFile(uri, job).getAbsolutePath());
                         } catch (IOException | RuntimeException e) {
-                            Log.e(TAG, "copy " + uri + ": " + e);
+                            Log.e(TAG, "copy " + uri + ": " + e, e);
                         }
                     }
                 }
@@ -339,6 +359,7 @@ public class MainActivity extends NativeActivity {
         }
         for (Object[] a : waiting) answer((Long) a[0], (String[]) a[1]);
         openedReady();
+        edgesReady();
     }
 
     /** Where picked documents are copied: the external files folder, beside the library. */
@@ -538,9 +559,41 @@ public class MainActivity extends NativeActivity {
         return file;
     }
 
+    /** Opens a picked document. Some media providers fail the plain open with an exception from
+     *  their own side (Waydroid's MediaProvider throws a NullPointerException while deciding
+     *  whether to redact the photo's location); the same photo is then opened under its MediaStore
+     *  URI, which the picker's grant also covers, and through the application's resolver. */
+    private InputStream openDocument(Uri uri) throws IOException {
+        List<String> why = new ArrayList<>();
+        List<Uri> tries = new ArrayList<>();
+        tries.add(uri);
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            try {
+                Uri media = MediaStore.getMediaUri(this, uri);
+                if (media != null && !media.equals(uri)) tries.add(media);
+            } catch (RuntimeException e) {
+                why.add("media uri: " + e);
+            }
+        }
+        for (Uri u : tries) {
+            for (ContentResolver r : new ContentResolver[]{getContentResolver(), getApplicationContext().getContentResolver()}) {
+                try {
+                    InputStream in = r.openInputStream(u);
+                    if (in != null) {
+                        if (!why.isEmpty()) Log.i(TAG, "opened " + u + " after: " + why);
+                        return in;
+                    }
+                    why.add(u + ": no stream");
+                } catch (IOException | RuntimeException e) {
+                    why.add(u + ": " + e);
+                }
+            }
+        }
+        throw new IOException("the document can't be read (" + String.join("; ", why) + ")");
+    }
+
     private void copy(Uri uri, File dest, CopyJob job) throws IOException {
-        ContentResolver r = getContentResolver();
-        try (InputStream in = r.openInputStream(uri); OutputStream out = new FileOutputStream(dest)) {
+        try (InputStream in = openDocument(uri); OutputStream out = new FileOutputStream(dest)) {
             if (in == null) throw new IOException("the document can't be read");
             byte[] buf = new byte[1 << 16];
             int n;
@@ -672,6 +725,9 @@ public class MainActivity extends NativeActivity {
         try {
             File base = Environment.getExternalStorageDirectory();
             File f = rel.isEmpty() ? base : new File(base, rel);
+            // under scoped storage (Android 10+) a folder lists without "All files access", but
+            // only with the files this app made: its photos would be missing, so it is copied
+            if (folder && !hasAllFilesAccess()) return null;
             if (folder ? (f.isDirectory() && f.list() != null) : (f.isFile() && f.canRead())) return f;
         } catch (SecurityException e) {
             Log.i(TAG, "not readable in place: " + rel);
@@ -767,9 +823,33 @@ public class MainActivity extends NativeActivity {
         return (dot == name.length() - 1 ? name.substring(0, dot) : name) + "." + ext;
     }
 
-    /** Whether the app may read every file on shared storage. */
+    private Boolean allFilesDeclared;
+
+    /** Whether this build's manifest asks for "All files access" (`MANAGE_EXTERNAL_STORAGE`): the
+     *  GitHub build does, the Play build doesn't (xtask/src/apk.rs, Store). Without it the app
+     *  never asks, and picked folders are copied. */
+    public boolean allFilesAccessDeclared() {
+        if (allFilesDeclared != null) return allFilesDeclared;
+        boolean declared = false;
+        try {
+            String[] requested = getPackageManager().getPackageInfo(getPackageName(), PackageManager.GET_PERMISSIONS).requestedPermissions;
+            if (requested != null) {
+                for (String p : requested) {
+                    if ("android.permission.MANAGE_EXTERNAL_STORAGE".equals(p)) declared = true;
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "declared permissions: " + e);
+        }
+        allFilesDeclared = declared;
+        return declared;
+    }
+
+    /** Whether the app may read every file on shared storage (never in a build that doesn't
+     *  declare All files access: there the storage permission of Android 9-10 is only for photos). */
     public boolean hasAllFilesAccess() {
         try {
+            if (!allFilesAccessDeclared()) return false;
             if (android.os.Build.VERSION.SDK_INT >= 30) return Environment.isExternalStorageManager();
             return checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
         } catch (RuntimeException e) {
@@ -781,6 +861,7 @@ public class MainActivity extends NativeActivity {
     /** Asks for "All files access": the system's page for it on Android 11+, the storage
      *  permission before. */
     public void askAllFilesAccess() {
+        if (!allFilesAccessDeclared()) return;
         runOnUiThread(() -> {
             try {
                 if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -799,16 +880,233 @@ public class MainActivity extends NativeActivity {
         });
     }
 
+    /** Called by the native side after its first frame: the first-start questions can cover the
+     *  activity now that its window and GPU surface exist. */
+    public void firstFrameShown() {
+        Log.i(TAG, "lifecycle: first frame");
+        runOnUiThread(this::askAllFilesAccessOnce);
+    }
+
     /** Asks once, on the first start (remembered; Settings > Folders asks again). */
     private void askAllFilesAccessOnce() {
         try {
             SharedPreferences prefs = storagePrefs();
-            if (prefs.getBoolean(ASKED_ALL_FILES, false) || hasAllFilesAccess()) return;
+            if (!allFilesAccessDeclared() || prefs.getBoolean(ASKED_ALL_FILES, false) || hasAllFilesAccess()) return;
             prefs.edit().putBoolean(ASKED_ALL_FILES, true).apply();
             askAllFilesAccess();
         } catch (RuntimeException e) {
             Log.w(TAG, "storage access: " + e);
         }
+    }
+
+    // ---- Camera roll: the photos in DCIM/Camera, through MediaStore (the photo permission only)
+
+    /** The camera roll's answer (registered by crates/android-host): `paths` null = failed, with
+     *  the reason in `error`. */
+    private native void nativeCameraRoll(long id, String[] paths, String error);
+
+    private static final int ASK_PHOTOS = 78;
+    /** Listings waiting for the answer to the photo permission request. */
+    private final List<Long> rollWaiting = new ArrayList<>();
+
+    private static String photoPermission() {
+        return android.os.Build.VERSION.SDK_INT >= 33 ? "android.permission.READ_MEDIA_IMAGES" : android.Manifest.permission.READ_EXTERNAL_STORAGE;
+    }
+
+    /** "Selected photos" (Android 14+): the person allowed some photos only; MediaStore then lists
+     *  just those. */
+    private static final String SELECTED_PHOTOS = "android.permission.READ_MEDIA_VISUAL_USER_SELECTED";
+
+    /** The permissions to ask for: on Android 14+ also "selected photos", so the system offers it. */
+    private static String[] photoPermissions() {
+        if (android.os.Build.VERSION.SDK_INT >= 34) return new String[]{photoPermission(), SELECTED_PHOTOS};
+        return new String[]{photoPermission()};
+    }
+
+    /** Access to some photos only (Android 14+ "selected photos"). */
+    private boolean hasSelectedPhotosOnly() {
+        try {
+            return android.os.Build.VERSION.SDK_INT >= 34 && !hasPhotoAccess()
+                    && checkSelfPermission(SELECTED_PHOTOS) == PackageManager.PERMISSION_GRANTED;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    private boolean hasPhotoAccess() {
+        try {
+            return hasAllFilesAccess() || checkSelfPermission(photoPermission()) == PackageManager.PERMISSION_GRANTED;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "photo access: " + e);
+            return false;
+        }
+    }
+
+    /** Lists the camera roll for `id`, asking for the photo permission first when needed. With
+     *  "selected photos" only, asks again, which lets the person change the selection, then lists
+     *  what is allowed. */
+    public void startCameraRoll(final long id) {
+        runOnUiThread(() -> {
+            if (hasPhotoAccess()) {
+                listCameraRoll(id);
+                return;
+            }
+            synchronized (rollWaiting) {
+                rollWaiting.add(id);
+                // a request is already up: its answer serves this one too
+                if (rollWaiting.size() > 1) return;
+            }
+            try {
+                requestPermissions(photoPermissions(), ASK_PHOTOS);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "can't ask for access to photos: " + e);
+                answerWaitingRolls(false);
+            }
+        });
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(request, permissions, results);
+        if (request != ASK_PHOTOS) return;
+        boolean granted = hasPhotoAccess() || hasSelectedPhotosOnly();
+        answerWaitingRolls(granted);
+    }
+
+    private void answerWaitingRolls(boolean granted) {
+        List<Long> ids;
+        synchronized (rollWaiting) {
+            ids = new ArrayList<>(rollWaiting);
+            rollWaiting.clear();
+        }
+        for (long id : ids) {
+            if (granted) listCameraRoll(id);
+            else rollAnswer(id, null, "access to photos was not allowed (Android settings: Apps > {{display_name}} > Permissions > Photos)");
+        }
+    }
+
+    private void rollAnswer(long id, String[] paths, String error) {
+        try {
+            nativeCameraRoll(id, paths, error);
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeCameraRoll: " + t);
+        }
+    }
+
+    /** The photos in DCIM/Camera (and folders inside it): their real paths where the app can read
+     *  them, else copies in Incoming/Camera Roll (kept, so listing again copies only new ones). */
+    private void listCameraRoll(final long id) {
+        new Thread(() -> {
+            List<String> out = new ArrayList<>();
+            String error = null;
+            try (CopyJob job = new CopyJob()) {
+                boolean q = android.os.Build.VERSION.SDK_INT >= 29;
+                Uri collection = q ? MediaStore.Images.Media.getContentUri("external") : MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                String data = MediaStore.MediaColumns.DATA;
+                String[] cols = {MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE,
+                        MediaStore.MediaColumns.MIME_TYPE, data};
+                String selection = q ? "relative_path LIKE ?" : data + " LIKE ?";
+                String[] args = {q ? "DCIM/Camera/%" : "%/DCIM/Camera/%"};
+                List<Object[]> rows = new ArrayList<>();
+                try (Cursor c = getContentResolver().query(collection, cols, selection, args, null)) {
+                    if (c == null) throw new IOException("the media store did not answer");
+                    while (c.moveToNext()) {
+                        rows.add(new Object[]{c.getLong(0), c.getString(1), c.isNull(2) ? -1L : c.getLong(2), c.getString(3), c.getString(4)});
+                    }
+                }
+                rows.addAll(rawsNotIndexedAsImages(data, selection, args));
+                job.total = rows.size();
+                File dir = null;
+                for (Object[] r : rows) {
+                    if (job.cancelled) break;
+                    long mediaId = (Long) r[0];
+                    String path = (String) r[4];
+                    try {
+                        File real = path != null ? new File(path) : null;
+                        if (real != null && real.isFile() && real.canRead()) {
+                            out.add(real.getAbsolutePath());
+                            continue;
+                        }
+                    } catch (SecurityException e) {
+                        // not readable in place: copied below
+                    }
+                    if (dir == null) {
+                        dir = new File(incoming(), "Camera Roll");
+                        if (!dir.mkdirs() && !dir.isDirectory()) throw new IOException("can't create " + dir);
+                    }
+                    long size = (Long) r[2];
+                    String name = withExtension(safeName((String) r[1], "photo"), (String) r[3]);
+                    File dest = new File(dir, name);
+                    if (dest.isFile() && size >= 0 && dest.length() != size) dest = new File(dir, mediaId + "-" + name);
+                    if (dest.isFile() && (size < 0 || dest.length() == size)) {
+                        out.add(dest.getAbsolutePath());
+                        continue;
+                    }
+                    File part = new File(dir, "." + dest.getName() + ".part");
+                    try {
+                        job.step(dest.getName());
+                        Uri from = r.length > 5 ? (Uri) r[5] : collection;
+                        copy(android.content.ContentUris.withAppendedId(from, mediaId), part, job);
+                        if (part.renameTo(dest)) {
+                            out.add(dest.getAbsolutePath());
+                        } else {
+                            part.delete();
+                            Log.w(TAG, "can't move " + part + " to " + dest);
+                        }
+                    } catch (IOException e) {
+                        part.delete();
+                        if (job.cancelled) break;
+                        Log.w(TAG, "camera roll: copy " + name + ": " + e);
+                    }
+                }
+                Log.i(TAG, "camera roll: " + out.size() + " of " + rows.size() + " photos");
+                if (!rows.isEmpty() && out.isEmpty() && !job.cancelled) error = "none of the " + rows.size() + " photos could be read";
+            } catch (SecurityException e) {
+                error = "access to photos was not allowed";
+            } catch (Exception e) {
+                Log.e(TAG, "camera roll: " + e);
+                error = "the camera roll could not be read: " + e.getMessage();
+            }
+            rollAnswer(id, error == null ? out.toArray(new String[0]) : null, error);
+        }, "camera-roll").start();
+    }
+
+    /** Raw files the media store doesn't count as images (CR3 on most devices, other raws on some):
+     *  they're in its Files table under DCIM/Camera with another media type. Visible only with All
+     *  files access on Android 11+ (scoped storage hides other apps' non-media files), so in the Play
+     *  build this usually finds nothing; picking the folder (copied) brings them in. */
+    private List<Object[]> rawsNotIndexedAsImages(String data, String selection, String[] args) {
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            Uri files = MediaStore.Files.getContentUri("external");
+            String[] cols = {MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE,
+                    MediaStore.MediaColumns.MIME_TYPE, data};
+            String sel = "(" + selection + ") AND " + MediaStore.Files.FileColumns.MEDIA_TYPE + " != " + MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE;
+            try (Cursor c = getContentResolver().query(files, cols, sel, args, null)) {
+                if (c == null) return rows;
+                while (c.moveToNext()) {
+                    String name = c.getString(1);
+                    if (name == null || !isRawName(name)) continue;
+                    rows.add(new Object[]{c.getLong(0), name, c.isNull(2) ? -1L : c.getLong(2), c.getString(3), c.getString(4), files});
+                }
+            }
+        } catch (Exception e) {
+            Log.i(TAG, "camera roll: raw files not listed: " + e);
+        }
+        return rows;
+    }
+
+    private static final String[] RAW_EXTENSIONS = {"dng", "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "raf", "orf",
+            "rw2", "raw", "pef", "srw", "x3f", "3fr", "iiq", "erf", "kdc", "dcr", "mrw", "mos", "rwl", "gpr"};
+
+    static boolean isRawName(String name) {
+        int dot = name.lastIndexOf('.');
+        if (dot < 0) return false;
+        String ext = name.substring(dot + 1).toLowerCase(Locale.ROOT);
+        for (String r : RAW_EXTENSIONS) {
+            if (r.equals(ext)) return true;
+        }
+        return false;
     }
 
     /** Opens a web link in the browser. */
@@ -1126,6 +1424,120 @@ public class MainActivity extends NativeActivity {
         }
     }
 
+    // ------------------------------------------------------------------ exports: Pictures + share
+
+    /** Answers saveToGallery (registered by crates/android-host): the saved files' content URIs,
+     *  or null and the reason. */
+    private native void nativeGallerySaved(long id, String[] uris, String error);
+
+    private static String exportMime(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+        if (n.endsWith(".png")) return "image/png";
+        if (n.endsWith(".tif") || n.endsWith(".tiff")) return "image/tiff";
+        if (n.endsWith(".dng")) return "image/x-adobe-dng";
+        if (n.endsWith(".webp")) return "image/webp";
+        if (n.endsWith(".avif")) return "image/avif";
+        if (n.endsWith(".jxl")) return "image/jxl";
+        return "application/octet-stream";
+    }
+
+    /** Copies exported files (the app's own folder) into Pictures/<album> through MediaStore, so
+     *  the gallery shows them, then with `share` offers them to other apps (the share sheet). The
+     *  answer comes through nativeGallerySaved(id, …). */
+    public void saveToGallery(final long id, final String[] paths, final String album, final boolean share) {
+        new Thread(() -> {
+            List<Uri> saved = new ArrayList<>();
+            List<String> mimes = new ArrayList<>();
+            String error = null;
+            ContentResolver r = getContentResolver();
+            for (String path : paths == null ? new String[0] : paths) {
+                File src = new File(path);
+                String mime = exportMime(src.getName());
+                Uri uri = null;
+                try {
+                    android.content.ContentValues v = new android.content.ContentValues();
+                    v.put(MediaStore.MediaColumns.DISPLAY_NAME, src.getName());
+                    v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                    Uri collection;
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/" + album);
+                        v.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                        collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                    } else {
+                        File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), album);
+                        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("can't make " + dir);
+                        File dest = new File(dir, src.getName());
+                        for (int n = 1; dest.exists() && n < 10000; n++) {
+                            String name = src.getName();
+                            int dot = name.lastIndexOf('.');
+                            dest = new File(dir, (dot > 0 ? name.substring(0, dot) : name) + "-" + n + (dot > 0 ? name.substring(dot) : ""));
+                        }
+                        v.put(MediaStore.MediaColumns.DISPLAY_NAME, dest.getName());
+                        v.put(MediaStore.MediaColumns.DATA, dest.getAbsolutePath());
+                        collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                    }
+                    uri = r.insert(collection, v);
+                    if (uri == null) throw new IOException("the media store refused " + src.getName());
+                    try (InputStream in = new FileInputStream(src); OutputStream out = r.openOutputStream(uri)) {
+                        if (out == null) throw new IOException("can't write " + uri);
+                        pipe(in, out);
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        android.content.ContentValues done = new android.content.ContentValues();
+                        done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                        r.update(uri, done, null, null);
+                    }
+                    saved.add(uri);
+                    mimes.add(mime);
+                } catch (Exception e) {
+                    Log.w(TAG, "save " + path + " to Pictures: " + e);
+                    if (uri != null) {
+                        try {
+                            r.delete(uri, null, null);
+                        } catch (RuntimeException ignored) {
+                            // the half-written entry stays pending; the system removes it later
+                        }
+                    }
+                    error = src.getName() + ": " + e.getMessage();
+                    break;
+                }
+            }
+            if (error == null && share && !saved.isEmpty()) {
+                final List<Uri> uris = saved;
+                final String type = new HashSet<>(mimes).size() == 1 ? mimes.get(0) : "image/*";
+                runOnUiThread(() -> {
+                    try {
+                        Intent send;
+                        if (uris.size() == 1) {
+                            send = new Intent(Intent.ACTION_SEND);
+                            send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+                        } else {
+                            send = new Intent(Intent.ACTION_SEND_MULTIPLE);
+                            send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, new ArrayList<>(uris));
+                        }
+                        send.setType(type);
+                        ClipData clip = ClipData.newRawUri(null, uris.get(0));
+                        for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
+                        send.setClipData(clip);
+                        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(Intent.createChooser(send, null));
+                    } catch (RuntimeException e) {
+                        Log.w(TAG, "share: " + e);
+                        toast("Couldn't open the share sheet");
+                    }
+                });
+            }
+            String[] out = new String[saved.size()];
+            for (int i = 0; i < out.length; i++) out[i] = saved.get(i).toString();
+            try {
+                nativeGallerySaved(id, error == null ? out : null, error);
+            } catch (Throwable t) {
+                Log.e(TAG, "nativeGallerySaved: " + t);
+            }
+        }, "save-to-pictures").start();
+    }
+
     private void toast(final String text) {
         runOnUiThread(() -> {
             try {
@@ -1134,5 +1546,121 @@ public class MainActivity extends NativeActivity {
                 Log.w(TAG, "toast: " + e);
             }
         });
+    }
+
+    // ---- Back and the window's edges (crates/android-host: nativeBack, nativeInsets) ----------
+    // Back (the key, the gesture, and predictive back from Android 13, which the target SDK makes
+    // the only way the gesture arrives) goes to the native side, which closes what is open there;
+    // when nothing is, it calls goBackground(). The edges hidden by the camera cutout and the system
+    // bars go to the native side in pixels, again whenever they change, so the UI keeps clear of them.
+
+    /** Back was pressed (registered by crates/android-host). */
+    private native void nativeBack();
+
+    /** The window's insets in pixels (registered by crates/android-host). */
+    private native void nativeInsets(int left, int top, int right, int bottom);
+
+    private final Object edgesLock = new Object();
+    /** nativeBack and nativeInsets are registered (hostReady). */
+    private boolean edgesUp;
+    private int[] lastInsets;
+
+    private void watchBackAndEdges() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            try {
+                getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                        android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::back);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "no back callback: " + e);
+            }
+        }
+        try {
+            View decor = getWindow().getDecorView();
+            decor.setOnApplyWindowInsetsListener((v, insets) -> {
+                reportInsets(insets);
+                return v.onApplyWindowInsets(insets);
+            });
+            decor.requestApplyInsets();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "no window insets: " + e);
+        }
+    }
+
+    /** Before Android 13 (the Back key, when the native side lets it through). */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        back();
+    }
+
+    private void back() {
+        synchronized (edgesLock) {
+            if (!edgesUp) {
+                goBackground();
+                return;
+            }
+        }
+        try {
+            nativeBack();
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeBack: " + t);
+            goBackground();
+        }
+    }
+
+    /** The app had nothing left to close: to the background, as Back does at an app's root. */
+    public void goBackground() {
+        runOnUiThread(() -> {
+            try {
+                moveTaskToBack(true);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "moveTaskToBack: " + e);
+            }
+        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private void reportInsets(WindowInsets in) {
+        int[] now = new int[4];
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets i = in.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                now = new int[]{i.left, i.top, i.right, i.bottom};
+            } else {
+                now = new int[]{in.getSystemWindowInsetLeft(), in.getSystemWindowInsetTop(), in.getSystemWindowInsetRight(), in.getSystemWindowInsetBottom()};
+                if (android.os.Build.VERSION.SDK_INT >= 28 && in.getDisplayCutout() != null) {
+                    android.view.DisplayCutout c = in.getDisplayCutout();
+                    now[0] = Math.max(now[0], c.getSafeInsetLeft());
+                    now[1] = Math.max(now[1], c.getSafeInsetTop());
+                    now[2] = Math.max(now[2], c.getSafeInsetRight());
+                    now[3] = Math.max(now[3], c.getSafeInsetBottom());
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "insets: " + e);
+        }
+        synchronized (edgesLock) {
+            lastInsets = now;
+            if (!edgesUp) return;
+        }
+        sendInsets(now);
+    }
+
+    /** Part of hostReady(): the native side can take Back and the insets now. */
+    private void edgesReady() {
+        int[] waiting;
+        synchronized (edgesLock) {
+            edgesUp = true;
+            waiting = lastInsets;
+        }
+        if (waiting != null) sendInsets(waiting);
+    }
+
+    private void sendInsets(int[] i) {
+        try {
+            nativeInsets(i[0], i[1], i[2], i[3]);
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeInsets: " + t);
+        }
     }
 }

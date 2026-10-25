@@ -620,7 +620,7 @@ fn sidecar_has_news(labels: &Catalog, p: &Photo, naming: SidecarNaming, listing:
     }
     let Ok(text) = std::fs::read_to_string(&file) else { return false };
     let Ok(sc) = crate::sidecar::parse_sidecar(&text, crate::crs::Target::for_photo(p)) else { return false };
-    let sc = sc.resolve_label(labels);
+    let sc = sc.with_file_orientation(path).resolve_label(labels);
     let mut q = p.clone();
     crate::sidecar::merge_into(&mut q, &sc, "");
     (q.rating, q.flag, q.label, &q.meta, &q.captured, &q.develop) != (p.rating, p.flag, p.label, &p.meta, &p.captured, &p.develop)
@@ -807,7 +807,7 @@ fn read_sidecar(path: &str, naming: SidecarNaming, target: crate::crs::Target) -
         return Err(format!("{}: too large for an XMP sidecar", file.display()));
     }
     let text = std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
-    crate::sidecar::parse_sidecar(&text, target).map_err(|e| format!("{}: {e}", file.display()))
+    crate::sidecar::parse_sidecar(&text, target).map(|sc| sc.with_file_orientation(path)).map_err(|e| format!("{}: {e}", file.display()))
 }
 
 impl SyncCommit {
@@ -851,13 +851,12 @@ impl SyncCommit {
                 }
             }
             SyncStep::Remove(gone) => {
-                let ops: Vec<Op> = gone
-                    .iter()
-                    .filter(|id| s.catalog.photo(**id).is_some_and(|p| p.in_library()))
-                    .map(|id| Op::SetDeleted { id: *id, deleted: true })
-                    .collect();
+                let ids: Vec<PhotoId> = gone.into_iter().filter(|id| s.catalog.photo(*id).is_some_and(|p| p.in_library())).collect();
+                let mut ops: Vec<Op> = ids.iter().map(|id| Op::SetDeleted { id: *id, deleted: true }).collect();
                 let n = ops.len();
                 if n > 0 {
+                    // Like `photo.delete`, take them out of their stacks.
+                    ops.extend(s.catalog.remove_from_stacks_ops(&ids));
                     match s.commit("Remove Missing Photos", Op::Batch { ops }) {
                         Ok(()) => report.removed += n,
                         Err(e) => report.failed.push((String::new(), e.to_string())),

@@ -65,6 +65,28 @@ fn leftover_lock_files_are_not_a_lock() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A link planted at the owner note's name (`catalog.lock.owner`) in a library folder someone else
+/// prepared is removed, never written through: the file it points to keeps its bytes, and the note
+/// still lands in the library (as for the catalog's staging files, issue #1502).
+#[cfg(unix)]
+#[test]
+fn a_link_at_the_owner_note_is_never_written_through() {
+    let _serial = serial();
+    let dir = temp_dir("owner-link");
+    let victim = dir.join("victim.txt");
+    std::fs::write(&victim, b"keep").unwrap();
+    std::os::unix::fs::symlink(&victim, dir.join(OWNER)).unwrap();
+    let l = LibraryLock::acquire(&dir, lcc_brand::DISPLAY_NAME).unwrap();
+    assert!(l.held());
+    assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+    assert!(!std::fs::symlink_metadata(dir.join(OWNER)).unwrap().file_type().is_symlink(), "the link was replaced by the note");
+    let owner: LockOwner = serde_json::from_slice(&std::fs::read(dir.join(OWNER)).unwrap()).unwrap();
+    assert_eq!(owner.pid, std::process::id());
+    drop(l);
+    assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Another process holds the lock; when it is killed (a crash), the OS releases it.
 #[test]
 fn lock_held_by_another_process_is_released_when_it_dies() {
@@ -179,4 +201,32 @@ fn dropping_the_lock_frees_the_library_while_another_thread_spawns_processes() {
         refused.len(),
         &refused[..refused.len().min(3)]
     );
+}
+
+/// Issue #2552: a `catalog.lock` planted as a link is never created or locked through. The library
+/// opens unprotected (with a warning), the file the link points to keeps its bytes and its lock,
+/// and a dangling link makes nothing at its target.
+#[cfg(unix)]
+#[test]
+fn a_link_at_the_lock_file_is_never_created_or_locked_through() {
+    use std::os::unix::fs::symlink;
+    let _serial = serial();
+    let dir = temp_dir("lock-link");
+    let victim = dir.join("victim.txt");
+    std::fs::write(&victim, b"keep").unwrap();
+    symlink(&victim, dir.join(LOCK)).unwrap();
+    let l = LibraryLock::acquire(&dir, "the app").unwrap();
+    assert!(!l.held(), "locked through the link");
+    assert!(std::fs::File::open(&victim).unwrap().try_lock().is_ok(), "the link's target is locked");
+    drop(l);
+    assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+
+    let dangling = temp_dir("lock-dangling");
+    let target = dangling.join("made-through-link");
+    symlink(&target, dangling.join(LOCK)).unwrap();
+    assert!(!LibraryLock::acquire(&dangling, "the app").unwrap().held());
+    assert!(!target.exists(), "a dangling link's target was created");
+    for d in [&dir, &dangling] {
+        let _ = std::fs::remove_dir_all(d);
+    }
 }

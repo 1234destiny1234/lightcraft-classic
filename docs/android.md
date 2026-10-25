@@ -12,7 +12,7 @@ covers what exists today.
 | APK / AAB packaging (`cargo xtask android package`), release job (on by default; `RELEASE_ANDROID=false` turns it off) | ✅ arm64-v8a and x86_64 APKs, one AAB with both (arm64 APK 75 MB) |
 | Play Store upload | not started (needs the Play developer account) |
 | Peer-to-peer catalog sync between desktop and Android | 🟡 pairing (Settings ▸ Sync, `crates/peer`; discovery over mDNS / DNS-SD); catalog exchange next |
-| Touch / phone-sized layout | not started |
+| Modern layout, phone- and tablet-sized (`crates/ui-egui/src/modern.rs`, on by default on Android, `view.modernLayout` elsewhere) | 🟡 photo-first Develop (tap for tools, single-tool drag adjust in groups Basic (white balance + tone), Colour (presence), Tone (parametric curve), Detail, Optics, Effects (vignette, grain); hold for the original, Edit panel beside / under the photo), slim Library bar, swipe scrolling with momentum and long-press multi-select, Back (`touch.back`, predictive back), cutout and system-bar insets, a pinned or floating histogram (`touch.histogram`), touch Settings and Export sheets; Settings ▸ General ▸ Layout switches Touch / Desktop on every platform (desktop default Desktop, mouse works); verified on Waydroid, not yet on a phone or tablet; not yet: pinch in adjust mode, tool-specific touch UIs for Crop / Masks |
 
 ## Design
 
@@ -70,14 +70,38 @@ The Storage Access Framework hands out `content://` documents, but the engine re
 
 - **In place.** A folder or file on the device's own storage (the external storage provider's `primary:<path>`)
   is answered with its real path under `Environment.getExternalStorageDirectory()` when the app can read it. Then
-  nothing is copied, and Library ▸ Browse, folder scans and Synchronize work on the real folder. Reading it needs
-  **"All files access"** (`MANAGE_EXTERNAL_STORAGE`, Android 11+) or, on Android 9–10, `READ_EXTERNAL_STORAGE`
-  (with `requestLegacyExternalStorage` for 10). `READ_MEDIA_IMAGES` is declared for Android 13+.
-- **Asking.** The activity asks once, at the first start (remembered in its `storage` SharedPreferences): the
-  system's All files access page on 11+, the runtime permission before. `app.allFilesAccess` (Settings ▸ Folders ▸
+  nothing is copied, and Library ▸ Browse, folder scans and Synchronize work on the real folder. Reading a folder
+  in place needs **"All files access"** (`MANAGE_EXTERNAL_STORAGE`, Android 11+) or, on Android 9–10,
+  `READ_EXTERNAL_STORAGE` (with `requestLegacyExternalStorage` for 10), and only the GitHub build declares them
+  (see *Two builds* below). Under scoped storage a folder lists without it, but shows only the files the app made,
+  so its photos would be missing; without it the folder is copied (below). A single picked file is read in place
+  when the photo permission lets the app read it.
+- **Two builds.** `cargo xtask android package --store github|play` (`xtask/src/apk.rs`, `Store`): the APKs are the
+  GitHub build by default; the bundle (`--aab`) is always the Play build. The Play build's manifest has no
+  `MANAGE_EXTERNAL_STORAGE` and no `requestLegacyExternalStorage`, because Play allows All files access only for
+  file managers, backup and antivirus apps. The activity reads its own declared permissions
+  (`allFilesAccessDeclared`, through the package manager): without All files access it never asks for it (not at
+  the first start, not from Settings, where `Services::storage_access` is `None` and the Device storage row is
+  hidden), and `hasAllFilesAccess` is false, so picked folders are always copied (with the persisted tree URI) and
+  the camera roll goes through MediaStore. Picked folders therefore don't sync in place in the Play build; picking
+  the same folder again copies only what changed. `--store play` builds Play-variant APKs for testing by
+  sideloading.
+- **Camera roll.** `file.addCameraRoll` (first-start question in `crates/ui-egui/src/camera_roll.rs`, kept as
+  `cameraRollAsked` in `ui.json`; Settings ▸ Folders ▸ Camera roll ▸ Import… asks again) calls
+  `Host::camera_roll`. The activity asks for the photo permission when it lacks it (`READ_MEDIA_IMAGES` on 13+,
+  `READ_EXTERNAL_STORAGE` before; on 14+ also `READ_MEDIA_VISUAL_USER_SELECTED`, so *Allow selected photos*
+  works: the roll then lists only the chosen photos, and importing again asks again so the selection can change),
+  queries MediaStore for `DCIM/Camera/…`, and answers through
+  `nativeCameraRoll` with real paths where it can read them, else copies in `Incoming/Camera Roll` (reused
+  next time). The paths open the import review. A refused permission or an unreadable roll comes back as an
+  error the UI shows. Raws: MediaStore files DNG, CR2, NEF, ARW and most other raws as images, so they are listed;
+  files it doesn't (CR3 on most devices) are looked up in its Files table by extension, which only All files access
+  can see on Android 11+. In the Play build such raws are left out of the camera roll; pick their folder instead
+  (copied).
+- **Asking.** In the GitHub build the activity asks once, at the first start (remembered in its `storage`
+  SharedPreferences): the system's All files access page on 11+, the runtime permission before. The Play build
+  never asks. `app.allFilesAccess` (Settings ▸ Folders ▸
   Device storage ▸ Change…) asks again; `Services::storage_access` gives the shared UI the state and the question.
-  The Play Store allows `MANAGE_EXTERNAL_STORAGE` only for apps whose core purpose needs it; a photo library
-  managing the user's own folders is the case argued for, but Play may still ask for a declaration.
 - **Copies.** Anything else (cloud providers, SD cards and USB drives, which are other volumes) is copied into
   `<external data>/Incoming`: single files into `Incoming/Picked`, folders into `Incoming/<folder name>`. The
   document's URI is remembered with its copy's path, so picking the same document again reuses the copy (when the
@@ -124,7 +148,7 @@ Android is `unix`. Code meant for Linux and the BSDs names them (`target_os = "l
 .github/scripts/install-android-ndk.sh   # prints ANDROID_NDK_HOME to export
 .github/scripts/install-android-sdk.sh   # JDK 17+ and SDK platform 36 / build-tools 36 (prints JAVA_HOME, ANDROID_HOME)
 rustup target add aarch64-linux-android  # and x86_64-linux-android for the emulator
-cargo xtask android package [--abi arm64] [--abi x86_64] [--split] [--aab]
+cargo xtask android package [--abi arm64] [--abi x86_64] [--split] [--aab] [--store github|play] [--version-code N]
 adb install -r target/android/<binary>-<version>-android-arm64-v8a.apk
 ```
 
@@ -138,11 +162,18 @@ drives the SDK tools itself (`xtask/src/apk.rs`):
    ABI. The bundle always holds them all, and the Play Store gives each device only its own.
 4. `zipalign -P 16` (16 KB pages, which Play requires) and `apksigner`.
 5. With `--aab`, the same parts go into a Play Store bundle through `bundletool` (downloaded once, pinned by sha256)
-   and are signed with `jarsigner`.
+   and are signed with `jarsigner`. The bundle always gets the Play manifest (no All files access); the APKs get
+   the GitHub one unless `--store play` (Storage ▸ *Two builds*).
 
-The version code is derived from the workspace version: `X.Y.Z` → `X·10⁶ + Y·10⁴ + Z·100 + 99`, and a prerelease
-`-rcN` uses `N` in place of `99`. Releases are now numbered `YY.WW.B` (ISO year, week, release that week, e.g. `26.43.4` → 26 430 499), which
+The version code is derived from the workspace version: `X.Y.Z` → `X·10⁶ + Y·10⁴ + Z·100 + 50`, and a prerelease
+`-rcN` (or `-betaN`) uses `N` (01–49) in place of `50`; 51–99 are reserved for re-uploads of the same release. Releases are now numbered `YY.WW.B` (ISO year, week, release that week, e.g. `26.43.4` → 26 430 450), which
 the formula already fits; see [Release versions](versioning.md).
+
+`--version-code N` replaces the derived code (1 to 2 100 000 000, Play's limit). Every upload to Google Play, even
+one it rejects or one later discarded, uses up its version code for good, so a second upload of the same version
+needs a new one: take the next free code in the release's reserved 51–99 range (`26.43.7` uploaded as 26430750 →
+`--version-code 26430751`). 26.43.5 predates this scheme (its release code was 26430599) and was re-uploaded as
+26430600, the `00` slot the formula never produces.
 
 **Signing.** Set `ANDROID_KEYSTORE` (a keystore file), `ANDROID_KEYSTORE_PASSWORD`, and optionally
 `ANDROID_KEY_ALIAS` (default `upload`) and `ANDROID_KEY_PASSWORD`. Without them a debug key in

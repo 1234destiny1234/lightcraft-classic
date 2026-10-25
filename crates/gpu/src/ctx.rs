@@ -129,7 +129,9 @@ impl Drop for Buf {
         let mut b = Some(b);
         let _ = RETIRED.try_with(|r| r.0.borrow_mut().extend(b.take()));
         match b {
-            Some(b) => std::mem::forget(b),
+            // Leaking is deliberate during thread teardown — dropping a wgpu buffer whose device
+            // thread-locals have already gone can abort the process. The device owns it.
+            Some(b) => std::mem::forget(b), // NOSONAR
             None => {
                 RETIRED_BYTES.fetch_add(size, Ordering::Relaxed);
             }
@@ -369,7 +371,10 @@ impl Gpu {
                     layout: Some(&pl),
                     module: &module,
                     entry_point: Some(e),
-                    compilation_options: Default::default(),
+                    // Every kernel here writes all of its workgroup memory before reading it (`hist_k` zeroes its
+                    // bins), so the zeroing wgpu adds by default is not needed; on DX12 it is written out as one
+                    // assignment per element, and FXC took ~8 s over `hist_k`'s 1281 bins at every launch.
+                    compilation_options: wgpu::PipelineCompilationOptions { zero_initialize_workgroup_memory: false, ..Default::default() },
                     cache: None,
                 });
                 kernels.insert(*e, Kernel { pipeline, layout: layout.clone(), nbuf: m.bindings.len() });

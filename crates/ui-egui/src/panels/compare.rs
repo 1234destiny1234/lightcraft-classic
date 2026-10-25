@@ -164,11 +164,13 @@ pub fn survey_step(app: &mut LccApp, d: isize) -> Result<Value, String> {
 }
 
 /// After rating/flagging with Auto Advance: next candidate (Compare), next photo in the survey,
-/// else the next photo in the view.
-pub fn advance(app: &mut LccApp) {
+/// else the next photo in the view. `was` is the active photo before the rating: a rating that took
+/// it out of the view made the photo after it active already, and that is the next one (#2312).
+pub fn advance(app: &mut LccApp, was: Option<PhotoId>) {
     let _ = match app.ui.view {
         ViewMode::Compare => compare_step(app, 1),
         ViewMode::Survey => survey_step(app, 1),
+        _ if app.session.active() != was => Ok(Value::Null),
         _ => app.session.execute("library.next", &json!({})).map_err(|e| e.to_string()),
     };
 }
@@ -235,11 +237,17 @@ fn photo_tile(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area
     };
     let mut hdr_key = None;
     if let Some(job) = app.session.render_job(id, rw.max(8), rh.max(8), false, true) {
-        // an HDR edit on an HDR display: also its HDR render, drawn over the 8-bit one (not in a drag)
-        if !gesturing && app.session.interaction.is_none() {
-            hdr_key = super::detail::request_hdr(app, hdr_view, job.clone(), 58);
+        // an HDR edit on an HDR display: also its HDR render, drawn over the 8-bit one (not in a
+        // pinch; in a slider drag, a draft only for the photo being edited)
+        if !gesturing {
+            hdr_key = super::detail::request_hdr(app, hdr_view, job.clone(), true, 58);
         }
-        app.renderer.request(slot, job, 60);
+        super::detail::upload_hdr_views(app);
+        // (while a drag shows its HDR frames here, no 8-bit render of each step under them)
+        let hdr_drafts = super::detail::editing(app, id) && super::detail::hdr_texture(app, hdr_view, id, hdr_key).is_some();
+        if !hdr_drafts || app.renderer.textures.get(&slot).is_none_or(|t| t.photo != id) {
+            app.renderer.request(slot, job, 60);
+        }
     }
     super::detail::upload_hdr_views(app);
     if let Some(job) = app.session.thumb_job(id, 256) {
@@ -262,7 +270,7 @@ fn photo_tile(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area
         display = super::detail::fit_rect(img_area, texture_aspect, zoom, native, ppp, app.ui.pan);
         p.image(tex.tex.id(), display, uv, Color32::WHITE);
     } else {
-        p.rect_filled(img.intersect(img_area), 0.0, Color32::from_gray(38));
+        p.rect_filled(img.intersect(img_area), 0.0, Tokens::get(ui.ctx()).skeleton);
     }
     // zoomed in: the tiles on screen at up to 100 %, sharp like the loupe's (Compare, Reference)
     if side_by_side && let Slot::Compare(i) = slot {
@@ -332,7 +340,7 @@ fn photo_tile(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area
         let filled = i < photo.rating;
         let r = Rect::from_min_size(pos2(x + i as f32 * 13.0, cap.center().y - 6.0), vec2(12.0, 12.0));
         if r.right() < cap.right() {
-            paint(pt, r, if filled { Icon::StarFilled } else { Icon::Star }, if filled { t.star } else { t.icon.gamma_multiply(0.6) });
+            crate::rating::paint_star(pt, r, filled, if filled { t.star } else { t.icon.gamma_multiply(0.6) });
         }
     }
     x += 5.0 * 13.0 + 4.0;
@@ -571,7 +579,6 @@ fn zoomed_tiles(
         Some(view) => {
             ctx.data_mut(|d| d.insert_temp(memory_id, view));
             super::detail::draw_window(p, app, &c, &v, &view);
-            super::detail::draw_hdr_window(p, app, &c, &v, &view);
         }
         None => {
             ctx.data_mut(|d| d.remove::<crate::region::RegionView>(memory_id));

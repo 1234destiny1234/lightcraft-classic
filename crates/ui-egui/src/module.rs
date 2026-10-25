@@ -397,8 +397,10 @@ impl IdentityPlate {
 
 /// `#rrggbb` (or `rrggbb`) → RGB.
 fn parse_hex(s: &str) -> Option<[u8; 3]> {
-    let h = s.trim().trim_start_matches('#');
-    if h.len() != 6 || !h.is_ascii() {
+    let h = s.trim();
+    let h = h.strip_prefix('#').unwrap_or(h);
+    // six hex digits: `from_str_radix` alone would also take a sign (`+f`)
+    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     let c = |i: usize| h.get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok());

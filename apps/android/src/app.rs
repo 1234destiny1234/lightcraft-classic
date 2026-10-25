@@ -69,7 +69,14 @@ pub fn main(activity: AndroidApp) {
                 lcc_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
             }
             let writer = prefs::Writer::new(prefs_path, &app, loaded.keep_file);
-            Ok(Box::new(App { app, writer, keyboard: Keyboard { host: keyboard_host, ..Default::default() }, host }))
+            Ok(Box::new(App {
+                app,
+                writer,
+                keyboard: Keyboard { host: keyboard_host, ..Default::default() },
+                host,
+                first_frame_told: false,
+                last_frame: None,
+            }))
         }),
     );
     if let Err(e) = result {
@@ -140,6 +147,8 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
     }
     let picker_host = host.clone();
     let storage_host = host.clone();
+    let roll_host = host.clone();
+    let gallery_host = host.clone();
     let url_host = host;
     Services {
         // the system picker (Storage Access Framework); the activity copies what is picked into
@@ -158,12 +167,19 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
             })
         }),
         // "All files access", so folders on the device are read in place (Settings ▸ Folders)
-        storage_access: storage_host.map(|h| {
+        // (only in a build whose manifest declares it: the Play build doesn't, and copies picked folders)
+        storage_access: storage_host.filter(|h| lcc_android_host::offers_all_files_access(h.all_files_access_declared())).map(|h| {
             let ask = h.clone();
             lcc_ui_egui::StorageAccess {
                 granted: Box::new(move || h.has_all_files_access().unwrap_or(false)),
                 ask: Box::new(move || ask.ask_all_files_access().map_err(|e| e.to_string())),
             }
+        }),
+        // the camera roll through MediaStore (asks for the photo permission; `file.addCameraRoll`)
+        camera_roll: roll_host.map(|h| -> lcc_ui_egui::CameraRollFn { Box::new(move || h.camera_roll().map_err(|e| e.to_string())) }),
+        // exports: copied into Pictures/<app> (MediaStore), then offered to the share sheet
+        save_to_gallery: gallery_host.map(|h| -> lcc_ui_egui::SaveToGalleryFn {
+            Box::new(move |paths: &[String], share: bool| h.save_to_gallery(paths, lcc_brand::DISPLAY_NAME, share).map_err(|e| e.to_string()))
         }),
         open_url: url_host.map(|h| -> lcc_ui_egui::OpenUrlFn { Box::new(move |url: &str| h.open_url(url).map_err(|e| e.to_string())) }),
         // atomic (temp file + sync + rename): a failed write never leaves a truncated file
@@ -181,6 +197,10 @@ struct App {
     writer: prefs::Writer,
     host: Option<Arc<Host>>,
     keyboard: Keyboard,
+    /// Whether the activity was told the first frame is on screen (see `Host::first_frame_shown`).
+    first_frame_told: bool,
+    /// When the previous frame ran (egui time), to log frames resuming after a long gap.
+    last_frame: Option<f64>,
 }
 
 /// The on-screen keyboard: what it typed goes into the frame's input; it shows while a text field
@@ -241,10 +261,34 @@ impl eframe::App for App {
             lcc_ui_egui::pick::answer_after_restart(&mut self.app, ctx, kind, u.paths);
         }
         let now = ctx.input(|i| i.time);
+        // frames stop while the activity is in the background; log when they come back so a
+        // freeze after resuming shows in logcat as "no frame after resume"
+        if let Some(prev) = self.last_frame
+            && now - prev > 2.0
+        {
+            log::info!("lifecycle: frames resumed after {:.1} s", now - prev);
+        }
+        self.last_frame = Some(now);
         self.writer.tick(&mut self.app, now);
     }
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         self.keyboard.input(raw);
+        // the camera cutout and the system bars: the UI keeps clear of them
+        if let Some(px) = lcc_android_host::insets() {
+            self.app.ui.modern.insets = lcc_ui_egui::modern::Insets::from_px(px, ctx.pixels_per_point());
+        }
+        // Back (the predictive-back callback): as the Back key, which the UI turns into touch.back
+        for _ in 0..lcc_android_host::take_back() {
+            for pressed in [true, false] {
+                raw.events.push(egui::Event::Key {
+                    key: egui::Key::BrowserBack,
+                    physical_key: None,
+                    pressed,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+        }
         // photos opened, shared or dropped from other apps take the desktop's drop path: presets
         // import as presets, photos open the import review
         if let Some(h) = &self.host {
@@ -256,6 +300,21 @@ impl eframe::App for App {
         self.app.perf.host_frame_ms = frame.info().cpu_usage.map(|s| f64::from(s) * 1000.0);
         self.app.ui(ui);
         self.keyboard.follow(ui.ctx());
+        if !self.first_frame_told {
+            self.first_frame_told = true;
+            if let Some(h) = &self.host
+                && let Err(e) = h.first_frame_shown()
+            {
+                log::warn!("first frame: {e}");
+            }
+        }
+        // Back with nothing left to close: the system's Back (the app goes to the background)
+        if lcc_ui_egui::modern::take_system_back(&mut self.app)
+            && let Some(h) = &self.host
+            && let Err(e) = h.go_background()
+        {
+            log::warn!("back: {e}");
+        }
     }
     fn on_exit(&mut self) {
         if let Err(e) = self.writer.save(&self.app) {

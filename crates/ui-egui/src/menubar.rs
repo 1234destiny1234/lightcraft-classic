@@ -48,11 +48,73 @@ pub fn display_item_label<'a>(id: &str, params: &Value, label: &'a str) -> &'a s
     if matches!(id, "metadata.applyPreset" | "album.addPhotos" | "label.applySet" | "catalog.openRecent" | "plugins.runItem")
         || (id == "app.export" && params.get("preset").is_some())
         || (id == "app.openLibrary" && params.get("path").is_some())
+        || (id == "app.recentLibraries" && params.get("remove").is_some())
     {
         label
     } else {
         crate::i18n::tr(label)
     }
+}
+
+/// Whether AppKit offers a shortcut to its menu instead of the window. Plain letters stay
+/// with egui even when the native menu displays them as key equivalents.
+pub fn native_menu_delivers(sc: &str) -> bool {
+    sc.split('+').any(|part| matches!(part, "Cmd" | "Ctrl") || part.strip_prefix('F').is_some_and(|n| n.parse::<u8>().is_ok()))
+}
+
+/// Native label and accelerator for a menu row. A grid row may borrow the cycle key as a
+/// hint, but must not consume a modified key and turn cycling into direct grid selection.
+/// AppKit has no separate shortcut-hint column: borrowed native-owned keys are appended to
+/// the translated label instead, leaving their dispatch with egui. Ordinary G stays in the
+/// native key-equivalent column because AppKit never hands it to the menu.
+pub fn native_item_presentation<'a>(
+    keymap: &crate::shortcuts::Keymap,
+    id: &str,
+    params: &Value,
+    label: &str,
+    shortcut: Option<&'a str>,
+) -> (String, Option<&'a str>) {
+    let label = display_item_label(id, params, label);
+    let borrowed = matches!(id, "view.photoGrid" | "view.squareGrid") && shortcut != crate::shortcuts::shortcut_of(keymap, id);
+    match shortcut.filter(|sc| borrowed && native_menu_delivers(sc)) {
+        Some(sc) => (format!("{label} ({})", shortcut_text(sc, true)), None),
+        None => (label.to_string(), shortcut),
+    }
+}
+
+/// Cache key for native menu structure and effective accelerator ownership. A transfer from
+/// a direct grid binding to a borrowed cycle hint must rebuild native handles and republish
+/// their owned shortcuts even when the visible menu model is identical.
+pub fn native_menu_structure(bar: &[(String, Vec<MenuNode>)], keymap: &crate::shortcuts::Keymap) -> String {
+    /// Add stable identities and effective native keys; live checked values stay outside the cache key.
+    fn walk(n: &[MenuNode], out: &mut String, keymap: &crate::shortcuts::Keymap) {
+        for x in n {
+            match x {
+                MenuNode::Item { id, params, label, checked, shortcut, .. } => {
+                    out.push_str(&MenuNode::key(id, params));
+                    out.push(if checked.is_some() { 'c' } else { 'i' });
+                    out.push_str(shortcut.as_deref().unwrap_or(""));
+                    // A key can change owners while both visible hints stay identical.
+                    out.push('|');
+                    out.push_str(native_item_presentation(keymap, id, params, label, shortcut.as_deref()).1.unwrap_or(""));
+                }
+                MenuNode::Separator => out.push('-'),
+                MenuNode::Submenu { label, children } => {
+                    out.push('[');
+                    out.push_str(label);
+                    walk(children, out, keymap);
+                    out.push(']');
+                }
+            }
+            out.push(';');
+        }
+    }
+    let mut s = format!("{};", crate::i18n::language().code());
+    for (t, items) in bar {
+        s.push_str(t);
+        walk(items, &mut s, keymap);
+    }
+    s
 }
 
 /// Top-level menus in order (the macOS app menu is added by the host).
@@ -305,7 +367,7 @@ const SUB_LAYOUT: &[(&str, &str, &[&str])] = &[
         "More Imports",
         &["dialog.importCatalog", "file.importLightroom", "file.importImmich", "---", "file.importPresets", "file.importKeywords"],
     ),
-    ("Library", "Filters", &["view.filterBar", "filter.toggleEnabled", "library.clearFilter", "---", "library.refresh", "library.holdView"]),
+    ("Library", "Filters", &["view.filterBar", "library.toggleFilters", "library.clearFilter", "---", "library.refresh", "library.holdView"]),
     (
         "View",
         "Before/After",
@@ -483,7 +545,8 @@ pub fn checked(app: &LccApp, id: &str) -> Option<bool> {
         "view.focusPoint" => Some(u.settings.focus_point),
         "view.zoomToFocus" => Some(u.settings.zoom_to_focus),
         "view.filmstrip" => Some(u.filmstrip),
-        "view.histogram" => Some(u.histogram),
+        "view.frameRate" => Some(u.frame_rate),
+        "view.histogram" => Some(if crate::modern::on(app) { crate::modern::histogram_shown(app) } else { u.histogram }),
         "view.clipping" => Some(u.show_clipping),
         "view.visualizeHdr" => Some(u.hdr_visualize),
         "view.colorReadoutRgb" => Some(u.settings.color_readout == crate::color_readout::ColorReadout::Rgb),
@@ -498,6 +561,7 @@ pub fn checked(app: &LccApp, id: &str) -> Option<bool> {
         "view.beforeAfterSplit" => Some(u.before_after == crate::state::BeforeAfter::Split),
         "view.autoAdvance" => Some(u.auto_advance),
         "view.filterBar" => Some(u.filter_bar),
+        "library.toggleFilters" => Some(!app.session.filters_off()),
         "view.soloSections" => Some(u.single_panel),
         "view.navigator" => Some(u.navigator),
         "view.layoutImage" => Some(u.layout_image.show && !u.layout_image.path.trim().is_empty()),
@@ -513,6 +577,7 @@ pub fn checked(app: &LccApp, id: &str) -> Option<bool> {
         "panel.redeye" => panel(RightPanel::RedEye),
         "panel.versions" => panel(RightPanel::Versions),
         "panel.activity" => panel(RightPanel::Activity),
+        "panel.info" if crate::modern::on(app) => Some(app.ui.modern.info),
         "panel.info" => panel(RightPanel::Info),
         "panel.keywords" => panel(RightPanel::Keywords),
         "panel.presets" => Some(u.presets),
@@ -719,7 +784,7 @@ pub(crate) fn expanded(app: &LccApp, name: &str) -> Option<Vec<MenuNode>> {
                 item(
                     "view.layoutImage",
                     Value::Null,
-                    "Show Layout Image",
+                    "Layout Image",
                     crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "view.layoutImage"),
                     chosen,
                     Some(li.show && chosen),
@@ -819,23 +884,28 @@ pub(crate) fn expanded(app: &LccApp, name: &str) -> Option<Vec<MenuNode>> {
         "Libraries" => {
             let can = crate::panels::settings::can_switch_library(app).is_ok();
             let open = app.session.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone());
-            let mut v: Vec<MenuNode> = app
-                .ui
-                .settings
-                .recent_libraries
+            let recent = &app.ui.settings.recent_libraries;
+            let label = |r: &str| {
+                let d = std::path::Path::new(r);
+                format!("{} — {}", crate::panels::settings::library_name(d), d.parent().map(|p| p.display().to_string()).unwrap_or_default())
+            };
+            let mut v: Vec<MenuNode> = recent
                 .iter()
                 .map(|r| {
                     let d = std::path::Path::new(r);
-                    // a missing library (moved, drive disconnected) is shown greyed out
-                    let label =
-                        format!("{} — {}", crate::panels::settings::library_name(d), d.parent().map(|p| p.display().to_string()).unwrap_or_default());
-                    item("app.openLibrary", json!({"path": r}), label, None, can && d.is_dir(), Some(open.as_deref() == Some(d)))
+                    // a library a check found missing (moved, drive disconnected) is greyed out; the
+                    // check runs on a worker (`RecentChecks`), never here: the menu is rebuilt every frame
+                    let gone = app.recent_checks.exists(r) == Some(false);
+                    item("app.openLibrary", json!({"path": r}), label(r), None, can && !gone, Some(open.as_deref() == Some(d)))
                 })
                 .collect();
             if v.is_empty() {
                 v.push(item("app.clearRecentLibraries", Value::Null, "No Recent Libraries", None, false, None));
             } else {
                 v.push(MenuNode::Separator);
+                // one entry at a time, missing ones too: only the list forgets it (issue #1290)
+                let forget = recent.iter().map(|r| item("app.recentLibraries", json!({"remove": r}), label(r), None, true, None)).collect();
+                v.push(MenuNode::Submenu { label: "Remove from List".into(), children: forget });
                 v.push(item("app.clearRecentLibraries", Value::Null, "Clear Recent Libraries", None, true, None));
             }
             v
@@ -925,11 +995,13 @@ pub(crate) fn expanded(app: &LccApp, name: &str) -> Option<Vec<MenuNode>> {
     })
 }
 
+/// Resolve a live menu row, including contextual keys and borrowed grid-cycle hints.
 fn node(app: &LccApp, e: &MenuEntry) -> MenuNode {
     let shortcut = e.shortcut.as_deref();
     // in an album the Delete key removes from the album (issue #1805): the menu says so
     let delete_key = crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "photo.delete");
     let shortcut = match e.id.as_str() {
+        "view.photoGrid" | "view.squareGrid" => shortcut.or_else(|| crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "view.gridToggle")),
         "album.removePhotos" => delete_key,
         "photo.delete" if matches!(app.session.source, lcc_engine::LibrarySource::Album(_)) => None,
         _ => shortcut,
@@ -1104,9 +1176,10 @@ pub fn run_item(app: &mut LccApp, id: &str, params: Value) -> Result<Value, Stri
     {
         return Ok(Value::Null);
     }
+    let was = app.session.active();
     let r = app.run(id, params);
     if culling_cmd && r.is_ok() && app.ui.auto_advance {
-        crate::panels::compare::advance(app);
+        crate::panels::compare::advance(app, was);
     }
     r
 }
@@ -1140,11 +1213,45 @@ pub fn shortcut_text(sc: &str, mac: bool) -> String {
     }
 }
 
-/// Horizontal gap between in-window menu titles. The buttons are frameless, and egui gives
-/// frameless buttons no padding, so the gap has to come from the layout's item spacing.
+/// Horizontal gap between in-window menu titles' text. Each title sits in a highlight [`TITLE_PAD`]
+/// wider than its text on both sides; the rest of the gap is the layout's item spacing.
 /// The bar tightens the gap down to [`MIN_TITLE_GAP`] before it collapses into one "Menu" button.
 const TITLE_GAP: f32 = 20.0;
 const MIN_TITLE_GAP: f32 = 10.0;
+/// Room between a title's text and the edge of its hover / open highlight.
+const TITLE_PAD: f32 = 4.0;
+/// Height of a title's highlight; its menu hangs just below it.
+const TITLE_H: f32 = 26.0;
+/// Gap between a title's highlight and the top of its menu.
+const MENU_GAP: f32 = 2.0;
+
+/// A top-level menu title, laid out but not yet drawn: [`paint_title`] draws it once the frame
+/// knows whether its menu is open.
+fn title_button(ui: &mut egui::Ui, text: &str, font: egui::FontId, color: egui::Color32) -> (egui::Response, std::sync::Arc<egui::Galley>) {
+    let galley = ui.painter().layout_no_wrap(text.to_string(), font, color);
+    let size = egui::vec2(galley.size().x + 2.0 * TITLE_PAD, TITLE_H);
+    let (_, r) = ui.allocate_exact_size(size, egui::Sense::click());
+    crate::widgets::announce(&r, text);
+    (r, galley)
+}
+
+/// Draw a menu title: highlighted while the pointer is on it or its menu is open, darker while
+/// pressed, like the titles of a native menu bar.
+fn paint_title(ui: &egui::Ui, r: &egui::Response, galley: std::sync::Arc<egui::Galley>, open: bool) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    let fill = if r.is_pointer_button_down_on() {
+        Some(t.pressed)
+    } else if open || r.hovered() {
+        Some(t.hover)
+    } else {
+        None
+    };
+    if let Some(fill) = fill {
+        ui.painter().rect_filled(r.rect, 4.0, fill);
+    }
+    let pos = r.rect.center() - galley.size() / 2.0;
+    ui.painter().galley(pos, galley, t.text_label);
+}
 
 /// Width of the in-window menu bar's titles at their full spacing.
 pub fn bar_width(ui: &egui::Ui) -> f32 {
@@ -1172,18 +1279,21 @@ pub fn show_in_window(app: &mut LccApp, ui: &mut egui::Ui, max_width: f32) -> f3
     let bar_bottom = Some(ui.max_rect().bottom());
     if total <= max_width {
         let saved = ui.spacing().item_spacing.x;
-        ui.spacing_mut().item_spacing.x = gap;
+        ui.spacing_mut().item_spacing.x = (gap - 2.0 * TITLE_PAD).max(0.0);
         // All titles first, then their popups, so a title the pointer moves onto can take over
         // from the open menu before either is drawn (no frame with two menus or none).
-        let titles: Vec<egui::Response> = bar
+        let (titles, galleys): (Vec<egui::Response>, Vec<_>) = bar
             .iter()
             .map(|(title, _)| {
-                let r = ui.add(egui::Button::new(egui::RichText::new(crate::i18n::tr(title)).font(font.clone()).color(t.text_label)).frame(false));
+                let (r, g) = title_button(ui, crate::i18n::tr(title), font.clone(), t.text_label);
                 crate::widgets::register(ui.ctx(), format!("menu:{title}"), r.rect);
-                r
+                (r, g)
             })
-            .collect();
+            .unzip();
         let confirmed = switch_open_title(ui.ctx(), &titles);
+        for (r, g) in titles.iter().zip(galleys) {
+            paint_title(ui, r, g, egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(r)));
+        }
         for ((_, items), r) in bar.iter().zip(&titles) {
             // (opening and closing by click is done in `switch_open_title`)
             // (the click confirming a menu a hover opened must not close it again)
@@ -1193,15 +1303,17 @@ pub fn show_in_window(app: &mut LccApp, ui: &mut egui::Ui, max_width: f32) -> f3
                 egui::PopupCloseBehavior::CloseOnClick
             };
             egui::Popup::menu(r)
+                .gap(MENU_GAP)
                 .close_behavior(close)
                 .open_memory(None)
                 .show(|ui| crate::menu_level::level(ui, 1, bar_bottom, |ui| nodes_ui(ui, items, mac, &mut clicked, 1, bar_bottom)));
         }
         ui.spacing_mut().item_spacing.x = saved;
     } else {
-        let r = ui.add(egui::Button::new(egui::RichText::new(crate::i18n::tr("Menu")).font(font.clone()).color(t.text_label)).frame(false));
+        let (r, g) = title_button(ui, crate::i18n::tr("Menu"), font.clone(), t.text_label);
         crate::widgets::register(ui.ctx(), "menu:all", r.rect);
-        egui::Popup::menu(&r).show(|ui| {
+        paint_title(ui, &r, g, egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&r)));
+        egui::Popup::menu(&r).gap(MENU_GAP).show(|ui| {
             crate::menu_level::level(ui, 1, bar_bottom, |ui| {
                 for (title, items) in &bar {
                     submenu(ui, title, crate::i18n::tr(title).to_string(), 1, bar_bottom, |ui| nodes_ui(ui, items, mac, &mut clicked, 2, bar_bottom));
@@ -1275,7 +1387,14 @@ fn submenu(ui: &mut egui::Ui, label: &str, text: String, depth: usize, bar_botto
 }
 
 /// `depth` is 1 for a top-level menu's rows; `bar_bottom` is where the menu bar ends.
-fn nodes_ui(ui: &mut egui::Ui, nodes: &[MenuNode], mac: bool, clicked: &mut Option<(String, Value)>, depth: usize, bar_bottom: Option<f32>) {
+pub(crate) fn nodes_ui(
+    ui: &mut egui::Ui,
+    nodes: &[MenuNode],
+    mac: bool,
+    clicked: &mut Option<(String, Value)>,
+    depth: usize,
+    bar_bottom: Option<f32>,
+) {
     ui.set_min_width(220.0);
     for n in nodes {
         match n {
@@ -1345,6 +1464,123 @@ mod tests {
             MenuNode::Submenu { children, .. } => find(children, id),
             _ => None,
         })
+    }
+
+    /// #2500: a direct-grid binding takes precedence over the borrowed cycle hint.
+    #[test]
+    fn grid_menu_shortcut_hints_preserve_direct_bindings_and_clicks() {
+        let mut a = app();
+        crate::shortcuts::assign(&mut a.ui.settings.keymap, "view.photoGrid", Some("Cmd+Shift+1")).unwrap();
+        let bar = menu_bar(&a);
+        let nodes = &bar.iter().find(|(title, _)| title == "View").unwrap().1;
+        assert!(matches!(find(nodes, "view.photoGrid"), Some(MenuNode::Item { shortcut: Some(sc), .. }) if sc == "Cmd+Shift+1"));
+        assert!(matches!(find(nodes, "view.squareGrid"), Some(MenuNode::Item { shortcut: Some(sc), .. }) if sc == "G"));
+        // A hint never assigns the cycle key to another command.
+        assert_eq!(crate::shortcuts::shortcut_of(&a.ui.settings.keymap, "view.squareGrid"), None);
+        run_item(&mut a, "view.photoGrid", Value::Null).unwrap();
+        assert_eq!(a.ui.view, ViewMode::PhotoGrid);
+        run_item(&mut a, "view.photoGrid", Value::Null).unwrap();
+        assert_eq!(a.ui.view, ViewMode::PhotoGrid, "clicking the active row does not cycle");
+        run_item(&mut a, "view.squareGrid", Value::Null).unwrap();
+        assert_eq!(a.ui.view, ViewMode::SquareGrid);
+        run_item(&mut a, "view.gridToggle", Value::Null).unwrap();
+        assert_eq!(a.ui.view, ViewMode::PhotoGrid);
+    }
+
+    /// #2500: native hints never install a borrowed modifier/function key as a direct-grid
+    /// accelerator. Plain G remains in AppKit's shortcut column and is dispatched by egui.
+    #[test]
+    fn grid_menu_shortcut_hints_keep_native_toggle_dispatch() {
+        let mut keymap = crate::shortcuts::Keymap::new();
+        for id in ["view.photoGrid", "view.squareGrid"] {
+            let (label, accelerator) = native_item_presentation(&keymap, id, &Value::Null, "Photo Grid", Some("G"));
+            assert_eq!(label, "Photo Grid");
+            assert_eq!(accelerator, Some("G"));
+            assert!(!native_menu_delivers(accelerator.unwrap()));
+            for (key, text) in [("Cmd+Shift+G", "⌘⇧G"), ("Ctrl+G", "⌃G"), ("F3", "F3")] {
+                crate::shortcuts::assign(&mut keymap, "view.gridToggle", Some(key)).unwrap();
+                let (label, accelerator) = native_item_presentation(&keymap, id, &Value::Null, "Photo Grid", Some(key));
+                assert_eq!(label, format!("Photo Grid ({text})"));
+                assert_eq!(accelerator, None, "egui keeps {key}");
+            }
+        }
+        crate::shortcuts::assign(&mut keymap, "view.photoGrid", Some("Cmd+Shift+1")).unwrap();
+        let (label, accelerator) = native_item_presentation(&keymap, "view.photoGrid", &Value::Null, "Photo Grid", Some("Cmd+Shift+1"));
+        assert_eq!(label, "Photo Grid");
+        assert_eq!(accelerator, Some("Cmd+Shift+1"), "the row's own shortcut is a real accelerator");
+    }
+
+    /// #2500: the control channel runs the real keyboard path exactly once and menu commands
+    /// continue to select their named grid after the cycle shortcut is remapped.
+    #[test]
+    fn grid_menu_shortcut_hints_preserve_control_keyboard_dispatch() {
+        let mut h = crate::headless::Headless::new(app(), [960.0, 720.0], 1.0);
+        h.app.ui.view = ViewMode::PhotoGrid;
+        for _ in 0..3 {
+            h.step();
+        }
+        let timeout = std::time::Duration::from_secs(20);
+        let press = |h: &mut crate::headless::Headless, params| {
+            let reply = h.request("ui.key", params, timeout);
+            assert_eq!(reply["ok"], true, "{reply}");
+        };
+        press(&mut h, json!({"key": "G"}));
+        assert_eq!(h.app.ui.view, ViewMode::SquareGrid);
+        press(&mut h, json!({"key": "G"}));
+        assert_eq!(h.app.ui.view, ViewMode::PhotoGrid);
+        crate::shortcuts::assign(&mut h.app.ui.settings.keymap, "view.gridToggle", Some("Cmd+Shift+G")).unwrap();
+        press(&mut h, json!({"key": "G"}));
+        assert_eq!(h.app.ui.view, ViewMode::PhotoGrid);
+        press(&mut h, json!({"key": "G", "cmd": true, "shift": true}));
+        assert_eq!(h.app.ui.view, ViewMode::SquareGrid);
+        press(&mut h, json!({"key": "G", "cmd": true, "shift": true}));
+        assert_eq!(h.app.ui.view, ViewMode::PhotoGrid);
+        for _ in 0..2 {
+            let reply = h.request("ui.menu.invoke", json!({"command": "view.squareGrid"}), timeout);
+            assert_eq!(reply["ok"], true, "{reply}");
+            assert_eq!(h.app.ui.view, ViewMode::SquareGrid);
+        }
+    }
+
+    /// #2513 review: moving a direct-grid key to the cycle command leaves the visible model
+    /// unchanged, but must invalidate the native cache so its old accelerator is removed.
+    #[test]
+    fn grid_menu_shortcut_hints_invalidate_native_ownership_cache() {
+        let mut a = app();
+        crate::shortcuts::assign(&mut a.ui.settings.keymap, "view.gridToggle", None).unwrap();
+        crate::shortcuts::assign(&mut a.ui.settings.keymap, "view.photoGrid", Some("Cmd+Shift+G")).unwrap();
+        crate::shortcuts::assign(&mut a.ui.settings.keymap, "view.squareGrid", Some("Cmd+Shift+2")).unwrap();
+        let before = menu_bar(&a);
+        let direct = native_menu_structure(&before, &a.ui.settings.keymap);
+        crate::shortcuts::assign(&mut a.ui.settings.keymap, "view.gridToggle", Some("Cmd+Shift+G")).unwrap();
+        let after = menu_bar(&a);
+        assert_eq!(before, after, "visible hint text does not expose the ownership change");
+        assert_ne!(direct, native_menu_structure(&after, &a.ui.settings.keymap), "rebuild removes the stale direct-grid accelerator");
+    }
+
+    /// #2500: grid view rows show the separate cycle command's current shortcut.
+    #[test]
+    fn grid_menu_shortcut_hints_follow_the_cycle_key() {
+        let mut a = app();
+        let hint = |a: &LccApp, id: &str| {
+            let bar = menu_bar(a);
+            let nodes = &bar.iter().find(|(title, _)| title == "View").expect("View menu").1;
+            match find(nodes, id).expect("grid row") {
+                MenuNode::Item { shortcut, .. } => shortcut.clone(),
+                _ => panic!("grid row must be an item"),
+            }
+        };
+        for id in ["view.photoGrid", "view.squareGrid"] {
+            assert_eq!(hint(&a, id).as_deref(), Some("G"), "{id}");
+        }
+        crate::shortcuts::assign(&mut a.ui.settings.keymap, "view.gridToggle", Some("Cmd+Shift+G")).unwrap();
+        for id in ["view.photoGrid", "view.squareGrid"] {
+            assert_eq!(hint(&a, id).as_deref(), Some("Cmd+Shift+G"), "{id}");
+        }
+        crate::shortcuts::assign(&mut a.ui.settings.keymap, "view.gridToggle", None).unwrap();
+        for id in ["view.photoGrid", "view.squareGrid"] {
+            assert_eq!(hint(&a, id), None, "{id}");
+        }
     }
 
     #[test]
@@ -1693,6 +1929,25 @@ mod tests {
         let p = app.session.catalog.photo(id).unwrap();
         assert_eq!(p.file_name, "one-renamed.png");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // Regression test for #49: the in-window menu headings (File, Edit, ...) sat only egui's default
+    // 8 px apart, too close to read or aim at. (The fork's longer bar narrows the gap down to
+    // MIN_TITLE_GAP when the window is tight, never below.)
+    #[test]
+    fn in_window_menu_headings_are_spaced_apart() {
+        let mut a = app();
+        a.native_menu = false;
+        let mut h = crate::headless::Headless::new(a, [1400.0, 900.0], 1.0);
+        h.step();
+        h.step();
+        let rect = |id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r).unwrap_or_else(|| panic!("{id} is on screen"));
+        let titles: Vec<_> = MENUS.iter().map(|t| rect(&format!("menu:{t}"))).collect();
+        for pair in titles.windows(2) {
+            let gap = pair[1].left() - pair[0].right();
+            // (the registered rects are the titles' highlights, TITLE_PAD wider than the text)
+            assert!(gap >= MIN_TITLE_GAP - 2.0 * TITLE_PAD - 0.5, "headings {:?} and {:?} are only {gap} px apart", pair[0], pair[1]);
+        }
     }
 
     /// A backup the host refuses (changes still unsaved, issue #1508) says why when started from

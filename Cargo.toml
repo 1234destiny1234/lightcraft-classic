@@ -5,10 +5,10 @@ members = ["crates/*", "apps/*", "xtask"]
 exclude = ["vendor"]
 
 [workspace.package]
-version = "26.43.4"
+version = "26.43.7"
 edition = "2024"
 license = "MIT"
-rust-version = "1.90"
+rust-version = "1.95"
 repository = "https://example.invalid/repo"
 
 [workspace.dependencies]
@@ -23,6 +23,7 @@ lcc-geom = { path = "crates/geom" }
 lcc-faces = { path = "crates/faces" }
 lcc-sysmem = { path = "crates/sysmem" }
 lcc-hdrmeta = { path = "crates/hdrmeta" }
+lcc-gpumem = { path = "crates/gpumem" }
 lcc-winspool = { path = "crates/winspool" }
 lcc-android-host = { path = "crates/android-host" }
 lcc-peer = { path = "crates/peer" }
@@ -34,6 +35,7 @@ lcc-video-export = { path = "crates/video-export" }
 lcc-tiff = { path = "crates/tiff" }
 lcc-raw = { path = "crates/raw" }
 lcc-camdb = { path = "crates/camdb" }
+lcc-colourfit = { path = "crates/colourfit" }
 lcc-codecs = { path = "crates/codecs" }
 lcc-meta = { path = "crates/meta" }
 lcc-develop = { path = "crates/develop" }
@@ -101,7 +103,7 @@ dhat = "0.3" # opt-in heap profiling (lcc-cli --features dhat-heap) and heap tes
 trash = { version = "5.2", default-features = false, features = ["coinit_apartmentthreaded"] } # move files to system Recycle Bin / Trash (Delete from Disk)
 
 # formats
-quick-xml = "0.38"
+quick-xml = "0.41"
 miniz_oxide = "0.8"
 rustix = { version = "1", default-features = false, features = ["std", "fs"] } # free disk space (statvfs), pure Rust on Linux
 
@@ -168,9 +170,11 @@ excessive_precision = "allow"
 
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
 
 [profile.dev]
 opt-level = 1
+debug = "line-tables-only"
 
 [profile.release]
 debug = "line-tables-only"

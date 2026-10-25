@@ -196,7 +196,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Edit Capture Time",
             [],
             None,
-            "{ids?, time?: `2026-09-30T14:05:00` (the active photo gets it, the others shift by the same amount), each?: bool (every photo gets `time`), fromFile?: bool (each photo gets its original file's modification time, UTC), shift?: seconds, hours?: time-zone shift in hours} → {changed, captured: [..], noFile}",
+            "{ids?, time?: `2026-09-30T14:05:00` (the active photo gets it, the others shift by the same amount), each?: bool (every photo gets `time`), fromFile?: bool (each photo gets its original file's modification time, UTC), shift?: seconds, hours?: time-zone shift in hours} → {changed, captured: [..], noFile, unreadable: photos skipped because their capture time can't be read}",
             has_selection,
             |s, p| {
                 use lcc_catalog::dates::{iso_seconds, normalize_iso, shift_iso};
@@ -226,7 +226,19 @@ pub fn specs() -> Vec<CommandSpec> {
                         let from = normalize_iso(anchor_date.trim().get(..10).unwrap_or(""))
                             .and_then(|_| iso_seconds(&anchor_date))
                             .ok_or_else(|| bad(c, "the photo's date doesn't parse"))?;
-                        delta += iso_seconds(&t).unwrap_or(from) - from;
+                        // the others move by the anchor's change, so it must read in full, not just
+                        // its leading digits (a Lightroom catalog's capture time is copied verbatim);
+                        // alone, it simply gets the time, which repairs it
+                        if shift_iso(&anchor_date, 0).is_some() {
+                            delta += iso_seconds(&t).unwrap_or(from) - from;
+                        } else if targets.len() == 1 {
+                            each = Some(t);
+                        } else {
+                            return Err(bad(
+                                c,
+                                "the active photo's capture time can't be read, so the other photos can't move by the same amount; set its time with it selected alone",
+                            ));
+                        }
                     }
                 }
                 let from_file = bool_or(p, "fromFile", false);
@@ -234,6 +246,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 let mut out = Vec::new();
                 let mut no_file = 0usize;
                 let mut out_of_range = 0usize;
+                let mut unreadable = 0usize;
                 for id in &targets {
                     let from = if from_file {
                         // the original's modification time (UTC; `hours` moves it to the camera's zone)
@@ -250,9 +263,11 @@ pub fn specs() -> Vec<CommandSpec> {
                     };
                     let Some(new) = shift_iso(&from, delta) else {
                         // a date that reads but would leave years 0000–9999 is refused below; one
-                        // that doesn't read is skipped, as before
-                        if iso_seconds(&from).is_some() {
+                        // that doesn't read is skipped and counted
+                        if shift_iso(&from, 0).is_some() {
                             out_of_range += 1;
+                        } else {
+                            unreadable += 1;
                         }
                         continue;
                     };
@@ -271,7 +286,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 if from_file && out.is_empty() {
                     return Err(bad(c, "none of the photos has a readable original file"));
                 }
-                Ok(json!({"changed": n, "captured": out, "noFile": no_file}))
+                Ok(json!({"changed": n, "captured": out, "noFile": no_file, "unreadable": unreadable}))
             }
         ),
         cmd!(

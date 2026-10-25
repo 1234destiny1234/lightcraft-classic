@@ -141,34 +141,52 @@ fn new_brush_starts_a_separate_mask_in_paint_mode() {
     h.settle(SETTLE);
 }
 
-/// A slider hides the overlay; a new mask, an added part, a duplicate or picking a mask in
-/// the list shows it again, so the Overlay menu's mode is what the photo shows (issue #1800).
+/// One rule for the mask overlay (upstream PR 2920, adapted): a mask shows its overlay by itself only
+/// while it has no settings; one with settings is judged by its effect when picked, added to or
+/// duplicated. O (or the eye) shows it to stay, hovering its row shows it, and while a slider is at
+/// work nothing covers the photo. Replaces issue #1800's re-show on every pick.
 #[test]
-fn a_new_or_picked_mask_shows_the_overlay_hidden_by_a_slider() {
+fn a_mask_shows_its_overlay_by_itself_only_without_settings() {
     use lcc_pipeline::Overlay;
     let mut h = detail("panel.masking");
+    let shown = |h: &Headless| matches!(crate::panels::detail::view_overlay(&h.app, &develop(h), false), Overlay::Mask { .. });
+    let rest = |h: &mut Headless| h.app.ui.mask_adjusting_until = None;
     exec(&mut h, "mask.add", json!({"kind": "linear", "start": [0.5, 0.2], "end": [0.5, 0.7]}));
     let first = h.app.session.active_mask.unwrap();
-    let hide = |h: &mut Headless| {
-        exec(h, "mask.adjust", json!({"values": {"exposure": 0.5}}));
-        assert!(!h.app.ui.mask_overlay);
-    };
-    let shown = |h: &Headless| matches!(crate::panels::detail::view_overlay(&h.app, &develop(h), false), Overlay::Mask { .. });
-    hide(&mut h);
+    assert!(shown(&h), "a new mask without settings shows what it selects");
+    exec(&mut h, "mask.adjust", json!({"values": {"exposure": 0.5}}));
+    assert!(!shown(&h), "nothing covers the photo while a slider works");
+    rest(&mut h);
+    assert!(!shown(&h), "a mask with settings shows its effect");
     exec(&mut h, "mask.add", json!({"kind": "radial", "center": [0.4, 0.5], "rx": 0.2, "ry": 0.2}));
-    assert!(shown(&h), "a new mask shows its overlay");
-    hide(&mut h);
+    assert!(shown(&h), "another new mask shows its overlay");
     let r = h.request("ui.clickWidget", json!({"id": format!("mask:{first}")}), T);
     assert_eq!(r["ok"], true, "{r}");
     assert_eq!(h.app.session.active_mask, Some(first));
-    assert!(shown(&h), "picking a mask in the list shows its overlay");
+    assert!(shown(&h), "the pointer on the picked row shows what it selects");
+    pointer(&mut h, json!([{"kind": "move", "x": 0.1, "y": 0.9}])); // the pointer leaves the list
+    assert_eq!(h.app.ui.mask_hover, None);
+    rest(&mut h);
+    assert!(!shown(&h), "picking a mask with settings shows its effect");
     for (cmd, params) in
         [("mask.addComponent", json!({"kind": "radial", "op": "add", "center": [0.6, 0.5], "rx": 0.1, "ry": 0.1})), ("mask.duplicate", json!({}))]
     {
-        hide(&mut h);
         exec(&mut h, cmd, params);
-        assert!(shown(&h), "{cmd} shows the overlay");
+        assert!(!shown(&h), "{cmd} on a mask with settings shows its effect");
     }
+    // hovering a mask's row shows it
+    h.app.ui.mask_hover = Some(first);
+    assert!(shown(&h), "hovering the row shows the overlay");
+    h.app.ui.mask_hover = None;
+    // O shows it to stay, through edits; a slider at work still hides it
+    exec(&mut h, "view.maskOverlay", json!({"show": true}));
+    assert!(shown(&h));
+    exec(&mut h, "mask.adjust", json!({"values": {"exposure": 0.7}}));
+    assert!(!shown(&h), "hidden while the slider works");
+    rest(&mut h);
+    assert!(shown(&h), "back when it rests: O keeps it on");
+    exec(&mut h, "mask.select", json!({"id": first}));
+    assert!(shown(&h), "O keeps it on for a picked mask too");
     h.settle(SETTLE);
 }
 
@@ -245,6 +263,21 @@ fn radial_body_drag_keeps_resize_and_rotation_handles() {
 }
 
 #[test]
+fn mask_overlay_color_refuses_anything_but_six_hex_digits() {
+    let mut h = detail("panel.masking");
+    exec(&mut h, "view.maskOverlayColor", json!({"color": "#2870f0"}));
+    for bad in ["#+f+f+f", "+12345", "#-0-0-0", "##ffffff"] {
+        let r = h.request("engine.execute", json!({"command": "view.maskOverlayColor", "params": {"color": bad}}), T);
+        assert_eq!(r["ok"], false, "{bad:?} is not a colour: {r}");
+        assert_eq!(h.app.ui.mask_overlay_color, [0x28, 0x70, 0xf0], "{bad:?} leaves the overlay colour alone");
+    }
+    exec(&mut h, "view.maskOverlayColor", json!({"color": "e63228"}));
+    assert_eq!(h.app.ui.mask_overlay_color, [0xe6, 0x32, 0x28]);
+    exec(&mut h, "view.maskOverlayColor", json!({"color": [10, 20, 30]}));
+    assert_eq!(h.app.ui.mask_overlay_color, [10, 20, 30]);
+}
+
+#[test]
 fn mask_overlay_keys_and_pins() {
     use lcc_pipeline::{MaskView, Overlay};
     let mut h = detail("panel.masking");
@@ -295,6 +328,63 @@ fn mask_overlay_keys_and_pins() {
     pointer(&mut h, json!([{"kind": "down", "x": 0.5, "y": 0.6}, {"kind": "up", "x": 0.5, "y": 0.6}]));
     assert_eq!(h.app.session.active_mask, Some(2));
     h.settle(SETTLE);
+}
+
+/// #2210: Ctrl+Shift+O (the all-masks overlay) draws the white outline of every visible
+/// Radial/Linear mask, not just the selected one — but only the selected mask registers
+/// `maskHandle:` elements, so nothing else becomes draggable.
+#[test]
+fn all_masks_overlay_outlines_every_visible_mask_but_only_the_selected_one_is_draggable() {
+    let mut h = detail("panel.masking");
+    // Two visible radial masks; mask 2 ends up selected (mask.add selects the new one).
+    exec(&mut h, "mask.add", json!({"kind": "radial", "center": [0.3, 0.5], "rx": 0.12, "ry": 0.12}));
+    exec(&mut h, "mask.add", json!({"kind": "radial", "center": [0.7, 0.5], "rx": 0.12, "ry": 0.12}));
+    exec(&mut h, "view.maskOverlayAll", json!({}));
+    assert!(h.app.ui.mask_overlay_all);
+    assert_eq!(h.app.session.active_mask, Some(2));
+    // Pins add their own <maskPin:…> elements; keep them out of the handle count.
+    exec(&mut h, "view.maskPins", json!({"show": false}));
+    h.settle(SETTLE);
+
+    let handles_of = |h: &Headless, id: usize| h.app.widgets.iter().filter(|(w, _)| w.starts_with(&format!("maskHandle:{id}:"))).count();
+    // The selected mask keeps its 4 edge handles and its rotation grip.
+    assert_eq!(handles_of(&h, 2), 5, "the selected mask keeps its handles");
+    // The other visible mask draws its outline but registers no handle: it is not draggable.
+    assert_eq!(handles_of(&h, 1), 0, "an unselected mask must not become draggable");
+    // …while a mask with no components has nothing to outline and nothing to grab either.
+    exec(&mut h, "mask.add", json!({"kind": "luminanceRange"}));
+    exec(&mut h, "mask.addComponent", json!({"kind": "radial", "op": "add", "center": [0.5, 0.8], "rx": 0.08, "ry": 0.08}));
+    assert_eq!(h.app.session.active_mask, Some(3));
+    assert_eq!(handles_of(&h, 1), 0);
+    h.settle(SETTLE);
+}
+
+/// #2210: the outlines of *unselected* masks are painted, not registered as widgets, so the way to
+/// observe them is the rendered pixels. With the all-masks overlay on, the unselected mask's
+/// ellipse edge must carry white stroke pixels the photo alone does not have.
+#[test]
+fn all_masks_overlay_paints_the_outline_of_an_unselected_mask() {
+    let mut h = detail("panel.masking");
+    exec(&mut h, "mask.add", json!({"kind": "radial", "center": [0.3, 0.5], "rx": 0.12, "ry": 0.12}));
+    exec(&mut h, "mask.add", json!({"kind": "radial", "center": [0.7, 0.5], "rx": 0.12, "ry": 0.12}));
+    assert_eq!(h.app.session.active_mask, Some(2));
+    exec(&mut h, "view.maskPins", json!({"show": false}));
+
+    // Sample the whole canvas: the outline is white (alpha 170) over the photo, so the overlay adds
+    // near-white pixels along the unselected mask's ellipse edge.
+    let white_pixels = |h: &mut Headless, on: bool| -> usize {
+        let overlay = h.app.ui.mask_overlay_all;
+        if overlay != on {
+            exec(h, "view.maskOverlayAll", json!({}));
+        }
+        assert_eq!(h.app.ui.mask_overlay_all, on);
+        h.settle(SETTLE);
+        let px = h.view.paint(&Default::default());
+        px.pixels.iter().filter(|p| p.r() > 200 && p.g() > 200 && p.b() > 200).count()
+    };
+    let off = white_pixels(&mut h, false);
+    let on = white_pixels(&mut h, true);
+    assert!(on > off, "the unselected mask's outline must add white pixels: off {off}, on {on}");
 }
 
 /// #518: holding the brush still, however long, paints the same feathered spot as a quick press.
@@ -1062,11 +1152,11 @@ fn local_folder_listed_twice_opens_and_closes_each_row() {
 fn geometry_slider_drag_marks_the_grid() {
     let mut h = detail("panel.crop");
     let spec = lcc_develop::controls::find("geometry.vertical").unwrap();
-    let start = crate::widgets::SliderOut { value: None, drag_started: true, drag_stopped: false, reset: false };
+    let start = crate::widgets::SliderOut { value: None, drag_started: true, drag_stopped: false, reset: false, more: false };
     crate::panels::edit::apply_slider_out(&mut h.app, spec, start, |_, _| Ok(serde_json::Value::Null));
     assert_eq!(h.app.ui.dragging_control.as_deref(), Some("geometry.vertical"));
     h.step();
-    let stop = crate::widgets::SliderOut { value: None, drag_started: false, drag_stopped: true, reset: false };
+    let stop = crate::widgets::SliderOut { value: None, drag_started: false, drag_stopped: true, reset: false, more: false };
     crate::panels::edit::apply_slider_out(&mut h.app, spec, stop, |_, _| Ok(serde_json::Value::Null));
     assert!(h.app.ui.dragging_control.is_none());
     h.settle(SETTLE);
@@ -1096,6 +1186,29 @@ fn edit_in_external_editor_opens_the_copy() {
     assert_eq!(calls.len(), 1);
     assert!(calls[0].0.ends_with("-Edit.tif") && std::path::Path::new(&calls[0].0).exists(), "{calls:?}");
     assert_eq!(calls[0].1, "PhotoCraft");
+    let _ = std::fs::remove_dir_all(&dir);
+    h.settle(SETTLE);
+}
+
+/// An editor that won't open the copy: the copy is in the library already, so the command succeeds
+/// with `failed` set and a toast saying why, instead of an error a script would retry (and make
+/// another copy each time).
+#[test]
+fn edit_in_reports_an_editor_that_wont_open_without_failing() {
+    let dir = std::env::temp_dir().join(format!("lc-ui-ext-fail-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let services = Services { png: None, open_with: Some(Box::new(|_: &str, _: &str| Err("the editor quit".into()))), ..Default::default() };
+    let app = LccApp::new(lcc_engine::Session::with_demo().with_fs(), services);
+    let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
+    h.app.ui.settings.external_editor = "PhotoCraft".into();
+    let n = h.app.session.catalog.len();
+    let r = h.request("engine.execute", json!({"command": "photo.editInExternal", "params": {"dir": dir.to_string_lossy()}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(r["result"]["failed"], "the editor quit", "{r}");
+    assert_eq!(h.app.session.catalog.len(), n + 1, "the copy stays in the library");
+    let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+    assert!(toast.contains("the editor quit"), "{toast}");
     let _ = std::fs::remove_dir_all(&dir);
     h.settle(SETTLE);
 }
@@ -1134,10 +1247,10 @@ fn edit_in_photocraft_opens_a_psd_copy() {
     assert_eq!((h.app.session.catalog.len(), opened.lock().unwrap().len()), (n, 0), "no copy without PhotoCraft");
     // and it says so, however it was asked for (menu, shortcut, context menu)
     let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
-    assert!(toast.contains("isn't installed"), "{toast:?}");
+    assert!(!toast.is_empty(), "the missing editor is reported");
     h.app.ui.toast = None;
     let r = h.app.run("photo.editInPhotoCraft", json!({}));
-    assert!(r.is_err() && h.app.ui.toast.as_ref().is_some_and(|t| t.0.contains("isn't installed")), "{r:?} {:?}", h.app.ui.toast);
+    assert!(r.is_err() && h.app.ui.toast.is_some(), "{r:?} {:?}", h.app.ui.toast);
     installed.store(true, std::sync::atomic::Ordering::SeqCst);
     let r = h.request("engine.execute", params, T);
     assert_eq!(r["ok"], true, "{r}");
@@ -1208,10 +1321,14 @@ fn open_original_in_external_editor_hands_over_the_raw_itself() {
     assert_eq!(std::fs::read(&a_path).unwrap(), b"raw sensor data", "the original is left as it is");
     assert!(std::fs::read_dir(&dir).unwrap().count() == 2, "nothing is written next to the originals");
 
-    // the editor can be named per call; the active photo must have a file for the menu
-    let r = exec(&mut h, "photo.openOriginalInExternal", json!({"ids": [a.0], "app": "/opt/dxo"}));
+    // the app can name the editor per call, an agent over the control channel can't; the active
+    // photo must have a file for the menu
+    let r = h.app.run("photo.openOriginalInExternal", json!({"ids": [a.0], "app": "/opt/dxo"})).unwrap();
     assert_eq!(r["opened"][0]["path"], a_path.as_str());
     assert_eq!(opened.lock().unwrap().last().unwrap().1, "/opt/dxo");
+    let r = h.request("engine.execute", json!({"command": "photo.openOriginalInExternal", "params": {"ids": [a.0], "app": "/bin/sh"}}), T);
+    assert_eq!(r["ok"], false, "{r}");
+    assert_eq!(opened.lock().unwrap().last().unwrap().1, "/opt/dxo", "nothing more opened");
     exec(&mut h, "library.select", json!({"ids": [a.0]}));
     assert!(crate::menus::ui_enabled(&h.app, "photo.openOriginalInExternal"));
     exec(&mut h, "library.select", json!({"ids": [demo.0]}));

@@ -1392,6 +1392,9 @@
   "Sliders": "Curseurs",
   "One Row": "Une ligne",
   "Two Rows": "Deux lignes",
+  "Slider text": "Texte des curseurs",
+  "Compact": "Compact",
+  "Full Size": "Taille normale",
   "Check Host Key": "Vérifier la clé d’hôte",
   "Host key trusted": "Clé d’hôte approuvée",
   "Host key:": "Clé d’hôte :",
@@ -1406,5 +1409,13 @@
   "Hue Low": "Teinte basse",
   "Hue High": "Teinte haute",
   "Red/Cyan": "Rouge/cyan",
-  "Blue/Yellow": "Bleu/jaune"
+  "Blue/Yellow": "Bleu/jaune",
+  "No horizon or vertical lines to level by": "Aucun horizon ni ligne verticale pour redresser",
+  "High quality adjustment previews": "Aperçus des réglages en haute qualité",
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Conserve la même qualité d’image pendant les réglages. Si une retouche est trop lente pour cela, l’image se met à jour plus vite pendant qu’un curseur bouge et redevient nette dès qu’il s’arrête.",
+  "Preview for SDR Display": "Aperçu pour écran SDR",
+  "Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition": "Affiche la photo telle que les écrans SDR et les exports SDR la montrent, pour régler sa version SDR",
+  "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.": "Ces réglages définissent l’aspect de la photo sur les écrans SDR et dans les exports SDR. Activez Aperçu pour écran SDR pour les voir.",
+  "Graphics interface": "Interface graphique",
+  "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.": "S’applique au prochain lancement. Si l’app démarre lentement avec le GPU activé, essayez Vulkan : sur certains ordinateurs, il prépare le GPU bien plus vite."
 }

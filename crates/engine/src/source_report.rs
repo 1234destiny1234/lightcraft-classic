@@ -8,8 +8,8 @@ use serde_json::{Value, json};
 
 use crate::camera_preview::{StartTrace, ToneSource};
 
-/// The report for a file's `bytes`.
-pub fn report(bytes: &[u8]) -> Result<Value, String> {
+/// The report for a file's `bytes`, developed with the camera-profile choice `camera` (`profile.camera`).
+pub fn report(bytes: &[u8], camera: &str) -> Result<Value, String> {
     if lcc_raw::probe(bytes).is_none() {
         let format = lcc_codecs::sniff(bytes).map(|f| format!("{f:?}"));
         return Ok(json!({"raw": false, "format": format, "decode": {"kind": "image"}}));
@@ -20,6 +20,15 @@ pub fn report(bytes: &[u8]) -> Result<Value, String> {
         Err(Ok(why)) => return Ok(json!({"raw": true, "decode": {"kind": "embeddedPreview", "reason": why}})),
         Err(Err(e)) => return Err(e),
     };
+    // the photo's camera profile (`.dcp` or calibrated look) replaces the file's colour model, as on opening
+    let camera_profile = raw.metadata.model.as_deref().and_then(|model| lcc_raw::dcp::resolve(camera, raw.metadata.make.as_deref(), model));
+    if let Some(d) = &camera_profile {
+        d.apply(&mut raw.color);
+    }
+    let camera_profile = camera_profile.map(|d| {
+        let calibrated = lcc_raw::dcp::calibrated_look_id(&d);
+        json!({"name": d.name, "model": d.model, "source": if calibrated.is_some() { "calibrated" } else { "dcp" }, "look": calibrated})
+    });
     let info = raw.info();
     let lens = crate::lens_profiles::resolve_raw(&info, || lcc_meta::extract(bytes), None);
     let lens_geometry = crate::camera_preview::lens_geometry(&raw.opcodes.list3);
@@ -33,7 +42,7 @@ pub fn report(bytes: &[u8]) -> Result<Value, String> {
         lens_geometry.as_ref(),
         lens.as_ref().map(|(l, _)| l),
         lcc_develop::CameraColour::Auto,
-        false,
+        camera_profile.is_some(),
         &mut trace,
     );
     // a look's tone curve wins over the file's own `ProfileToneCurve` (`files::load_bytes_now`)
@@ -61,6 +70,7 @@ pub fn report(bytes: &[u8]) -> Result<Value, String> {
         "model": raw.metadata.model,
         "decode": {"kind": "sensor"},
         "colour": trace.colour,
+        "cameraProfile": camera_profile,
         "matrixIsFallback": t.matrix_is_fallback,
         "look": look.as_ref().map(|l| json!({"hueSat": l.hue_sat.is_some()})),
         "tone": tone,

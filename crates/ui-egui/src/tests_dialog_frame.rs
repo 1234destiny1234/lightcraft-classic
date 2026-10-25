@@ -43,12 +43,21 @@ fn assert_fits(h: &Headless, size: [f32; 2], what: &str) {
 fn tall_dialogs_fit_a_small_window_with_their_buttons_on_screen() {
     for size in [[1366.0, 768.0], [1000.0, 520.0]] {
         let mut h = open(size, Dialog::Settings { tab: "general".into() });
-        assert_fits(&h, size, "Settings");
+        // Settings fills the window: its way out (‹) is on screen and closes it
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size[0], size[1]));
+        assert!(screen.contains_rect(rect(&h, "settings:back")) && screen.contains_rect(rect(&h, "settings:rows")), "Settings in {screen:?}");
+        let r = h.request("ui.clickWidget", json!({"id": "settings:back"}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        settle(&mut h);
+        assert!(h.app.ui.dialog.is_none(), "‹ closed Settings");
         let r = h.request("command", json!({"command": "dialog.export"}), T);
         assert_eq!(r["ok"], true, "{r}");
         settle(&mut h);
         assert!(matches!(h.app.ui.dialog, Some(Dialog::Export { .. })), "{:?}", h.app.ui.dialog);
-        assert_fits(&h, size, "Export");
+        // Export fills the window too: its way back and its buttons are on screen
+        for id in ["export:back", "button:dialogOk", "button:dialogCancel"] {
+            assert!(screen.contains_rect(rect(&h, id)), "Export: {id} in {screen:?}");
+        }
         // the footer buttons can be pressed
         let r = h.request("ui.clickWidget", json!({"id": "button:dialogCancel"}), T);
         assert_eq!(r["ok"], true, "{r}");
@@ -63,4 +72,28 @@ fn tall_dialogs_fit_a_small_window_with_their_buttons_on_screen() {
         settle(&mut h);
         assert!(h.app.ui.dialog.is_none(), "Close closed Update");
     }
+}
+
+/// On a phone a small dialog is a bottom sheet: the window's width, on its bottom edge, its buttons
+/// finger-sized and reachable; its grab handle cancels. On a desktop window it stays a centred card.
+#[test]
+fn small_dialogs_are_bottom_sheets_on_a_phone() {
+    let new_album = || Dialog::NewAlbum { name: String::new(), folder: false, parent: None, include_selected: false };
+    let size = [412.0, 900.0];
+    let mut h = open(size, new_album());
+    let w = rect(&h, "dialog:window");
+    assert!(w.width() >= 412.0 - 1.0 && w.left() <= 0.5, "full width: {w:?}");
+    assert!((w.bottom() - 900.0).abs() <= 1.0, "on the bottom edge: {w:?}");
+    let ok = rect(&h, "button:dialogOk");
+    assert!(w.contains_rect(ok) && ok.height() >= 44.0, "OK finger-sized and inside: {ok:?}");
+    let r = h.request("ui.clickWidget", json!({"id": "dialog:grab"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    settle(&mut h);
+    assert!(h.app.ui.dialog.is_none(), "the grab handle closed it");
+    // a desktop window: a centred card as before
+    let size = [1280.0, 800.0];
+    let h = open(size, new_album());
+    let w = rect(&h, "dialog:window");
+    assert!((w.center().x - 640.0).abs() < 2.0 && w.bottom() < 790.0 && w.width() < 600.0, "centred card: {w:?}");
+    assert!(!h.app.widgets.iter().any(|(id, _)| id == "dialog:grab"));
 }

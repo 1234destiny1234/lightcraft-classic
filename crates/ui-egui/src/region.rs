@@ -226,6 +226,13 @@ impl DragScale {
         }
     }
 
+    /// The whole-frame render `key` on screen is not one of the drag's drafts (a full-quality render
+    /// of a high quality drag's pause): it is not timed, and the next draft is timed afresh.
+    pub fn ignore(&mut self, key: u64) {
+        self.seen = Some(key);
+        self.pending = None;
+    }
+
     /// Remember drags of `control` on `photo` as too slow for full-size drafts, for good (tests).
     #[cfg(test)]
     pub fn remember_slow(&mut self, photo: lcc_catalog::PhotoId, control: &str) {
@@ -291,6 +298,215 @@ fn median_after_first(samples: &[f64]) -> Option<f64> {
     let mut rest: Vec<f64> = samples.iter().skip(1).copied().collect();
     rest.sort_by(f64::total_cmp);
     rest.get(rest.len() / 2).copied()
+}
+
+/// High quality adjustment previews: a drag whose full-quality updates take longer than this (ms,
+/// median, render plus the frame that shows it) falls back to drafts while the slider moves. 100 ms
+/// is ten updates a second, about where a slider stops feeling attached to the image.
+pub const HQ_BUDGET_MS: f64 = 100.0;
+
+/// One full-quality update this many times over [`HQ_BUDGET_MS`] falls back at once: the median
+/// would need several of them, seconds of a frozen picture.
+const HQ_GIVE_UP_FACTOR: f64 = 3.0;
+
+/// The full-quality updates (after the first) a drag times before the median decides.
+const HQ_GIVE_UP_AFTER: usize = 2;
+
+/// How long (s) a slider that fell back must hold still before the full-quality render: a little
+/// longer than a frame at the drafts' pace, so a slow, steady drag keeps drafting.
+pub const HQ_SETTLE_S: f64 = 0.2;
+
+/// What a frame of a slider drag renders when high quality adjustment previews are on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AdjustQuality {
+    /// No drag (or the setting is off): nothing to decide.
+    Idle,
+    /// The settled render's quality, size and display fit.
+    Full,
+    /// Too slow at full quality and the slider is moving: drafts, as with the setting off.
+    Draft,
+    /// Too slow at full quality, but the slider has held still for [`HQ_SETTLE_S`]: the full-quality
+    /// render, without waiting for the mouse to be let go.
+    Settled,
+}
+
+impl AdjustQuality {
+    /// Whether the frame renders drafts.
+    pub fn drafts(self) -> bool {
+        self == Self::Draft
+    }
+
+    /// The name `ui.inspect` reports (`perf.adjustQuality`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Full => "full",
+            Self::Draft => "draft",
+            Self::Settled => "settled",
+        }
+    }
+}
+
+/// The quality of a slider drag's updates with high quality adjustment previews on: full quality
+/// while it keeps up, and a fallback when it can't, so a heavy edit (many masks, AI denoise, the
+/// CPU path, a 6K display) never leaves the slider dragging a frozen picture.
+///
+/// A drag starts at full quality. Its full-quality updates are timed like [`DragScale`] times
+/// drafts (render plus the frame that shows it, leaving out the first); once the median is over
+/// [`HQ_BUDGET_MS`], or one update is far over it, the drag falls back: while the slider moves it
+/// renders the adaptive drafts the setting otherwise replaces, and once it holds still for
+/// [`HQ_SETTLE_S`] it renders full quality again, so the picture is sharp whenever the user stops
+/// to look, mouse button held or not. The fallback lasts for the rest of the drag (switching back
+/// and forth on every update would make the resolution flicker).
+///
+/// A (photo, control) pair that fell back starts its next drags in the fallback for a while, as
+/// [`DragScale`]'s verdicts do: the next drag of the same slider would be as slow, and starting at
+/// full quality would cost it the frozen updates the fallback is there to avoid. After
+/// [`RETRY_AFTER_S`] (doubling up to [`RETRY_MAX_S`] each time it is still slow) a drag tries full
+/// quality again; one that keeps up forgets the verdict.
+#[derive(Clone, Debug, Default)]
+pub struct HqDrag {
+    /// The drag running now (photo, control).
+    current: Option<(lcc_catalog::PhotoId, String)>,
+    /// Whether the current drag fell back.
+    fallback: bool,
+    /// Whether it started in the fallback (its pair's verdict still held): it was not timed.
+    inherited: bool,
+    /// How long the current drag's full-quality updates took (ms).
+    samples: Vec<f64>,
+    /// Key of the render last timed (each render is timed once).
+    seen: Option<u64>,
+    /// The render time (ms) of an update that reached the screen this frame: the frame that
+    /// uploads it is only known on the next one.
+    pending: Option<f64>,
+    /// The develop settings' hash last seen in this drag, and when (host clock, s) it changed.
+    look: Option<(u64, f64)>,
+    /// What the last frame decided.
+    last: Option<AdjustQuality>,
+    /// Pairs that fell back: (pair, until when a drag starts in the fallback, how long that wait was).
+    verdicts: std::collections::VecDeque<((lcc_catalog::PhotoId, String), f64, f64)>,
+}
+
+impl HqDrag {
+    /// What this frame renders. `drag` is the photo and control being dragged with high quality
+    /// adjustment previews on (`None`: no drag, or the setting is off); `look` the hash of the
+    /// photo's develop settings now; `now` the host's clock (s). The second value is how long (s)
+    /// until the decision changes by itself (a slider that holds still settles), for a repaint.
+    pub fn frame(&mut self, drag: Option<(lcc_catalog::PhotoId, &str)>, look: u64, now: f64) -> (AdjustQuality, Option<f64>) {
+        let Some((photo, control)) = drag else {
+            self.finish(now);
+            self.last = None;
+            return (AdjustQuality::Idle, None);
+        };
+        let same = self.current.as_ref().is_some_and(|(p, c)| *p == photo && c == control);
+        if !same {
+            self.finish(now);
+            let key = (photo, control.to_string());
+            self.fallback = self.verdicts.iter().any(|(k, until, _)| *k == key && now < *until);
+            self.inherited = self.fallback;
+            self.current = Some(key);
+        }
+        let now = if now.is_finite() { now } else { 0.0 };
+        match self.look {
+            Some((l, _)) if l == look => {}
+            // (the drag's first frame counts as a change: the slider was just pressed)
+            _ => self.look = Some((look, now)),
+        }
+        let decided = if !self.fallback {
+            (AdjustQuality::Full, None)
+        } else {
+            let still = self.look.map_or(0.0, |(_, at)| (now - at).max(0.0));
+            if still >= HQ_SETTLE_S { (AdjustQuality::Settled, None) } else { (AdjustQuality::Draft, Some(HQ_SETTLE_S - still)) }
+        };
+        self.last = Some(decided.0);
+        decided
+    }
+
+    /// What the last [`frame`](Self::frame) decided for `drag`, for views drawn without one (the
+    /// HDR view, zoomed windows, Compare): `Full` for a drag it has not seen.
+    pub fn quality(&self, drag: Option<(lcc_catalog::PhotoId, &str)>) -> AdjustQuality {
+        let Some((photo, control)) = drag else { return AdjustQuality::Idle };
+        match (&self.current, self.last) {
+            (Some((p, c)), Some(q)) if *p == photo && c == control => q,
+            _ => AdjustQuality::Full,
+        }
+    }
+
+    /// Whether the current drag fell back (its moving frames draft).
+    pub fn fell_back(&self) -> bool {
+        self.current.is_some() && self.fallback
+    }
+
+    /// Once per frame while the drag renders full quality: `key` identifies the render on screen
+    /// (the whole frame, or the zoomed window over it), `render_ms` how long it took and
+    /// `last_frame_ms` the previous frame's time (`None` without a host). Falls back when the
+    /// updates are too slow.
+    pub fn observe(&mut self, key: u64, render_ms: f64, last_frame_ms: Option<f64>) {
+        if self.current.is_none() || self.fallback {
+            self.pending = None;
+            return;
+        }
+        if let Some(render) = self.pending.take() {
+            let frame = last_frame_ms.filter(|ms| ms.is_finite() && (0.0..=FRAME_MS_KNOWN).contains(ms)).unwrap_or(0.0);
+            let took = render + frame;
+            if self.samples.len() < 1024 {
+                self.samples.push(took);
+            }
+            let far_over = self.samples.len() > 1 && took > HQ_BUDGET_MS * HQ_GIVE_UP_FACTOR;
+            let over = self.samples.len() > HQ_GIVE_UP_AFTER && median_after_first(&self.samples).is_some_and(|m| m > HQ_BUDGET_MS);
+            if far_over || over {
+                self.fallback = true;
+                return;
+            }
+        }
+        if self.seen == Some(key) {
+            return;
+        }
+        self.seen = Some(key);
+        if render_ms.is_finite() && render_ms >= 0.0 {
+            self.pending = Some(render_ms);
+        }
+    }
+
+    /// Remember drags of `control` on `photo` as too slow for full quality, for good (tests).
+    #[cfg(test)]
+    pub fn remember_slow(&mut self, photo: lcc_catalog::PhotoId, control: &str) {
+        self.verdicts.push_back(((photo, control.to_string()), f64::INFINITY, RETRY_MAX_S));
+    }
+
+    /// The drag ended: one that fell back makes its pair start in the fallback for a while (twice
+    /// as long as last time, if it was already waiting); one that kept up at full quality, timed
+    /// on enough updates, forgets the pair's verdict.
+    fn finish(&mut self, now: f64) {
+        if let Some(key) = self.current.take() {
+            let at = self.verdicts.iter().position(|(k, ..)| *k == key);
+            let previous = at.and_then(|i| self.verdicts.remove(i));
+            if self.inherited {
+                // (not timed at full quality: the verdict stands as it was)
+                if let Some(kept) = previous {
+                    self.verdicts.push_back(kept);
+                }
+            } else if self.fallback {
+                let wait = previous.map_or(RETRY_AFTER_S, |(_, _, w)| (w * 2.0).min(RETRY_MAX_S));
+                let now = if now.is_finite() { now } else { 0.0 };
+                while self.verdicts.len() >= VERDICTS_KEPT {
+                    self.verdicts.pop_front();
+                }
+                self.verdicts.push_back((key, now + wait, wait));
+            } else if self.samples.len() <= HQ_GIVE_UP_AFTER
+                && let Some(kept) = previous
+            {
+                // (too few updates to tell: a click on the slider keeps what was known)
+                self.verdicts.push_back(kept);
+            }
+        }
+        self.fallback = false;
+        self.inherited = false;
+        self.samples.clear();
+        self.seen = None;
+        self.pending = None;
+        self.look = None;
+    }
 }
 
 /// The loupe's render plan. The cost of a render follows the canvas, not the zoom: the whole-frame
@@ -1457,5 +1673,127 @@ mod tests {
         assert_eq!(c.bytes(), 10);
         c.retain(|_| false);
         assert_eq!((c.len(), c.bytes()), (0, 0));
+    }
+
+    /// Frames of a high quality drag of `drag`, one per key, whose updates take `ms` to show,
+    /// with the look changing every frame (the slider moves); returns the last frame's quality.
+    fn hq_moving(d: &mut HqDrag, drag: (lcc_catalog::PhotoId, &str), keys: std::ops::Range<u64>, ms: f64, now: &mut f64) -> AdjustQuality {
+        let mut q = AdjustQuality::Idle;
+        for key in keys {
+            q = d.frame(Some(drag), key, *now).0;
+            if q == AdjustQuality::Full {
+                d.observe(key, ms, None);
+            }
+            *now += 1.0 / 60.0;
+        }
+        q
+    }
+
+    // Given high quality adjustment previews whose updates keep up, a drag stays at full quality
+    // from start to end, and without a drag (or with the setting off) nothing is decided
+    #[test]
+    fn a_high_quality_drag_that_keeps_up_stays_full() {
+        use lcc_catalog::PhotoId;
+        let mut d = HqDrag::default();
+        assert_eq!(d.frame(None, 1, 0.0), (AdjustQuality::Idle, None));
+        let drag = (PhotoId(1), "Exposure");
+        let mut now = 0.0;
+        assert_eq!(hq_moving(&mut d, drag, 1..40, HQ_BUDGET_MS * 0.7, &mut now), AdjustQuality::Full);
+        assert!(!d.fell_back());
+        assert_eq!(d.quality(Some(drag)), AdjustQuality::Full);
+        assert_eq!(d.quality(Some((PhotoId(2), "Exposure"))), AdjustQuality::Full, "a drag it has not seen is full quality");
+        assert_eq!(d.quality(None), AdjustQuality::Idle);
+    }
+
+    // Given full-quality updates over the budget, the drag falls back: drafts while the slider
+    // moves, the settled quality once it holds still (mouse still down), drafts again when it moves
+    #[test]
+    fn a_slow_high_quality_drag_drafts_while_moving_and_settles_when_still() {
+        use lcc_catalog::PhotoId;
+        let mut d = HqDrag::default();
+        let drag = (PhotoId(1), "Exposure");
+        let mut now = 0.0;
+        assert_eq!(hq_moving(&mut d, drag, 1..3, HQ_BUDGET_MS * 1.5, &mut now), AdjustQuality::Full, "two updates are not enough to tell");
+        assert_eq!(hq_moving(&mut d, drag, 3..12, HQ_BUDGET_MS * 1.5, &mut now), AdjustQuality::Draft);
+        assert!(d.fell_back());
+        assert!(d.quality(Some(drag)).drafts(), "the HDR view and zoomed windows follow the loupe");
+        // the slider holds still: a repaint is asked for when it settles, and then full quality
+        let (q, wake) = d.frame(Some(drag), 11, now);
+        assert_eq!(q, AdjustQuality::Draft);
+        assert!(wake.is_some_and(|s| s > 0.0 && s <= HQ_SETTLE_S));
+        let (q, wake) = d.frame(Some(drag), 11, now + HQ_SETTLE_S);
+        assert_eq!((q, wake), (AdjustQuality::Settled, None));
+        assert!(!q.drafts());
+        assert_eq!(d.frame(Some(drag), 12, now + HQ_SETTLE_S + 0.02).0, AdjustQuality::Draft, "moving again drafts again");
+    }
+
+    // Given one full-quality update far over the budget (a 1 s AI denoise update), the drag falls
+    // back at once instead of waiting for a median of frozen updates; the first update (it may
+    // rebuild the stage caches) does not count
+    #[test]
+    fn one_far_over_update_falls_back_at_once() {
+        use lcc_catalog::PhotoId;
+        let mut d = HqDrag::default();
+        let drag = (PhotoId(1), "Exposure");
+        let mut now = 0.0;
+        d.frame(Some(drag), 1, now);
+        d.observe(1, 5000.0, None);
+        now += 0.02;
+        d.frame(Some(drag), 2, now);
+        d.observe(2, 1000.0, None);
+        assert!(!d.fell_back(), "the first update is not timed against the drag");
+        now += 0.02;
+        d.frame(Some(drag), 3, now);
+        d.observe(3, 1000.0, None);
+        assert!(d.fell_back());
+        // a render shown over several frames is timed once
+        let mut e = HqDrag::default();
+        e.frame(Some(drag), 1, 0.0);
+        for _ in 0..10 {
+            e.observe(1, HQ_BUDGET_MS * 1.5, None);
+        }
+        assert!(!e.fell_back());
+    }
+
+    // Given a slider that fell back, its next drags on that photo start in the fallback (no frozen
+    // updates to find out again) for a while, then retry full quality; a fast retry forgets the
+    // verdict. Other controls and photos are timed afresh
+    #[test]
+    fn a_fallback_is_remembered_per_photo_and_control_then_retried() {
+        use lcc_catalog::PhotoId;
+        let mut d = HqDrag::default();
+        let drag = (PhotoId(1), "Exposure");
+        let mut now = 0.0;
+        hq_moving(&mut d, drag, 1..12, HQ_BUDGET_MS * 2.0, &mut now);
+        assert!(d.fell_back());
+        d.frame(None, 0, now);
+        assert!(!d.fell_back(), "no drag, no fallback");
+        assert_eq!(d.frame(Some(drag), 100, now + 1.0).0, AdjustQuality::Draft, "the next drag starts in the fallback");
+        d.frame(None, 0, now + 1.0);
+        assert_eq!(d.frame(Some((PhotoId(1), "Contrast")), 100, now + 1.0).0, AdjustQuality::Full);
+        d.frame(None, 0, now + 1.0);
+        assert_eq!(d.frame(Some((PhotoId(2), "Exposure")), 100, now + 1.0).0, AdjustQuality::Full);
+        d.frame(None, 0, now + 1.0);
+        // a drag that started in the fallback leaves the verdict as it was (its wait does not grow)
+        let mut later = now + RETRY_AFTER_S + 1.0;
+        assert_eq!(d.frame(Some(drag), 200, later).0, AdjustQuality::Full, "the verdict expired: retry");
+        assert_eq!(hq_moving(&mut d, drag, 201..220, HQ_BUDGET_MS * 0.5, &mut later), AdjustQuality::Full);
+        d.frame(None, 0, later);
+        assert_eq!(d.frame(Some(drag), 300, later + 0.1).0, AdjustQuality::Full, "a fast retry forgot the verdict");
+    }
+
+    // Given hostile clocks and timings (NaN, infinity, negative), the guard neither panics nor
+    // falls back on garbage
+    #[test]
+    fn hq_drag_ignores_bad_numbers() {
+        use lcc_catalog::PhotoId;
+        let mut d = HqDrag::default();
+        let drag = (PhotoId(1), "Exposure");
+        for (i, (now, ms)) in [(f64::NAN, f64::NAN), (f64::INFINITY, -1.0), (-5.0, f64::INFINITY), (0.0, f64::NAN)].into_iter().enumerate() {
+            let _ = d.frame(Some(drag), i as u64, now);
+            d.observe(i as u64, ms, Some(f64::NAN));
+        }
+        assert!(!d.fell_back());
+        let _ = d.frame(None, 0, f64::NAN);
     }
 }

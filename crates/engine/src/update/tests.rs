@@ -216,6 +216,8 @@ fn an_appimage_is_not_downloaded_for_a_copy_installed_another_way() {
     };
     u.apply(lcc_updater::Checked::Found(Box::new(found)));
     u.appimage = false;
+    u.package_managed = false;
+    assert_eq!(u.status()["available"]["selfUpdate"], false, "the dialog offers no download");
     let err = u.start_download(&activity).expect_err("a .deb install can't take an AppImage");
     assert!(err.contains("1.2.0") && err.contains("AppImage"), "{err}");
     assert!(!u.downloading());
@@ -836,5 +838,43 @@ fn a_portable_marker_beside_the_program_makes_the_check_portable() {
     assert!(!portable_in(&dir), "no marker, an installed copy");
     std::fs::write(dir.join("portable.txt"), b"").unwrap();
     assert!(portable_in(&dir), "portable.txt beside the program");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_package_install_is_told_apart_from_an_appimage_and_a_hand_install() {
+    use std::ffi::OsStr;
+    let usr = Some(Path::new("/usr/bin/app"));
+    assert!(package_managed(None, usr), "a .deb/.rpm puts the binary under /usr");
+    assert!(package_managed(Some(OsStr::new("")), Some(Path::new("/opt/app/app"))));
+    assert!(!package_managed(Some(OsStr::new("/home/me/App.AppImage")), usr), "an AppImage updates itself");
+    assert!(!package_managed(None, Some(Path::new("/usr/local/bin/app"))), "a hand install is not a package");
+    assert!(!package_managed(None, Some(Path::new("/home/me/.cargo/bin/app"))));
+    assert!(!package_managed(None, None), "an unknown executable is not assumed packaged");
+}
+
+#[test]
+fn a_package_install_is_sent_to_its_package_manager() {
+    let dir = scratch("package-managed");
+    let activity = Activity::default();
+    let mut u = Updater::new(Some(dir.clone()));
+    u.trust_test_key(Some(test_key(6).1));
+    let mut found = update("1.3.0");
+    found.asset = lcc_updater::Asset {
+        name: "app-1.3.0-linux-x86_64.AppImage".into(),
+        url: "http://127.0.0.1:1/app.AppImage".into(),
+        size: 123,
+        sha256: None,
+        kind: lcc_updater::Kind::AppImage,
+    };
+    u.apply(lcc_updater::Checked::Found(Box::new(found)));
+    u.appimage = false;
+    u.package_managed = true;
+    let status = u.status();
+    assert_eq!(status["available"]["packageManaged"], true);
+    assert_eq!(status["available"]["selfUpdate"], false);
+    let err = u.start_download(&activity).expect_err("a package install isn't replaced by an AppImage");
+    assert!(err.contains("package manager") && err.contains("1.3.0"), "{err}");
+    assert!(activity.list().is_empty(), "nothing started");
     let _ = std::fs::remove_dir_all(&dir);
 }

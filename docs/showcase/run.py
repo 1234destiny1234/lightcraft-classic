@@ -6,6 +6,23 @@ control-token-7980 in its settings folder (docs/control-protocol.md → Authenti
 and the settings folder's name come from brand.toml."""
 import json, os, socket, sys, time, tomllib
 from pathlib import Path
+
+# Largest control reply we accept (a screenshot response can carry a base64 image), after twice
+# that the connection is closed instead of buffering further.
+MAX_RESPONSE = 128 << 20
+
+def _jsonl_path(arg):
+    """Resolve the CLI file argument; require an existing readable regular file."""
+    path = Path(arg).resolve()
+    if not path.is_file():
+        sys.exit(f"not a readable file: {arg}")
+    try:
+        with path.open("rb"):
+            pass
+    except OSError:
+        sys.exit(f"not a readable file: {arg}")
+    return path
+
 PORT = 7980
 BRAND = tomllib.loads((Path(__file__).resolve().parents[2] / "brand.toml").read_text(encoding="utf-8"))
 PREFIX = BRAND["product"]["env_prefix"]
@@ -24,11 +41,15 @@ def token():
     return (folder / f"control-token-{PORT}").read_text().strip()
 def line(s, msg):
     s.sendall((json.dumps(msg) + "\n").encode())
-    buf = b""
-    while not buf.endswith(b"\n"):
+    buf = bytearray()
+    while not (len(buf) and buf[-1:] == b"\n"):
         c = s.recv(1 << 20)
         if not c: break
-        buf += c
+        # a hostile server must not make a client buffer or pay quadratic copies forever (CWE-407)
+        if len(buf) + len(c) > MAX_RESPONSE:
+            s.close()
+            return {"ok": False, "error": f"response exceeds {MAX_RESPONSE} bytes"}
+        buf.extend(c)
     return json.loads(buf)
 def call(method, params):
     s = socket.create_connection(("127.0.0.1", PORT), timeout=180)
@@ -36,10 +57,10 @@ def call(method, params):
     if not auth.get("ok"):
         return auth
     return line(s, {"id": 1, "method": method, "params": params})
-for line in open(sys.argv[1]):
-    line = line.strip()
-    if not line or line.startswith("#"): continue
-    r = json.loads(line)
+for raw in open(_jsonl_path(sys.argv[1])):
+    raw = raw.strip()
+    if not raw or raw.startswith("#"): continue
+    r = json.loads(raw)
     if "sleep" in r:
         time.sleep(r["sleep"]); continue
     out = call(r["method"], r.get("params", {}))

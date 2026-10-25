@@ -143,3 +143,28 @@ fn two_row_sliders_have_a_longer_track_and_work_the_same() {
     h.settle(SETTLE);
     assert_eq!(widget(&h, "slider:light.exposure").width(), one.width());
 }
+
+/// Full Size slider text (Settings ▸ Interface): the name and value get more room on one row and on
+/// two, and the slider still works; Compact gives the layout back.
+#[test]
+fn full_size_slider_text_widens_name_and_value() {
+    let mut h = edit_panel(false);
+    // (a pill is all name and value, and a click on it never sets it: `tests_pill_slider`)
+    for layout in [crate::theme::SliderLayout::OneRow, crate::theme::SliderLayout::TwoRows] {
+        h.app.ui.settings.slider_layout = layout;
+        h.app.ui.settings.slider_text = crate::theme::SliderText::Compact;
+        h.settle(SETTLE);
+        let (name, value) = (widget(&h, "sliderLabel:light.exposure"), widget(&h, "sliderValue:light.exposure"));
+        h.app.ui.settings.slider_text = crate::theme::SliderText::FullSize;
+        h.settle(SETTLE);
+        let (big_name, big_value) = (widget(&h, "sliderLabel:light.exposure"), widget(&h, "sliderValue:light.exposure"));
+        assert!(big_value.width() > value.width(), "{layout:?}: the value got wider: {value:?} → {big_value:?}");
+        assert!(big_name.width() * big_name.height() > name.width() * name.height(), "{layout:?}: the name got more room");
+        assert_eq!(h.request("ui.clickWidget", json!({"id": "slider:light.exposure", "fx": 0.75}), T)["ok"], true);
+        h.settle(SETTLE);
+        assert!((develop(&h).light.exposure - 2.5).abs() < 0.06, "{layout:?}: a click three quarters along: {}", develop(&h).light.exposure);
+        h.app.ui.settings.slider_text = crate::theme::SliderText::Compact;
+        h.settle(SETTLE);
+        assert_eq!(widget(&h, "sliderValue:light.exposure").width(), value.width(), "{layout:?}: compact again");
+    }
+}

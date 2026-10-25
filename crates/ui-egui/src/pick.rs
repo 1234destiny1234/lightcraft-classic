@@ -318,6 +318,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lc-pick-folder-{}", std::process::id()));
         let _photo = photo_in(&dir);
         let (mut h, asked) = app_with_picker();
+        // a host with only background dialogs (Android has no synchronous folder picker) still
+        // offers File ▸ Import from Folder…
+        assert!(h.app.services.pick_folder.is_none());
+        assert!(crate::menus::ui_enabled(&h.app, "file.addFolder"), "Import from Folder… is enabled with a background picker");
         h.app.run("file.addFolder", json!({})).unwrap();
         assert_eq!(asked.lock().unwrap()[0].0.kind, PickKind::Folder);
         asked.lock().unwrap()[0].1.send(vec![dir.to_string_lossy().to_string()]).unwrap();

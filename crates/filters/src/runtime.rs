@@ -392,6 +392,9 @@ fn placeholder_manifest() -> Manifest {
         overlap: 0,
         area: crate::Area::Content,
         stage: None,
+        analyze_area: crate::AnalyzeArea::Frame,
+        base_tone: crate::BaseTone::Camera,
         labels: Vec::new(),
+        groups: Vec::new(),
     }
 }

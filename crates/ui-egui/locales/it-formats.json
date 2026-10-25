@@ -1,6 +1,8 @@
 {
   " ({unsure} with several look-alike files: use Locate)": " ({unsure} con diversi file simili: usa Trova)",
   " ({} in Recently Deleted)": " ({} in Eliminate di recente)",
+  " · aesthetic {:.1}": " · estetica {:.1}",
+  " · eyes {:.0}%": " · occhi {:.0}%",
   " · {:.0}% clipped": " · {:.0}% tagliato",
   " · {failed} couldn't be rendered": " · impossibili da elaborare: {failed}",
   " · {skipped} skipped (file exists)": " · saltate: {skipped} (il file esiste)",
@@ -250,7 +252,6 @@
   " — kept but not applied: {}": " — conservati ma non applicati: {}",
   "{what} merge added at {mp}: its full size, {full}, needs more memory than this computer has": "Unione {what} aggiunta a {mp}: la dimensione piena, {full}, richiede più memoria di quella disponibile su questo computer",
   "Saved template {name}": "Modello {name} salvato",
-  "{app} stopped unexpectedly: {e}": "{app} si è chiuso in modo imprevisto: {e}",
   "Renames {n} face{} across the library. The files are not changed.": "Rinomina i volti in tutta la libreria ({n}){:.0}. I file non vengono modificati.",
   " · {n} skipped (could not be rendered)": " · saltate: {n} (non è stato possibile eseguire il rendering)",
   "Delete “{name}”?": "Eliminare “{name}”?",
@@ -261,7 +262,6 @@
   "{photos} catalog records processed; {collections} collections.": "Record del catalogo elaborati: {photos}; raccolte: {collections}.",
   "Skipped {problem}": "Saltato: {problem}",
   "Updated {name}": "{name} aggiornato",
-  "The XMP sidecars of {n} photos couldn't be written (is their folder offline?). {app} keeps trying.": "Non è stato possibile scrivere i file XMP di alcune foto ({n}): la loro cartella è scollegata? {app} continua a riprovare.",
   "Apply to “{mask}” on Selected Photos": "Applica a “{mask}” sulle foto selezionate",
   "Update “{name}” with Current Settings": "Aggiorna “{name}” con le impostazioni attuali",
   "Slideshow exported: {what}": "Presentazione esportata: {what}",
@@ -281,7 +281,6 @@
   "Applied {name}": "{name} applicato",
   "“{to}” is already a person. Combining them makes one person; Undo separates them again.": "“{to}” è già una persona. Unirle ne crea una sola; Annulla le separa di nuovo.",
   "{n} originals opened in the other editor": "Originali aperti nell'altro editor: {n}",
-  "{app} stopped unexpectedly: {e}\n\nThe log file has the details: {path}": "{app} si è chiuso in modo imprevisto: {e}\n\nI dettagli sono nel file di log: {path}",
   "Effect: {name}": "Effetto: {name}",
   " in {g} group{}": " in gruppi: {g}{:.0}",
   "Color space: Rec. 2020 {curve} (HDR AVIF)": "Spazio colore: Rec. 2020 {curve} (AVIF HDR)",
@@ -303,5 +302,13 @@
   "{} photos · not aligned": "{} foto · non allineate",
   "{} photos · {} aligned": "{} foto · {} allineate",
   "{} photos · {} aligned · {} left out": "{} foto · {} allineate · {} escluse",
-  "Listing folders — folders: {folders}, files: {files}": "Elenco delle cartelle — cartelle: {folders}, file: {files}"
+  "Listing folders — folders: {folders}, files: {files}": "Elenco delle cartelle — cartelle: {folders}, file: {files}",
+  "Inside: {names}": "Al suo interno: {names}",
+  "Drop to review {n} item{} for import": "Rilascia per rivedere prima dell'importazione (elementi: {n}){:.0}",
+  "Drop to import {n} item{}": "Rilascia per importare (elementi: {n}){:.0}",
+  "Drop to import {n} preset{}": "Rilascia per importare predefiniti: {n}{:.0}",
+  "Could not read {name}: {e}": "Impossibile leggere {name}: {e}",
+  "Added {n} photo{}": "Foto aggiunte: {n}{:.0}",
+  "Where should the Lightroom catalog “{catalog}” go?": "Dove importare il catalogo Lightroom “{catalog}”?",
+  "Merge into the open library “{library}” ({count} photo{})": "Unisci alla libreria aperta “{library}” (foto: {count}{:.0})"
 }

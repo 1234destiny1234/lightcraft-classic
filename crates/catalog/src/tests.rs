@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use lcc_develop::DevelopSettings;
+use serde_json::json;
 
 use super::*;
 
@@ -10,6 +11,41 @@ fn photo(c: &mut Catalog, name: &str, date: &str) -> PhotoId {
     p.captured = Some(date.to_string());
     c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     id
+}
+
+/// An edit built in code with more masks than the limit (a script adding one a command at a time)
+/// is stored cut to the limit: every edit goes through `apply` (issue #2121).
+#[test]
+fn edits_are_stored_within_list_limits() {
+    let mut c = Catalog::new();
+    let a = photo(&mut c, "a.jpg", "2026-04-01T10:00:00");
+    let many = DevelopSettings { masks: vec![Default::default(); lcc_develop::MAX_MASKS + 50], ..Default::default() };
+    c.apply(Op::SetDevelop { id: a, settings: Arc::new(many), label: "Masks".into(), edited: None }).unwrap();
+    assert_eq!(c.photo(a).unwrap().develop.masks.len(), lcc_develop::MAX_MASKS);
+    // within the limits the same settings are kept, not copied
+    let few = Arc::new(DevelopSettings { masks: vec![Default::default(); 3], ..Default::default() });
+    c.apply(Op::SetDevelop { id: a, settings: few.clone(), label: "Masks".into(), edited: None }).unwrap();
+    assert!(Arc::ptr_eq(&c.photo(a).unwrap().develop, &few));
+}
+
+#[cfg(test)]
+mod filter_deserialize_tests {
+    use super::*;
+
+    /// #2241: a filter key that is not one of `Filter`'s fields (a typo or a guessed name such as
+    /// `cameraModel` instead of `camera`) is rejected, not silently dropped: an agent or script that
+    /// filters by `cameraModel` must not be handed the whole library and told the filter worked.
+    #[test]
+    fn unknown_filter_key_is_rejected_not_ignored() {
+        let e = serde_json::from_value::<Filter>(json!({ "cameraModel": "X2" })).unwrap_err().to_string();
+        assert!(e.contains("cameraModel"), "the unknown key is named: {e}");
+
+        let e = serde_json::from_value::<Filter>(json!({ "foo": 1 })).unwrap_err().to_string();
+        assert!(e.contains("foo"), "the unknown key is named: {e}");
+
+        // the valid key is still accepted; `camera` is the field `cameraModel` was close to.
+        serde_json::from_value::<Filter>(json!({ "camera": "X2" })).unwrap();
+    }
 }
 
 #[test]
@@ -1081,12 +1117,13 @@ fn the_catalog_remembers_which_photos_its_latest_ops_changed_and_what_of_them() 
     c.apply(Op::SetRating { id: a, rating: 1 }).unwrap();
     assert_eq!(c.touched_since(loaded), Some(vec![a]));
     assert_eq!(c.touched_since(old), None);
-    // an op that fails changes nothing, and what is remembered never says less than what happened
+    // an op that fails changes nothing and is not remembered
     let before = c.revision;
     assert!(c.apply(Op::SetRating { id: PhotoId(9_999), rating: 1 }).is_err());
     assert_eq!(c.revision, before);
+    assert_eq!(c.touched_since(before), Some(vec![]));
     c.apply(Op::SetFlag { id: a, flag: Flag::Pick }).unwrap();
-    assert!(c.touched_since(before).is_some_and(|ids| ids.contains(&a)));
+    assert_eq!(c.touched_since(before), Some(vec![a]));
     assert!(c.aspects_since(before).is_some_and(|x| x.any_of(Aspects::FLAG)));
     // a batch that fails midway is undone as a whole; a batch in a batch is remembered photo by photo; a batch
     // with an op that changes more than photos is not
@@ -1094,8 +1131,8 @@ fn the_catalog_remembers_which_photos_its_latest_ops_changed_and_what_of_them() 
     assert!(c.apply(Op::Batch { ops: vec![Op::SetRating { id: a, rating: 5 }, Op::SetRating { id: PhotoId(9_999), rating: 1 }] }).is_err());
     assert_eq!((c.revision, c.photo(a).map(|p| p.rating)), (before, Some(1)));
     c.apply(Op::Batch { ops: vec![Op::Batch { ops: vec![Op::SetRating { id: a, rating: 2 }] }] }).unwrap();
-    // (the photo the failed batch asked for and never found may be named too: more is said, never less)
-    assert!(c.touched_since(before).is_some_and(|ids| ids.contains(&a)));
+    // (the failed batch is not remembered: only the batch that worked)
+    assert_eq!(c.touched_since(before), Some(vec![a]));
     let before = c.revision;
     c.apply(Op::Batch { ops: vec![Op::SetRating { id: a, rating: 3 }, Op::RenameAlbum { id: album, name: "Journey".into() }] }).unwrap();
     assert_eq!(c.touched_since(before), None);
@@ -1106,6 +1143,72 @@ fn the_catalog_remembers_which_photos_its_latest_ops_changed_and_what_of_them() 
     }
     assert_eq!(c.touched_since(long_ago), None);
     assert_eq!(c.touched_since(c.revision - 10), Some(vec![a]));
+}
+
+/// An op that fails leaves nothing behind/// that does not even exist), and, for a batch rolled back, none of what its first ops had touched.
+#[test]
+fn an_op_that_fails_leaves_no_touched_photos_behind() {
+    let mut c = Catalog::default();
+    let add = |c: &mut Catalog, name: &str| {
+        let id = c.alloc_photo_id();
+        c.apply(Op::AddPhoto {
+            photo: Box::new(Photo::new(id, Source::File { path: format!("/p/{name}") }, name, "JPEG", 60, 40, "2026-01-01T10:00:00")),
+        })
+        .unwrap();
+        id
+    };
+    let (a, b) = (add(&mut c, "a.jpg"), add(&mut c, "b.jpg"));
+    let missing = PhotoId(9_999);
+    let start = c.revision;
+    // every op that names a photo, on one that does not exist
+    for op in [Op::SetRating { id: missing, rating: 1 }, Op::SetFlag { id: missing, flag: Flag::Pick }, Op::RemovePhoto { id: missing }] {
+        assert!(c.apply(op).is_err());
+        assert_eq!(c.revision, start, "a failed op makes no revision");
+        assert_eq!(c.touched_since(start), Some(vec![]));
+        assert_eq!(c.aspects_since(start), Some(Aspects::NONE));
+    }
+    // an op that changes more than photos and fails does not make earlier revisions unknown
+    assert!(c.apply(Op::RenameAlbum { id: AlbumId(77), name: "x".into() }).is_err());
+    assert_eq!(c.touched_since(start), Some(vec![]));
+    // a batch that fails on its second op names nothing of its first, nor of the rollback
+    assert!(c.apply(Op::Batch { ops: vec![Op::SetRating { id: a, rating: 5 }, Op::SetRating { id: missing, rating: 1 }] }).is_err());
+    assert_eq!(c.revision, start);
+    assert_eq!(c.touched_since(start), Some(vec![]));
+    assert_eq!(c.aspects_since(start), Some(Aspects::NONE));
+    assert_eq!(c.photo(a).map(|p| p.rating), Some(0));
+    // a batch that ends in a failed removal of a photo that exists
+    assert!(c.apply(Op::Batch { ops: vec![Op::RemovePhoto { id: b }, Op::RemovePhoto { id: b }] }).is_err());
+    assert!(c.photo(b).is_some());
+    assert_eq!(c.touched_since(start), Some(vec![]));
+    // what succeeded after the failures is remembered, and only that
+    c.apply(Op::SetRating { id: a, rating: 2 }).unwrap();
+    assert_eq!(c.touched_since(start), Some(vec![a]));
+    assert_eq!(c.aspects_since(start), Some(Aspects::RATING));
+}
+
+/// A batch the rollback of which fails halfway leaves the catalog changed (here a stack is lost), so what the
+/// catalog remembers must not say that nothing changed: anything may have.
+#[test]
+fn a_batch_that_cannot_be_rolled_back_whole_makes_earlier_changes_unknown() {
+    let mut c = Catalog::default();
+    let mut ids = Vec::new();
+    for name in ["a.jpg", "b.jpg"] {
+        let id = c.alloc_photo_id();
+        let photo = Photo::new(id, Source::File { path: format!("/p/{name}") }, name, "JPEG", 60, 40, "2026-01-01T10:00:00");
+        c.apply(Op::AddPhoto { photo: Box::new(photo) }).unwrap();
+        ids.push(id);
+    }
+    let stack = c.alloc_stack_id();
+    c.apply(Op::AddStack { stack: Stack { id: stack, photos: ids.clone(), collapsed: false } }).unwrap();
+    let start = c.revision;
+    // the photo goes, then its stack, then an op fails: putting the stack back needs the photo, which comes later
+    let failing =
+        Op::Batch { ops: vec![Op::RemovePhoto { id: ids[0] }, Op::RemoveStack { id: stack }, Op::SetRating { id: PhotoId(9_999), rating: 1 }] };
+    assert!(c.apply(failing).is_err());
+    assert_eq!(c.revision, start + 1, "the catalog changed, so what is kept for the revision before is out of date");
+    assert!(c.photo(ids[0]).is_some() && c.stack(stack).is_none(), "the rollback went only part of the way");
+    assert_eq!(c.touched_since(start), None, "so nothing is said of what changed");
+    assert_eq!(c.touched_since(c.revision), Some(vec![]), "from after it, it is known again");
 }
 
 /// A rating filter never lets an unrated photo through "at least one star", and the text search's

@@ -82,7 +82,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.gridToggle", "Grid", Some("G"), ""),
     ("library.selectOnlyActive", "Select Only Active Photo", Some("Cmd+Shift+D"), "Edit"),
     ("tool.guidedUpright", "Guided Upright", Some("Shift+G"), "Window>Tools"),
-    ("view.detail", "Detail", Some("D"), "View"),
+    ("view.detail", "Detail View", Some("D"), "View"),
     ("view.compare", "Compare", Some("Shift+C"), "View"),
     ("view.survey", "Survey", Some("N"), "View"),
     ("view.people", "People", None, "View"),
@@ -145,6 +145,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // Overlay and the Remove panel list the modes.
     ("view.toolOverlay", "Cycle Tool Overlay", Some("Shift+H"), ""),
     ("view.visualizeSpots", "Visualize Spots", Some("A"), "View>Tool Overlay"),
+    // A while the Crop panel is open: the aspect lock as a first-class row. Visualize Spots keeps
+    // the key outside the panel; the two are a contextual pair in shortcuts::handle
+    ("crop.lockAspect", "Lock Aspect Ratio", Some("A"), ""),
     ("view.cropOverlay", "Cycle Crop Overlay", Some("Shift+O"), "View>Tool Overlay"),
     ("view.cropOverlayOrientation", "Cycle Crop Overlay Orientation", None, "View>Tool Overlay"),
     ("view.back", "Back to Grid", Some("Escape"), ""),
@@ -158,7 +161,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.infoOverlay", "Cycle Info Overlay", Some("Cmd+I"), "View>Loupe Info"),
     ("view.viewOptions", "View Options…", None, "View>Loupe Info"),
     ("view.chooseLayoutImage", "Choose Layout Image…", None, "View"),
-    ("view.layoutImage", "Show Layout Image", Some("Cmd+Alt+O"), "View"),
+    ("view.layoutImage", "Layout Image", Some("Cmd+Alt+O"), "View"),
     ("view.layoutImageOpacity", "Layout Image Opacity", None, ""),
     ("view.layoutImageMatte", "Layout Image Matte", None, ""),
     ("view.navigator", "Navigator", None, "Window>Panels"),
@@ -173,6 +176,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("panel.info", "Info", Some("I"), "Window>Panels"),
     ("panel.keywords", "Keywords", Some("K"), "Window>Panels"),
     ("panel.versions", "Versions", Some("Shift+V"), "Window>Panels"),
+    // Edit Keyword Tag for the keyword picked in the Keyword List (upstream #2879)
+    ("panel.editKeywords", "Edit Keywords", Some("Cmd+Shift+K"), ""),
     ("panel.activity", "History", None, "Window>Panels"),
     ("panel.close", "Close Panel", None, ""),
     ("panel.collapseRight", "Show/Hide Right Panel", None, "Window>Panels"),
@@ -270,10 +275,14 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("merge.focusStackLast", "Focus Stack with Last Settings", None, "Photo>Photo Merge"),
     ("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File"),
     ("file.addFolder", "Import from Folder…", None, "File"),
+    // {path?, into?: open | new, name?, location?}: asks where the catalog goes unless `into` (or
+    // Settings) says (#2672, `lightroom_destination`)
     ("file.importLightroom", "Import Lightroom Catalog…", None, "File>More Imports"),
     ("file.importImmich", "Import from Immich…", None, "File>More Imports"),
     ("immich.connections", "Immich Settings…", None, "Library>Immich"),
     ("file.addFromDevice", "Import from Device", None, ""),
+    // Android: the photos in DCIM/Camera, through the media store (Settings ▸ Folders)
+    ("file.addCameraRoll", "Import Camera Roll…", None, ""),
     ("file.findMissing", "Find Missing Photos…", None, "Library"),
     ("file.backupLibrary", "Back Up Library…", None, "File>Libraries"),
     ("file.restoreLibrary", "Restore Library from Backup…", None, "File>Libraries"),
@@ -322,6 +331,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.allFilesAccess", "Allow Access to All Files…", None, ""),
     ("app.systemInfo", "System Info…", None, "Help"),
     ("app.openLogFolder", "Open Log Folder", None, "Help"),
+    // the frame-rate display (`frame_rate`): a debugging aid, never saved
+    ("view.frameRate", "Frame Rate", None, "Help>Debug"),
     ("app.whatsNew", "What's New", None, "Help"),
     ("dialog.cull", "Assisted Culling…", None, "Library"),
     ("app.help", "{app} Help", Some("F1"), "Help"),
@@ -437,7 +448,7 @@ fn import_into_album(app: &mut LccApp, p: &Value, r: Result<Value, String>) -> R
 pub fn parse_rgb(v: &Value) -> Option<[u8; 3]> {
     if let Some(s) = v.as_str() {
         let h = s.strip_prefix('#').unwrap_or(s);
-        if h.len() != 6 {
+        if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
         let c = |i: usize| u8::from_str_radix(h.get(i..i + 2)?, 16).ok();
@@ -846,9 +857,22 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(json!({"infoOverlay": app.ui.info_overlay}))
         }
         "view.viewOptions" => {
-            // `info1` / `info2` set the lines for an agent; without them the window opens
+            // `info1` / `info2` set the lines, `briefly` the Info that Show Briefly When Photo Changes
+            // shows, and `loupeMessages` the loading / rendering message, for an agent; without any of
+            // them the window opens
             let mut info = app.ui.settings.loupe_info;
             let mut set = false;
+            // `loupeMessages` sets Show message when loading or rendering photos
+            let messages = match p.get("loupeMessages") {
+                None => app.ui.settings.loupe_messages,
+                Some(v) => match v.as_bool() {
+                    Some(on) => {
+                        set = true;
+                        on
+                    }
+                    None => return Some(Err("`loupeMessages`: true|false".into())),
+                },
+            };
             for (key, lines) in [("info1", &mut info.info1), ("info2", &mut info.info2)] {
                 let Some(v) = p.get(key) else { continue };
                 match serde_json::from_value(v.clone()) {
@@ -859,12 +883,20 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 }
                 set = true;
             }
+            if let Some(v) = p.get("briefly") {
+                match serde_json::from_value(v.clone()) {
+                    Ok(v) => info.briefly = v,
+                    Err(_) => return Some(Err("`briefly`: off|basic|exposure (neither, Info 1 or Info 2)".into())),
+                }
+                set = true;
+            }
             if set {
                 app.ui.settings.loupe_info = info;
+                app.ui.settings.loupe_messages = messages;
             } else {
                 app.ui.dialog = Some(Dialog::ViewOptions);
             }
-            Ok(json!({"loupeInfo": app.ui.settings.loupe_info}))
+            Ok(json!({"loupeInfo": app.ui.settings.loupe_info, "loupeMessages": app.ui.settings.loupe_messages}))
         }
         "view.chooseLayoutImage" => {
             let path = match p.get("path").and_then(Value::as_str) {
@@ -965,6 +997,11 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "view.filmstrip" => {
             app.ui.filmstrip = !app.ui.filmstrip;
             Ok(Value::Null)
+        }
+        "view.frameRate" => {
+            // {show?: bool} (toggles when omitted)
+            app.ui.frame_rate = p.get("show").and_then(Value::as_bool).unwrap_or(!app.ui.frame_rate);
+            Ok(json!({"show": app.ui.frame_rate}))
         }
         "view.leftPanel" => {
             app.ui.left_panel = !app.ui.left_panel;
@@ -1162,7 +1199,12 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 "paperInk": app.ui.proof_paper_ink, "destWarning": pr.dest_warning, "displayWarning": pr.display_warning}))
         }
         "view.histogram" => {
-            app.ui.histogram = !app.ui.histogram;
+            // the Modern layout's floating histogram (shown small again), else Classic's panel
+            if crate::modern::on(app) {
+                crate::modern::toggle_histogram(app);
+            } else {
+                app.ui.histogram = !app.ui.histogram;
+            }
             Ok(Value::Null)
         }
         "view.histogram.mode" => {
@@ -1226,6 +1268,9 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         }
         "view.maskOverlay" => {
             app.ui.mask_overlay = p.get("show").and_then(Value::as_bool).unwrap_or(!app.ui.mask_overlay);
+            // switched on, it stays on through edits; switched off, it shows by itself again only for a
+            // mask without settings
+            app.ui.mask_overlay_pinned = app.ui.mask_overlay;
             Ok(json!({"maskOverlay": app.ui.mask_overlay}))
         }
         "view.maskOverlayAll" => {
@@ -1314,6 +1359,8 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             }
             Ok(Value::Null)
         }
+        // A under the Crop panel: the aspect lock (the panel's button runs the same toggle)
+        "crop.lockAspect" => app.run("crop.aspect", json!({"aspect": "toggle"})),
         "view.cropOverlay" => {
             use crate::state::CropOverlay::*;
             app.ui.crop_overlay = match app.ui.crop_overlay {
@@ -1410,7 +1457,15 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(Value::Null)
         }
         "panel.info" => {
-            panel(app, &ctx, RightPanel::Info, "Info");
+            // the Modern layout's Info card (Library), else Classic's Info panel
+            if crate::modern::on(app) {
+                app.ui.modern.info = !app.ui.modern.info;
+                if app.ui.modern.info && app.ui.module != crate::module::ModuleId::Library {
+                    let _ = app.run("module.library", serde_json::json!({}));
+                }
+            } else {
+                panel(app, &ctx, RightPanel::Info, "Info");
+            }
             Ok(Value::Null)
         }
         "panel.keywords" => {
@@ -1419,6 +1474,18 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         }
         "panel.versions" => {
             panel(app, &ctx, RightPanel::Versions, "Versions");
+            Ok(Value::Null)
+        }
+        "panel.editKeywords" => {
+            // the Keywords panel with its Keyword List open; the keyword picked there opens in
+            // Edit Keyword Tag (with none picked, no dialog opens)
+            if app.ui.right != RightPanel::Keywords {
+                panel(app, &ctx, RightPanel::Keywords, "Keywords");
+            }
+            app.ui.folded_sections.retain(|s| s != "keywordList");
+            if let Some(k) = app.ui.keyword_list_selected.clone().filter(|k| app.session.catalog.has_keyword(k)) {
+                app.ui.dialog = Some(crate::panels::keyword_list::edit_dialog(app, &k));
+            }
             Ok(Value::Null)
         }
         "panel.activity" => {
@@ -1591,7 +1658,15 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(Value::Null)
         }
         "dialog.captureTime" => {
-            let time = app.session.active().and_then(|id| app.session.catalog.photo(id)).map(|p| p.date().replace('T', " ")).unwrap_or_default();
+            // a time that doesn't fully read isn't offered as the starting point (`10:0` would read as midnight)
+            let time = app
+                .session
+                .active()
+                .and_then(|id| app.session.catalog.photo(id))
+                .map(|p| p.date())
+                .filter(|d| lcc_catalog::dates::shift_iso(d, 0).is_some())
+                .map(|d| d.replace('T', " "))
+                .unwrap_or_default();
             let mode = p.get("mode").and_then(Value::as_str).unwrap_or("set").to_string();
             app.ui.dialog =
                 Some(Dialog::CaptureTime { mode, time: time.get(..19).unwrap_or(&time).to_string(), days: 0, hours: 0, minutes: 0, zone: 0.0 });
@@ -1809,7 +1884,8 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         }
         "photo.openOriginalInExternal" => open_original_in(app, &ctx, p),
         "dialog.cull" => {
-            app.ui.dialog = Some(Dialog::Cull { reject_below: 0.0, pick_best: true });
+            let (burst_gap, similarity) = app.ui.cull_burst.unwrap_or((10.0, 0.93));
+            app.ui.dialog = Some(Dialog::Cull { reject_below: 0.0, pick_best: true, burst_gap, similarity });
             Ok(Value::Null)
         }
         "app.whatsNew" => {
@@ -1900,6 +1976,11 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             import_into_album(app, p, r)
         }
         "file.importLightroom" => {
+            // where the catalog goes (#2672): checked before a file dialog opens
+            let req = match crate::lightroom_destination::Request::parse(p) {
+                Ok(req) => req,
+                Err(e) => return Some(Err(e)),
+            };
             let path = match p.get("path").and_then(Value::as_str).map(str::to_string) {
                 Some(path) => Some(path),
                 None => {
@@ -1912,7 +1993,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 }
             };
             match path {
-                Some(path) => app.run("library.importLightroom", json!({"path":path})),
+                Some(path) => crate::lightroom_destination::import(app, &path, &req),
                 None => Ok(Value::Null),
             }
         }
@@ -2116,6 +2197,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             }
             import_into_album(app, p, r)
         }
+        "file.addCameraRoll" => crate::camera_roll::start(app),
         "file.addFolder" => {
             // a folder (searched recursively) into the import review
             let path = match p.get("path").and_then(Value::as_str) {
@@ -2303,7 +2385,12 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                     }
                     parts.push(msg);
                 }
-                if n > 0 {
+                // Show the new presets: Develop's left column already lists them when it is shown,
+                // so they stay there, unfolded (issue #469); otherwise the presets column opens.
+                let in_left_column = app.ui.module == crate::module::ModuleId::Develop && crate::module::edge_visible(app, crate::module::Edge::Left);
+                if n > 0 && in_left_column {
+                    crate::panels::classic::set_open_with_key(app, crate::module::PanelId::Presets, crate::panels::presets::IN_COLUMN_KEY, true);
+                } else if n > 0 {
                     app.ui.presets = true;
                 }
             }
@@ -2673,11 +2760,12 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
         "view.compare" => app.session.catalog.len() > 1,
         "view.fullScreenPreview" | "view.infoOverlay" | "view.navigator" => app.session.active().is_some() || app.ui.fullscreen,
         "app.openLibrary" | "app.newLibrary" => app.services.pick_folder.is_some() && crate::panels::settings::can_switch_library(app).is_ok(),
-        "file.addFolder" => app.services.pick_folder.is_some() && !crate::lightroom_import::is_running(app),
+        "file.addFolder" => (app.services.pick_folder.is_some() || app.services.picker.is_some()) && !crate::lightroom_import::is_running(app),
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "app.openLogFolder" => app.services.reveal.is_some() && app.services.log_file.is_some(),
         "app.openReleasePage" => app.services.open_url.is_some(),
         "app.allFilesAccess" => app.services.storage_access.is_some(),
+        "file.addCameraRoll" => app.services.camera_roll.is_some(),
         "file.restoreLibrary" => app.services.restore_library.is_some(),
         "app.clearRecentLibraries" => !app.ui.settings.recent_libraries.is_empty(),
         "compare.swap" | "compare.makeSelect" | "compare.set" => app.ui.view == ViewMode::Compare,
@@ -2856,7 +2944,8 @@ fn show_in_folders(app: &mut LccApp, id: Option<lcc_catalog::PhotoId>) -> Result
 /// Photo ▸ Edit In: render a copy of each selected photo with its edits (stacked on its original)
 /// as Settings ▸ External Editing asks for that editor, then open them there. `p` may override the
 /// file (`format`, `colorSpace`, `bitDepth`) and the editor (`app`). PhotoCraft is checked first,
-/// so a missing editor leaves no copy behind.
+/// so a missing editor leaves no copy behind. Once the copies exist, an editor that won't open them
+/// is reported in the result's `failed` (and a toast), not as an error.
 fn edit_in(app: &mut LccApp, ctx: &egui::Context, p: &Value, photocraft: bool) -> Result<Value, String> {
     // every way in (menu, shortcut, context menu, the control channel) says why nothing opened
     edit_in_inner(app, ctx, p, photocraft).inspect_err(|e| app.toast(ctx, crate::i18n::tr_format!("Couldn't open the editor: {e}", e = e)))
@@ -2902,8 +2991,15 @@ fn edit_in_inner(app: &mut LccApp, ctx: &egui::Context, p: &Value, photocraft: b
             }
         }
     }
+    let mut r = r;
+    if let Some(o) = r.as_object_mut() {
+        o.insert("failed".into(), json!(failed));
+    }
     if let Some(e) = failed {
-        return Err(e);
+        // the copies are in the library already (one undo step): an error would invite a retry
+        // that makes another set, so the result says what failed and the toast says why
+        app.toast(ctx, crate::i18n::tr_format!("Couldn't open the editor: {e}", e = e));
+        return Ok(r);
     }
     match copies.as_slice() {
         [(path, _)] => {

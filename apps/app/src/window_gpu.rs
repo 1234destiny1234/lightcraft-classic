@@ -92,7 +92,6 @@ pub fn choose(files: &Files, compose_window: bool) -> Chosen {
     let compiled = wgpu::Instance::enabled_backend_features();
     let os = std::env::consts::OS;
     let order = backend::window_renderer_order(forced, remembered, failed, os, compiled, true);
-    let mut notice = failed.map(|f| format!("The window could not start with its {} renderer last time.", f.name()));
     let mut problems = Vec::new();
     let chosen = if cfg!(windows) {
         pick_probed(&order, &mut problems, compose_window)
@@ -103,18 +102,7 @@ pub fn choose(files: &Files, compose_window: bool) -> Chosen {
         Some((WindowRenderer::Wgpu(backend::window_backends()), None))
     };
     let (which, existing) = chosen.unwrap_or((WindowRenderer::Glow, None));
-    if !problems.is_empty() {
-        notice = Some(format!("{} {}", notice.unwrap_or_default(), problems.join(" ")).trim().to_string());
-    }
-    let notice = notice.map(|n| {
-        format!(
-            "{n} {app} now draws its window with {}. To choose another, start {app} with {var}=dx12, vulkan, gl or glow \
-             (see docs/gpu-pipeline.md → Troubleshooting).",
-            which.name(),
-            app = lcc_brand::DISPLAY_NAME,
-            var = lcc_brand::env_var("GPU_BACKEND"),
-        )
-    });
+    let notice = user_notice(failed, forced, &problems, which);
     log::info!("window: renderer {} (order {:?})", which.name(), order.iter().map(|r| r.name()).collect::<Vec<_>>());
     let mut wgpu_options = base_options();
     let renderer = match (which, existing) {
@@ -133,9 +121,33 @@ pub fn choose(files: &Files, compose_window: bool) -> Chosen {
     Chosen { renderer, wgpu_options, which, notice }
 }
 
+/// What to tell the user about the window's renderer. A renderer that failed its probe is skipped
+/// silently (it is logged, and the one that worked is remembered): the app works, so a pop-up with
+/// wgpu's error only alarms (#1624). Shown: the last start died, or the forced renderer failed.
+fn user_notice(failed: Option<WindowRenderer>, forced: Option<WindowRenderer>, problems: &[String], which: WindowRenderer) -> Option<String> {
+    let mut notice = failed.map(|f| format!("The window could not start with its {} renderer last time.", f.name()));
+    if forced.is_some() && !problems.is_empty() {
+        notice = Some(format!("{} {}", notice.unwrap_or_default(), problems.join(" ")).trim().to_string());
+    }
+    notice.map(|n| {
+        format!(
+            "{n} {app} now draws its window with {}. To choose another, start {app} with {var}=dx12, vulkan, gl or glow \
+             (see docs/gpu-pipeline.md → Troubleshooting).",
+            which.name(),
+            app = lcc_brand::DISPLAY_NAME,
+            var = lcc_brand::env_var("GPU_BACKEND"),
+        )
+    })
+}
+
 /// eframe's defaults with the app's backends and DX12 shader compiler (issues #136, #471).
+///
+/// Taken from `NativeOptions::default()`, whose surface is egui-wgpu's `LOW_LATENCY` (one frame in
+/// flight; two drawables on Metal). `WgpuConfiguration::default()` is `HIGH_THROUGHPUT` instead (two
+/// frames queued, three drawables): every drag, slider and crop handle reached the screen a frame
+/// later than eframe's default. Live window resizing still gets three drawables from egui-wgpu.
 pub fn base_options() -> WgpuConfiguration {
-    let mut c = WgpuConfiguration::default();
+    let mut c = eframe::NativeOptions::default().wgpu_options;
     if let WgpuSetup::CreateNew(n) = &mut c.wgpu_setup {
         n.instance_descriptor.backends = backend::window_backends();
         n.instance_descriptor.backend_options = backend::backend_options();
@@ -282,6 +294,37 @@ mod tests {
         none.arm(dx);
         assert!(!none.armed() && !relaunch_after_failure(&none));
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// #1624: a renderer skipped by the probe (DX12 → Vulkan) is no pop-up; a died start or a
+    /// failed forced renderer still is.
+    #[test]
+    fn probe_fallback_is_silent() {
+        let (dx, vk) = (WindowRenderer::Wgpu(Backends::DX12), WindowRenderer::Wgpu(Backends::VULKAN));
+        let problems = vec!["The dx12 renderer failed (Validation Error).".to_string()];
+        assert_eq!(user_notice(None, None, &problems, vk), None);
+        assert_eq!(user_notice(None, None, &[], vk), None);
+        let forced = user_notice(None, Some(dx), &problems, vk).unwrap();
+        assert!(forced.starts_with("The dx12 renderer failed") && forced.contains("now draws its window with vulkan"), "{forced}");
+        let died = user_notice(Some(dx), None, &problems, vk).unwrap();
+        assert!(died.contains("last time") && !died.contains("Validation Error"), "{died}");
+    }
+
+    /// The window keeps eframe's low-latency surface: one frame queued (two Metal drawables), not
+    /// the high-throughput `WgpuConfiguration::default()`, which held input a frame longer. The
+    /// probed (Windows) and forced-backend configurations are built on the same options.
+    #[test]
+    fn window_surface_keeps_one_frame_in_flight() {
+        let surface = base_options().surface;
+        assert_eq!(surface, eframe::NativeOptions::default().wgpu_options.surface);
+        assert_eq!(surface, eframe::egui_wgpu::SurfaceConfig::LOW_LATENCY);
+        assert_eq!(surface.desired_maximum_frame_latency, Some(1));
+        assert_eq!(surface.present_mode, wgpu::PresentMode::AutoVsync);
+        assert_ne!(surface, WgpuConfiguration::default().surface, "egui-wgpu's own default is the high-throughput one");
+        // what `main` hands eframe (on Windows `choose` probes the adapters first; not here)
+        if !cfg!(windows) {
+            assert_eq!(choose(&Files::new(None), false).wgpu_options.surface, surface);
+        }
     }
 
     /// The crash report: a pipeline that fails validation must come back as an error, never as

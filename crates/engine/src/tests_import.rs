@@ -9,6 +9,9 @@ use crate::Session;
 fn temp_dir(tag: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("lc-import-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
+    // Tests that take a folder "offline" rename it to this sibling; a left-over one (from a run
+    // whose process id is reused) is non-empty and would make that rename fail.
+    let _ = std::fs::remove_dir_all(d.with_extension("offline"));
     std::fs::create_dir_all(&d).unwrap();
     d
 }
@@ -265,6 +268,114 @@ fn find_missing_plan_is_rechecked_when_applied() {
     };
     assert_eq!(path_of(a.id), dir.join("a-elsewhere.png").to_string_lossy());
     assert_eq!(path_of(b.id), b.from);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A library made on Windows names its originals with Windows paths; opened on macOS or Linux
+/// they are missing until Find Missing finds them by name, there as everywhere: the name follows
+/// the last `/` or `\`, any letter case, the size checked when one is on record, look-alikes
+/// reported rather than guessed, and undo puts back the path exactly as spelled.
+#[test]
+fn find_missing_finds_the_files_of_a_library_made_on_windows() {
+    use lcc_catalog::{Op, Photo, PhotoId, Source};
+    let dir = temp_dir("missing-windows");
+    for (rel, bytes) in [("found/a.jpg", &b"x"[..]), ("found/deep/b.jpg", b"xyz"), ("found/one/twin.jpg", b"x"), ("found/two/twin.jpg", b"x")] {
+        std::fs::create_dir_all(dir.join(rel).parent().unwrap()).unwrap();
+        std::fs::write(dir.join(rel), bytes).unwrap();
+    }
+    let mut s = Session::new();
+    // as a Windows library may list them: no content hash, and a size only for b
+    let mut add = |path: &str, size: u64| {
+        let id = s.catalog.alloc_photo_id();
+        let mut p = Photo::new(id, Source::File { path: path.into() }, "x.jpg", "JPEG", 60, 40, "2026-01-01T10:00:00");
+        p.file_size = size;
+        s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        id
+    };
+    let (a, b, twin) = (add(r"C:\Users\me\Photos\a.jpg", 0), add(r"D:\Shoot\2019\B.JPG", 3), add(r"C:\Users\me\Photos\twin.jpg", 0));
+    let path_of = |s: &Session, id: PhotoId| match &s.catalog.photo(id).unwrap().source {
+        Source::File { path } => path.clone(),
+        _ => String::new(),
+    };
+    let r = s.execute("library.findMissing", &json!({"folder": dir.join("found").to_string_lossy()})).unwrap();
+    assert_eq!(path_of(&s, a), dir.join("found").join("a.jpg").to_string_lossy(), "found by its name: {r}");
+    assert_eq!(path_of(&s, b), dir.join("found").join("deep").join("b.jpg").to_string_lossy(), "found by its name, any case, and size: {r}");
+    assert_eq!(path_of(&s, twin), r"C:\Users\me\Photos\twin.jpg", "two files of its name: not guessed: {r}");
+    assert_eq!(r["ambiguous"][0]["candidates"].as_array().map(Vec::len), Some(2), "both look-alikes reported: {r}");
+    assert_eq!(r["missing"], 1, "{r}");
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(
+        (path_of(&s, a), path_of(&s, b)),
+        (r"C:\Users\me\Photos\a.jpg".to_string(), r"D:\Shoot\2019\B.JPG".to_string()),
+        "one undo step puts back the Windows paths as they were spelled"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Issue #2853: virtual copies share their original's file, so Find Missing relinks them to it,
+/// both when the original is found in the same search and when it was relinked before. A file an
+/// unrelated photo uses is still refused.
+#[test]
+fn find_missing_relinks_virtual_copies_to_their_originals_file() {
+    use lcc_catalog::{Op, Photo, PhotoId, Source};
+    let dir = temp_dir("missing-copies");
+    std::fs::create_dir_all(dir.join("new")).unwrap();
+    for name in ["a.jpg", "b.jpg", "c.jpg"] {
+        std::fs::write(dir.join("new").join(name), b"x").unwrap();
+    }
+    let old = |name: &str| dir.join("old").join(name).to_string_lossy().to_string();
+    let new = |name: &str| dir.join("new").join(name).to_string_lossy().to_string();
+    let mut s = Session::new();
+    let mut add = |path: String, copy_of: Option<PhotoId>| {
+        let id = s.catalog.alloc_photo_id();
+        let mut p = Photo::new(id, Source::File { path }, "x.jpg", "JPEG", 60, 40, "2026-01-01T10:00:00");
+        p.file_size = 1;
+        p.copy_of = copy_of;
+        s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        id
+    };
+    // a and its two copies are all missing; b was relinked already, its copy wasn't; c's file
+    // is used by an unrelated photo
+    let a = add(old("a.jpg"), None);
+    let a_copies = [add(old("a.jpg"), Some(a)), add(old("a.jpg"), Some(a))];
+    let b = add(new("b.jpg"), None);
+    let b_copy = add(old("b.jpg"), Some(b));
+    add(new("c.jpg"), None);
+    let stranger = add(old("c.jpg"), None);
+    let path_of = |s: &Session, id: PhotoId| match &s.catalog.photo(id).unwrap().source {
+        Source::File { path } => path.clone(),
+        _ => String::new(),
+    };
+    let r = s.execute("library.findMissing", &json!({"folder": dir.join("new").to_string_lossy()})).unwrap();
+    for id in [a, a_copies[0], a_copies[1]] {
+        assert_eq!(path_of(&s, id), new("a.jpg"), "{r}");
+    }
+    assert_eq!(path_of(&s, b_copy), new("b.jpg"), "{r}");
+    assert_eq!(path_of(&s, stranger), old("c.jpg"), "another photo's file is not taken: {r}");
+    assert_eq!(r["missing"], 1, "{r}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// On macOS and Linux `\` may be part of a file name. Find Missing names the files it finds by
+/// the same rule as the missing photos, so `a\b.jpg` isn't relinked to a `b.jpg` beside it
+/// unasked: the two are reported as look-alikes.
+#[cfg(unix)]
+#[test]
+fn find_missing_does_not_take_a_look_alike_for_a_file_name_with_a_backslash() {
+    use lcc_catalog::{Op, Photo, Source};
+    let dir = temp_dir("missing-backslash");
+    std::fs::create_dir_all(dir.join("found")).unwrap();
+    for name in [r"a\b.jpg", "b.jpg"] {
+        std::fs::write(dir.join("found").join(name), b"x").unwrap();
+    }
+    let mut s = Session::new();
+    let gone = dir.join("gone").join(r"a\b.jpg").to_string_lossy().to_string();
+    let id = s.catalog.alloc_photo_id();
+    let p = Photo::new(id, Source::File { path: gone.clone() }, "x.jpg", "JPEG", 60, 40, "2026-01-01T10:00:00");
+    s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    let r = s.execute("library.findMissing", &json!({"folder": dir.join("found").to_string_lossy()})).unwrap();
+    assert!(matches!(&s.catalog.photo(id).unwrap().source, Source::File { path } if *path == gone), "not relinked to b.jpg: {r}");
+    assert_eq!(r["ambiguous"][0]["candidates"].as_array().map(Vec::len), Some(2), "both reported: {r}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -784,6 +895,72 @@ fn cube_import_without_a_library_leaves_no_temp_copy() {
     let _ = std::fs::remove_dir_all(&src);
 }
 
+/// `prefs.json` records each imported profile's file, but only the library's own copy in
+/// `Profiles/` is read or deleted: a path out through `..`, a path elsewhere, a file past the size
+/// cap or a link is never followed (issue #2123). Delete Imported Profile used to remove whatever
+/// `<lib>/Profiles/../..` named, and opening the library read any file it named, unbounded.
+#[test]
+fn lut_profile_paths_in_prefs_stay_inside_profiles() {
+    let src = temp_dir("cubeprefs-src");
+    let lib = temp_dir("cubeprefs-lib");
+    let outside = temp_dir("cubeprefs-outside");
+    let mut cube = String::from("LUT_3D_SIZE 2\n");
+    for i in 0..8 {
+        cube.push_str(&format!("{} {} {}\n", i & 1, (i >> 1) & 1, (i >> 2) & 1));
+    }
+    for name in ["a", "b", "c"] {
+        std::fs::write(src.join(format!("{name}.cube")), &cube).unwrap();
+    }
+    let mut s = Session::new().with_fs();
+    s.open_library(&lib, true).unwrap();
+    let r = s.execute("profile.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let ids: Vec<String> = r["imported"].as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap().to_string()).collect();
+    assert_eq!(ids.len(), 3, "{r}");
+    drop(s);
+    for id in &ids {
+        lcc_pipeline::lut::unregister(id);
+    }
+
+    // what a crafted prefs.json names: files outside the library, one of them through `..`
+    let victim = outside.join("victim.cube");
+    std::fs::write(&victim, &cube).unwrap();
+    let prefs = lib.join("prefs.json");
+    let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(&prefs).unwrap()).unwrap();
+    let traversal = lib.join("Profiles").join("..").join("..").join(outside.file_name().unwrap()).join("victim.cube");
+    let files = [traversal.to_string_lossy().to_string(), victim.to_string_lossy().to_string()];
+    let mut patched = 0;
+    for list in v.as_object_mut().unwrap().values_mut().filter_map(|x| x.as_array_mut()) {
+        for p in list.iter_mut().filter(|p| p.get("file").is_some()) {
+            if let Some(i) = ids.iter().position(|id| p["id"] == id.as_str()).filter(|&i| i < 2) {
+                p["file"] = json!(files[i]);
+                patched += 1;
+            }
+        }
+    }
+    assert_eq!(patched, 2, "{v}");
+    std::fs::write(&prefs, serde_json::to_vec(&v).unwrap()).unwrap();
+    // the third profile's own copy grows past the cap (sparse: no 64 MB written)
+    let third = lib.join("Profiles").join(format!("{}.cube", ids[2].trim_start_matches("lut:")));
+    std::fs::OpenOptions::new().write(true).open(&third).unwrap().set_len((64 << 20) + 1).unwrap();
+
+    let mut s = Session::new().with_fs();
+    s.open_library(&lib, false).unwrap();
+    assert_eq!(s.lut_profiles.len(), 3, "the list itself is kept");
+    for id in &ids {
+        assert!(lcc_pipeline::lut::get(id).is_none(), "{id}: nothing outside Profiles/ or past the cap is read");
+    }
+    for id in &ids[..2] {
+        s.execute("profile.deleteImported", &json!({"id": id})).unwrap();
+    }
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), cube, "the file outside the library is left alone");
+    // the library's own copy is still deleted
+    s.execute("profile.deleteImported", &json!({"id": ids[2]})).unwrap();
+    assert!(!third.exists());
+    for d in [&src, &lib, &outside] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
 /// Folder rename / move on disk: files and sidecars go along, the photos are relinked and
 /// still render; clashes and moving into itself are refused.
 #[test]
@@ -965,6 +1142,24 @@ fn assisted_culling_ignores_repeated_ids() {
     assert!(an.group.is_none() && !an.best, "{an:?}");
 }
 
+/// Classical aesthetic and cullScore persist without optional models; eyes-open is skipped when
+/// no detector and no face regions (not stored as 0).
+#[test]
+fn assisted_culling_persists_aesthetic_and_cull_score() {
+    let mut s = Session::with_demo();
+    let id = s.visible_cloned()[0];
+    let r = s.execute("photo.analyze", &json!({"ids": [id.0]})).unwrap();
+    let row = &r["photos"][0];
+    assert!(row["aesthetic"].as_f64().is_some(), "{r}");
+    assert!(row["cullScore"].as_f64().is_some(), "{r}");
+    let an = s.catalog.photo(id).unwrap().analysis.unwrap();
+    let aesthetic = an.aesthetic.expect("aesthetic");
+    assert!((1.0..=10.0).contains(&aesthetic), "{an:?}");
+    let score = an.cull_score.expect("cull_score");
+    assert!((0.0..=1.0).contains(&score), "{an:?}");
+    assert!(row["eyesOpen"].is_null() || row["eyesOpen"].is_number(), "{r}");
+}
+
 /// Assisted culling: two look-alike shots one second apart across midnight form a burst at the end of
 /// every month, including those with fewer than 31 days.
 #[test]
@@ -1006,6 +1201,54 @@ fn assisted_culling_groups_bursts_across_month_end() {
         let r = s.execute("photo.analyze", &json!({"ids": ids})).unwrap();
         assert_eq!(r["groups"], 1, "shots 1 s apart ({before} / {after}) must form a burst: {r}");
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Assisted culling: `burstGap` and `similarity` move the burst limits (#2275), and values out of
+/// range are refused before anything is measured or stored.
+#[test]
+fn assisted_culling_burst_limits_are_adjustable() {
+    let dir = temp_dir("cull-limits");
+    for (name, (w, h)) in [("a.png", (480, 320)), ("b.png", (482, 321))] {
+        let img = lcc_scenes::demo_library()[0].render(w, h);
+        let data: Vec<[u8; 4]> = img
+            .data
+            .iter()
+            .map(|c| {
+                let e = |v: f32| (lcc_color::transfer::linear_to_srgb(v.clamp(0.0, 1.0)) * 255.0).round() as u8;
+                [e(c[0]), e(c[1]), e(c[2]), 255]
+            })
+            .collect();
+        let png = lcc_codecs::encode_png(
+            &lcc_codecs::EncodeImage::rgba8(&lcc_raster::Rgba8 { width: img.width, height: img.height, data }),
+            &Default::default(),
+        )
+        .unwrap();
+        std::fs::write(dir.join(name), png).unwrap();
+    }
+    let mut s = Session::new().with_fs();
+    let r = s.execute("library.import", &json!({"paths": [dir.to_string_lossy()]})).unwrap();
+    let ids: Vec<u64> = r["imported"].as_array().unwrap().iter().filter_map(Value::as_u64).collect();
+    let by_name = |s: &Session, n: &str| s.catalog.photos().find(|p| p.file_name == n).unwrap().id;
+    let (a, b) = (by_name(&s, "a.png"), by_name(&s, "b.png"));
+    s.commit("t", lcc_catalog::Op::SetCaptured { id: a, captured: Some("2026-05-01T10:00:00".into()) }).unwrap();
+    s.commit("t", lcc_catalog::Op::SetCaptured { id: b, captured: Some("2026-05-01T10:00:15".into()) }).unwrap();
+    // 15 s apart: past the default 10 s, inside a 20 s gap
+    assert_eq!(s.execute("photo.analyze", &json!({"ids": ids})).unwrap()["groups"], 0);
+    assert_eq!(s.execute("photo.analyze", &json!({"ids": ids, "burstGap": 20})).unwrap()["groups"], 1);
+    // the look-alike pair is a burst at the default similarity, not when it must be identical
+    let strict = s.execute("photo.analyze", &json!({"ids": ids, "burstGap": 20, "similarity": 1.0})).unwrap();
+    assert_eq!(strict["groups"], 0, "{strict}");
+    // bad values change nothing
+    let undo_before = s.commits();
+    for bad in
+        [json!({"burstGap": -1}), json!({"burstGap": 86401}), json!({"burstGap": "10"}), json!({"similarity": 1.5}), json!({"similarity": -0.1})]
+    {
+        let mut p = bad.clone();
+        p["ids"] = json!(ids);
+        assert!(s.execute("photo.analyze", &p).is_err(), "{bad} must be refused");
+    }
+    assert_eq!(s.commits(), undo_before);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -1114,6 +1357,9 @@ fn smart_previews_folder_is_chosen_per_library() {
     let r = again.execute("library.smartPreviewsLocation", &json!({"reset": true})).unwrap();
     assert_eq!(r["custom"], false, "{r}");
     assert_eq!(r["path"], lib.join("Smart Previews").to_string_lossy().as_ref());
+    for d in [&lib, &away, &src.with_extension("offline")] {
+        let _ = std::fs::remove_dir_all(d);
+    }
 }
 
 /// Missing Photos covers library photos only: a small library next to many Local browse
@@ -1794,6 +2040,49 @@ fn a_stale_refresh_never_rebuilds_a_proxy_from_itself() {
     assert_eq!(std::fs::read(&file).unwrap(), stale_bytes, "the offline proxy is preserved");
     assert!(crate::smart::is_stale(&file), "still stale: the original was not read");
     let _ = std::fs::remove_dir_all(src.with_extension("offline"));
+    let _ = std::fs::remove_dir_all(&lib);
+}
+
+/// Auto Sync of a Temperature edit gives every selected raw the same Kelvin, even raws whose stored white balance
+/// is still on the legacy relative scale (6500 K = as shot) with different as-shot whites (#425).
+#[test]
+fn auto_sync_white_balance_gives_every_raw_the_same_kelvin() {
+    let src = temp_dir("autosync-wb-src");
+    let lib = temp_dir("autosync-wb-lib");
+    for i in 0..3u8 {
+        write_png(&src.join(format!("{i}.png")), i);
+    }
+    let mut s = Session::new().with_fs();
+    s.open_library(&lib, false).unwrap();
+    let paths: Vec<String> = (0..3).map(|i| src.join(format!("{i}.png")).to_string_lossy().into_owned()).collect();
+    s.execute("library.import", &json!({"paths": paths})).unwrap();
+    let ids: Vec<lcc_catalog::PhotoId> = s.catalog.photos().map(|p| p.id).collect();
+    assert_eq!(ids.len(), 3);
+    // fitted-look raws of a camera with a Kelvin scale, each shot under its own light
+    for (id, as_shot) in ids.iter().zip([5000.0, 6000.0, 5000.0]) {
+        let mut raw = (**s.catalog.photo(*id).unwrap()).clone();
+        raw.format = "NEF".into();
+        raw.kind = lcc_catalog::MediaKind::Raw;
+        raw.meta.camera = "NIKON CORPORATION NIKON Z5_2".into();
+        raw.as_shot_wb = Some((as_shot, 4.0));
+        s.catalog.apply(lcc_catalog::Op::RemovePhoto { id: *id }).unwrap();
+        s.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(raw) }).unwrap();
+        assert!(s.source_info(*id).legacy_relative_wb, "the stored white balance is on the legacy scale");
+    }
+    // the active photo's white balance was edited before (now on the Kelvin scale); the others never were
+    s.execute("library.select", &json!({"ids": [ids[0].0], "active": ids[0].0})).unwrap();
+    s.execute("develop.set", &json!({"control": "wb.temp", "value": 5000})).unwrap();
+    let raw_ids: Vec<u64> = ids.iter().map(|i| i.0).collect();
+    s.execute("library.select", &json!({"ids": raw_ids, "active": ids[0].0})).unwrap();
+    s.execute("develop.autoSync", &json!({"on": true})).unwrap();
+    s.execute("develop.set", &json!({"control": "wb.temp", "value": 4000})).unwrap();
+    let source = s.develop_of(ids[0]).unwrap().wb;
+    assert_eq!(source.temp, 4000.0);
+    for id in &ids {
+        let wb = s.develop_of(*id).unwrap().wb;
+        assert_eq!((wb.temp, wb.tint, wb.scale), (source.temp, source.tint, lcc_develop::WbScale::Kelvin), "photo {id:?}");
+    }
+    let _ = std::fs::remove_dir_all(&src);
     let _ = std::fs::remove_dir_all(&lib);
 }
 

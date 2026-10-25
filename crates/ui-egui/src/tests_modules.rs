@@ -235,6 +235,27 @@ fn every_module_draws_and_the_picker_hides_modules() {
 }
 
 #[test]
+fn the_identity_plate_colour_takes_only_six_hex_digits() {
+    let mut h = demo();
+    run(&mut h, "view.identityPlate", json!({"color": "#ff8000"}));
+    assert_eq!(h.app.ui.identity_plate.color, Some([255, 128, 0]));
+    // a sign or a second `#` isn't a hex digit: refused, and the colour stays
+    for bad in ["#+f+f+f", "+12345", "#-0-0-0", "##ffffff", "#ff80", "#ff80000", "#ff80g0"] {
+        let r = h.request("engine.execute", json!({"command": "view.identityPlate", "params": {"color": bad}}), T);
+        assert_eq!(r["ok"], false, "{bad} should be refused: {r}");
+        assert!(r["error"].as_str().is_some_and(|e| e.contains("#rrggbb")), "the error for {bad} should name #rrggbb: {r}");
+        assert_eq!(h.app.ui.identity_plate.color, Some([255, 128, 0]), "{bad} should leave the colour as it was");
+    }
+    run(&mut h, "view.identityPlate", json!({"color": "00ff7f"}));
+    assert_eq!(h.app.ui.identity_plate.color, Some([0, 255, 127]), "the `#` is optional");
+    run(&mut h, "view.identityPlate", json!({"color": ""}));
+    assert_eq!(h.app.ui.identity_plate.color, None, "\"\" clears the colour");
+    run(&mut h, "view.identityPlate", json!({"color": "#ff8000"}));
+    run(&mut h, "view.identityPlate", json!({"color": null}));
+    assert_eq!(h.app.ui.identity_plate.color, None, "null clears the colour");
+}
+
+#[test]
 fn screen_modes_and_lights_out() {
     let mut h = demo();
     let r = run(&mut h, "view.screenMode", json!({}));

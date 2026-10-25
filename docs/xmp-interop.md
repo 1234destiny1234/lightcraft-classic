@@ -41,6 +41,8 @@ the file (the Metadata Working Group's rule: XMP over Exif), so a photo geotagge
 one exception is the **capture time**: a time embedded in the file (EXIF/IPTC) always wins; when the file
 has none, the sidecar's `exif:DateTimeOriginal`, else `photoshop:DateCreated`, else `xmp:CreateDate` (ISO 8601) is
 used — on import (it then also files a copied photo in its date folder) and by `photo.readMetadataFromFile` (undoable).
+An incomplete or malformed XMP timestamp is not projected as a capture time, remains available in the raw property
+map, and does not prevent the next valid capture-time property from being used.
 `xmp:Rating="-1"` (the XMP convention for rejected) sets the reject flag. Develop settings come from
 `lc:settings` when present (exact); otherwise from the `crs:` fields below (approximate).
 
@@ -110,6 +112,9 @@ the only copy of those edits outside that application's catalog. Saving never dr
   ones), `xmp:CreatorTool`, comments, the packet wrapper and padding. The app's properties go into one
   `rdf:Description` of their own; owned properties written by another application (in attribute or element form) are
   removed from its description, which otherwise stays as it was.
+- Ownership follows the namespace URI, not the prefix spelling. A foreign namespace bound to `lc:` or `xmp:`
+  stays foreign: its properties are preserved and do not become the app's settings or ratings. Genuine namespace
+  aliases remain interchangeable, including namespace declarations containing XML character references.
 - A sidecar that can't be read as XMP (not well-formed, not UTF-8, no `rdf:RDF`) is first copied to
   `<name>.xmp.bak-<date><time>` (`-1`, `-2`… if taken — a backup is never overwritten), then replaced. A sidecar that
   can't be read at all (permissions) is left alone and the save fails.
@@ -201,7 +206,7 @@ application's renderer and is ignored: the photo keeps the app's own process, th
 
 Values pass through our control specs, so anything outside our slider ranges gets clamped.
 
-`crs:CameraProfile` is kept as the selected name in the photo's import warning and the active profile is left as it is: the name carries no rendering data and never selects an Adobe profile. Import reports such a profile as not applied (colours may differ from Lightroom), except Lightroom's default profiles (`Adobe Standard`, `Adobe Color`), which every sidecar names and which the app's own starting look stands in for.
+Lightroom writes the camera profile and the creative profile apart (with `Adobe Color` chosen: `crs:CameraProfile="Adobe Standard"` and a `crs:Look` named `Adobe Color`). The profile the person picked — the `crs:Look` name when there is one, else `crs:CameraProfile` — sets the photo's camera-profile choice to the camera's Lightroom-matched calibrated look of that name (`profile.camera = "cal:<slug>"`, e.g. `Adobe Color` → `cal:adobe-color`; bundled calibrations, `crates/camdb/data/calibrations/`). A camera without that look falls back to its default (a person's own `.dcp`, else the calibration's first look, else the app's own colour); a photo whose choice is an imported `.dcp` (`dcp:…`) keeps it. Presets don't carry it (each photo keeps its camera profile; the field is reported as not carried over). The name never selects an Adobe profile. Import still warns about a profile other than Lightroom's defaults (`Adobe Standard`, `Adobe Color`), as colours may differ from Lightroom where no calibration covers the camera; a profile the photo's camera (the packet's `tiff:Make`/`tiff:Model`, else any installed calibration) has a calibrated look for is not warned about. On photos the look name is not also mapped to a built-in stand-in creative profile (`profile.look` / `profile.id` stay a preset-only mechanism), so a calibrated look is never applied twice.
 
 **Profiles named by presets (`Look`, issue #1001).** A preset keeps the profile it names (`crs:Look`: `Name`, `Group`,
 `UUID`, `Amount`; in `.lrtemplate` files the `Look` table) as `profile.look` in its settings. When the user has imported
@@ -214,7 +219,7 @@ is; import reports either per preset (`Profile “Name” (Lightroom's own)` / `
 References are resolved again whenever profiles are imported or deleted, so a pack's profiles and presets can come in
 either order. The look's embedded `Parameters` are not read.
 
-**Not mapped:** camera profiles (`CameraProfile`; we have our own profile set), red eye, lens blur,
+**Not mapped:** red eye, lens blur,
 process-version 2010 field names, and AI features. Local adjustments and spot removal are read as described below.
 
 ## Spot removal

@@ -3,7 +3,7 @@
 //! that can be cancelled. The tasks come from the engine's registry ([`lcc_engine::activity`]); ✕ runs
 //! `activity.cancel` like any other frontend would.
 
-use egui::{Align, Layout, Margin, Rect, RichText, Sense, Stroke, pos2, vec2};
+use egui::{Align, Layout, Margin, RichText, Sense, Stroke, pos2, vec2};
 use lcc_engine::activity::{TaskInfo, Unit};
 use serde_json::json;
 
@@ -69,15 +69,24 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let shown = if app.activity_expanded { tasks.len() } else { tasks.len().min(MAX_ROWS) };
     let hidden = tasks.len().saturating_sub(shown);
-    let max_height = (ctx.content_rect().height() - t.top_bar_h - 60.0).max(80.0);
+    // Modern layout: centred under its Library / Develop switch, inside the screen's insets (clear
+    // of the buttons in the corners and of the cards); else centred below the top bar
+    let origin = if crate::modern::on(app) {
+        pos2(ctx.content_rect().center().x - WIDTH / 2.0, crate::modern::overlay_origin(app).y)
+    } else {
+        // centred under the top bar: clear of the windows and dialogs that open at the top left
+        pos2((ctx.content_rect().center().x - WIDTH / 2.0).max(8.0), t.top_bar_h + 8.0)
+    };
+    let top = origin.y - 8.0;
+    let max_height = (ctx.content_rect().height() - top - 60.0).max(80.0);
     let mut cancel = None;
     let mut toggle = false;
     let frame = egui::Frame::NONE.fill(t.chrome).stroke(Stroke::new(1.0, t.field_border)).corner_radius(6).inner_margin(Margin::same(MARGIN));
-    egui::Area::new(egui::Id::new("activity-stack")).order(egui::Order::Middle).fixed_pos(pos2(8.0, t.top_bar_h + 8.0)).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("activity-stack")).order(egui::Order::Middle).fixed_pos(origin).show(ctx, |ui| {
         // An area lays out in the size it had last frame, and the scroll area would take that as all the room there
         // is: the stack would never grow when rows are added. Give it the whole height below the top bar instead
         // (the scroll area keeps to `max_height`).
-        ui.set_max_height((ctx.content_rect().height() - t.top_bar_h - 16.0).max(80.0));
+        ui.set_max_height((ctx.content_rect().height() - top - 16.0).max(80.0));
         frame.show(ui, |ui| {
             let inner = WIDTH - 2.0 * (f32::from(MARGIN) + 1.0);
             ui.set_width(inner);
@@ -136,7 +145,7 @@ fn row(ui: &mut egui::Ui, t: &Tokens, task: &TaskInfo, width: f32) -> bool {
                 clicked = resp.on_hover_text(tr("Cancel")).clicked();
             }
         });
-        bar(ui, t, task, width);
+        bar(ui, task, width);
         let line = detail_line(task);
         if !line.is_empty() {
             ui.add(egui::Label::new(RichText::new(line).font(t.font(11.0)).color(t.text_dim)).truncate());
@@ -146,21 +155,11 @@ fn row(ui: &mut egui::Ui, t: &Tokens, task: &TaskInfo, width: f32) -> bool {
     clicked
 }
 
-/// The progress bar; while the amount of work isn't known, a segment sweeps across.
-fn bar(ui: &mut egui::Ui, t: &Tokens, task: &TaskInfo, width: f32) {
-    let (rect, _) = ui.allocate_exact_size(vec2(width, 5.0), Sense::hover());
-    let p = ui.painter();
-    p.rect_filled(rect, 2.5, t.field);
-    let fill = if task.total > 0 {
-        let frac = (task.done as f64 / task.total as f64).clamp(0.0, 1.0) as f32;
-        Rect::from_min_size(rect.min, vec2(rect.width() * frac, rect.height()))
-    } else {
-        let phase = (ui.input(|i| i.time) * 0.7).fract() as f32;
-        let w = rect.width() * 0.3;
-        let x = rect.left() + (rect.width() + w) * phase - w;
-        Rect::from_min_max(pos2(x.max(rect.left()), rect.top()), pos2((x + w).min(rect.right()), rect.bottom()))
-    };
-    if fill.width() > 0.0 {
-        p.rect_filled(fill, 2.5, if task.cancelling { t.text_dim } else { t.accent });
-    }
+/// The progress bar, named after its task for screen readers; while the amount of work isn't
+/// known, a segment sweeps across.
+pub(crate) fn bar(ui: &mut egui::Ui, task: &TaskInfo, width: f32) -> egui::Response {
+    let fraction = (task.total > 0).then(|| (task.done as f64 / task.total as f64) as f32);
+    let response = crate::progress::Progress::new(fraction).width(width).dimmed(task.cancelling).show(ui);
+    crate::widgets::screen_reader_name(ui.ctx(), response.id, tr(&task.label));
+    response
 }

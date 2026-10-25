@@ -92,10 +92,24 @@ pub struct Manifest {
     /// ABI v1.1 proposal; hosts without stages ignore it). Unknown values are ignored.
     #[serde(default, deserialize_with = "lenient_stage", skip_serializing_if = "Option::is_none")]
     pub stage: Option<Stage>,
+    /// Which part of the photo `pc_analyze` measures (`"analyzeArea": "frame" | "crop"`, an ABI v1.1
+    /// proposal alongside `pc_analyze`; hosts without it measure the frame). Unknown values mean the frame.
+    #[serde(default, deserialize_with = "lenient_area", skip_serializing_if = "AnalyzeArea::is_frame")]
+    pub analyze_area: AnalyzeArea,
+    /// How a raw developer tones a Source filter's output (`"baseTone": "camera" | "neutral"`, an ABI
+    /// v1.1 proposal; hosts without it use their base tone). Unknown values mean the camera's.
+    #[serde(default, deserialize_with = "lenient_base_tone", skip_serializing_if = "BaseTone::is_camera")]
+    pub base_tone: BaseTone,
     /// Display labels of parameters that declare one (`{"type": …, "label": "Dynamic range"}`), by
     /// parameter name. Read by [`Manifest::parse`]; labels that aren't 1-64 printable characters are dropped.
     #[serde(skip)]
     pub labels: Vec<(String, String)>,
+    /// Menu groups of choice parameters that declare them (`"groups": ["", "Kodak", "Kodak", …]`, one
+    /// per option, `""` = not in a group), by parameter name. Read by [`Manifest::parse`]; a list
+    /// whose length differs from the options', or with a name that isn't 1-64 printable characters,
+    /// is dropped (the menu stays flat).
+    #[serde(skip)]
+    pub groups: Vec<(String, Vec<String>)>,
 }
 
 /// The pipeline stage a filter asks for (see [`Manifest::stage`]).
@@ -106,6 +120,52 @@ pub enum Stage {
     Source,
     /// On the finished image.
     Display,
+}
+
+/// What a filter's `pc_analyze` is given (see [`Manifest::analyze_area`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AnalyzeArea {
+    /// The whole uncropped photo, as the source decodes it: a crop or zoom never moves the measurement.
+    #[default]
+    Frame,
+    /// The photo as the develop geometry frames it (orientation, crop, straighten, flips, lens and
+    /// perspective corrections): what the source stage sees. A new crop needs a new measurement.
+    Crop,
+}
+
+/// The base tone a raw gets after a Source filter (see [`Manifest::base_tone`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BaseTone {
+    /// The raw's own: its camera's tone curve, or the host's default raw curve.
+    #[default]
+    Camera,
+    /// None: the filter's output is already a finished rendering (a negative conversion with its
+    /// own tone curve), shown as it is, like a JPEG's. Contrast, Whites and Blacks still apply.
+    Neutral,
+}
+
+impl BaseTone {
+    pub fn is_camera(&self) -> bool {
+        *self == BaseTone::Camera
+    }
+}
+
+fn lenient_base_tone<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<BaseTone, D::Error> {
+    let v = Value::deserialize(d)?;
+    Ok(if v.as_str() == Some("neutral") { BaseTone::Neutral } else { BaseTone::Camera })
+}
+
+impl AnalyzeArea {
+    pub fn is_frame(&self) -> bool {
+        *self == AnalyzeArea::Frame
+    }
+}
+
+fn lenient_area<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<AnalyzeArea, D::Error> {
+    let v = Value::deserialize(d)?;
+    Ok(if v.as_str() == Some("crop") { AnalyzeArea::Crop } else { AnalyzeArea::Frame })
 }
 
 fn lenient_stage<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Option<Stage>, D::Error> {
@@ -136,6 +196,19 @@ impl Manifest {
                     let l = ps.get(k)?.get("label")?.as_str()?.trim();
                     let ok = l.chars().count() <= 64 && l.chars().all(|c| !c.is_control() && !hidden_format(c)) && l.chars().any(visible);
                     ok.then(|| (k.clone(), l.to_string()))
+                })
+                .collect();
+            man.groups = man
+                .params
+                .iter()
+                .filter_map(|(k, spec)| {
+                    let ParamSpec::Choice { options, .. } = spec else { return None };
+                    let names: Vec<String> =
+                        ps.get(k)?.get("groups")?.as_array()?.iter().map(|g| g.as_str().map(|s| s.trim().to_string())).collect::<Option<_>>()?;
+                    let printable = |g: &String| {
+                        g.is_empty() || (g.chars().count() <= 64 && g.chars().all(|c| !c.is_control() && !hidden_format(c)) && g.chars().any(visible))
+                    };
+                    (names.len() == options.len() && names.iter().all(printable) && names.iter().any(|g| !g.is_empty())).then(|| (k.clone(), names))
                 })
                 .collect();
         }
@@ -187,6 +260,11 @@ impl Manifest {
             Some((_, l)) => l.clone(),
             None => humanise(key),
         }
+    }
+
+    /// The menu group of each option of choice parameter `key` (`""`: none), when the manifest gives them.
+    pub fn param_groups(&self, key: &str) -> Option<&[String]> {
+        self.groups.iter().find(|(k, _)| k == key).map(|(_, g)| g.as_slice())
     }
 
     /// The parameter notation the command registry and the generated dialogs use
@@ -412,6 +490,15 @@ mod tests {
         "overlap":2,"area":"canvas"}"#;
 
     #[test]
+    fn analyze_area_is_the_frame_unless_a_filter_asks_for_the_crop() {
+        let with = |v: &str| format!(r#"{{"id":"a.b","name":"A","kind":"filter"{v}}}"#);
+        assert_eq!(Manifest::parse(with("").as_bytes()).unwrap().analyze_area, AnalyzeArea::Frame);
+        assert_eq!(Manifest::parse(with(r#","analyzeArea":"crop""#).as_bytes()).unwrap().analyze_area, AnalyzeArea::Crop);
+        assert_eq!(Manifest::parse(with(r#","analyzeArea":"somewhere""#).as_bytes()).unwrap().analyze_area, AnalyzeArea::Frame);
+        assert_eq!(Manifest::parse(with(r#","analyzeArea":7"#).as_bytes()).unwrap().analyze_area, AnalyzeArea::Frame);
+    }
+
+    #[test]
     fn parses_and_keeps_param_order() {
         let m = Manifest::parse(FULL.as_bytes()).unwrap();
         assert_eq!(m.id, "org.example.tone");
@@ -472,6 +559,19 @@ mod tests {
         assert_eq!(m.param_label("x"), "X", "an unprintable label falls back to the key");
         assert_eq!(humanise("dynamicRange"), "Dynamic range");
         assert_eq!(humanise("ISO_boost"), "ISO boost");
+        let grouped = Manifest::parse(
+            br#"{"id":"a.b","name":"N","kind":"filter",
+                "params":{"stock":{"type":"choice","options":["Generic","Portra","Gold","Superia"],"groups":["","Kodak","Kodak","Fujifilm"]},
+                          "short":{"type":"choice","options":["a","b"],"groups":["G"]},
+                          "flat":{"type":"choice","options":["a","b"],"groups":["",""]},
+                          "bad":{"type":"choice","options":["a","b"],"groups":["G","\u202Eevil"]},
+                          "num":{"type":"number","min":0,"max":1,"default":0,"groups":["G"]}}}"#,
+        )
+        .unwrap();
+        assert_eq!(grouped.param_groups("stock"), Some(&["".to_string(), "Kodak".into(), "Kodak".into(), "Fujifilm".into()][..]));
+        for k in ["short", "flat", "bad", "num", "absent"] {
+            assert_eq!(grouped.param_groups(k), None, "{k}: no usable groups, a flat menu");
+        }
         let odd = Manifest::parse(br#"{"id":"a.b","name":"N","kind":"filter","stage":7}"#).unwrap();
         assert_eq!(odd.stage, None, "an unknown stage is ignored, not an error");
     }

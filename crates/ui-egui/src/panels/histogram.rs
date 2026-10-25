@@ -113,6 +113,21 @@ impl Active {
     }
 }
 
+/// The rectangles of the clipping buttons in the plot's top corners (shadows left, highlights right).
+pub fn clipping_rects(ui: &egui::Ui, plot: Rect) -> [Rect; 2] {
+    let scroll = ui.spacing().scroll;
+    clipping_rects_in(plot, scroll.bar_width, scroll.bar_outer_margin)
+}
+
+/// The clipping indicator rectangles for a given `plot` and scroll-bar geometry.
+pub fn clipping_rects_in(plot: Rect, scroll_bar_width: f32, scroll_bar_outer_margin: f32) -> [Rect; 2] {
+    let inset = 20.0 + scroll_bar_width + scroll_bar_outer_margin;
+    [
+        Rect::from_center_size(pos2(plot.left() + inset, plot.top() + 14.0), egui::vec2(24.0, 22.0)),
+        Rect::from_center_size(pos2(plot.right() - inset, plot.top() + 14.0), egui::vec2(24.0, 22.0)),
+    ]
+}
+
 /// The histogram's pointer input for this frame: the press locks its zone and opens the interaction,
 /// the drag moves that control, a double-click resets it. Returns what the highlight and the readout
 /// should show, `None` when the pointer is nowhere near a zone.
@@ -127,7 +142,8 @@ pub fn interact(app: &mut LccApp, ui: &egui::Ui, resp: &Response, plot: Rect, id
         return None;
     }
     let width = plot.width();
-    let in_plot = |q: Pos2| plot.contains(q);
+    let clips = clipping_rects(ui, plot);
+    let in_plot = |q: Pos2| plot.contains(q) && !clips.iter().any(|c| c.contains(q));
     let zone_of = |q: Pos2| in_plot(q).then(|| (q.x - plot.left()) / width).and_then(zone_at);
     // the zone the pointer is over, and the one a press (or a double-click) landed in: the press's
     // origin, so a drag is judged by where it started
@@ -599,7 +615,9 @@ fn paint_waveform(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, s
         p.rect_filled(track, 0.0, SCOPE_BG);
         graticule_rows(p, track, 4);
         let image = waveform_image(h, &planes, scale);
-        let id = egui::Id::new(("scope-waveform", k));
+        // a texture per scope and track: a Parade beside a Waveform (the second histogram) must not
+        // share one, or the scope drawn last shows in both
+        let id = egui::Id::new(("scope-waveform", mode.name(), k));
         let tex = p.ctx().data_mut(|d| d.get_temp::<egui::TextureHandle>(id));
         let tex = match tex {
             Some(mut t) => {
@@ -607,7 +625,7 @@ fn paint_waveform(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, s
                 t
             }
             None => {
-                let t = p.ctx().load_texture(format!("scope-waveform-{k}"), image, egui::TextureOptions::LINEAR);
+                let t = p.ctx().load_texture(format!("scope-waveform-{}-{k}", mode.name()), image, egui::TextureOptions::LINEAR);
                 p.ctx().data_mut(|d| d.insert_temp(id, t.clone()));
                 t
             }
@@ -917,5 +935,19 @@ mod tests {
             let (ub, vb) = scope_uv(SCOPE_TARGETS[b].1[0], SCOPE_TARGETS[b].1[1], SCOPE_TARGETS[b].1[2]);
             assert!((ua + ub).abs() < 0.02 && (va + vb).abs() < 0.02, "{} vs {}: ({ua},{va}) + ({ub},{vb})", SCOPE_TARGETS[a].0, SCOPE_TARGETS[b].0);
         }
+    }
+
+    /// The clipping rectangles sit in the plot's top corners, symmetric from both edges.
+    #[test]
+    fn clipping_rects_sit_in_the_plots_top_corners() {
+        let plot = Rect::from_min_max(pos2(100.0, 20.0), pos2(400.0, 200.0));
+        let [low, high] = clipping_rects_in(plot, 10.0, 4.0);
+        assert!(plot.contains(low.center()));
+        assert!(plot.contains(high.center()));
+        assert_eq!(low.top(), plot.top() + 3.0);
+        assert_eq!(high.top(), plot.top() + 3.0);
+        assert_eq!(low.size(), egui::vec2(24.0, 22.0));
+        assert_eq!(high.size(), egui::vec2(24.0, 22.0));
+        assert!((low.left() - plot.left() - (plot.right() - high.right())).abs() < 1e-4);
     }
 }

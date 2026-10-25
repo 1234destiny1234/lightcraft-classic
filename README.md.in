@@ -42,7 +42,7 @@ UI, the CLI, a control channel and an MCP server all share.
 - **Local-first:** no account, no cloud, no telemetry, no subscription. The network is used only for things you turn on.
 - **Non-destructive:** originals are never touched; edits live in the catalog and, if you like, in XMP sidecars.
 - **Drivable end to end by AI agents** over MCP, with undo for everything they do.
-- **Open source** (MIT). It is a fork of an open-source project; its copyright notices are kept in [NOTICE](NOTICE)
+- **Open source** (MIT). Chromaforge is a fork of an open-source project; its copyright notices are kept in [NOTICE](NOTICE)
   and [LICENSE](LICENSE).
 
 ## Contents
@@ -205,6 +205,35 @@ option to start it. For unattended installs: `msiexec /i <binary>-<ver>-windows-
 Linux ARM64 (aarch64) builds are paused; `packaging/linux/package.sh aarch64` still builds one locally.
 
 ### Android (early: see [docs/android.md](docs/android.md))
+
+The Android app is the same app as the desktop one, with the same catalog, raw developer and edits, in a
+**touch layout** made first for tablets and foldables (it works on phones too). Develop shows the photo alone; tap
+it for a slim top bar and a tool strip, pick a tool (Basic, Colour, Tone, Detail, Optics, Effects) and drag on the
+photo to set one slider at a time, then Done or Cancel; hold the photo to see the original. Swipe to scroll,
+long-press to select several photos, and Back steps out one level at a time. Import photos, a folder or the camera
+roll; export from the Export sheet to Pictures or share to another app.
+
+The touch layout is on by default on Android and available on every platform: **Settings ▸ General ▸ Layout**
+switches between Touch and Desktop (the choice is remembered).
+
+The app collects nothing and works offline; see the [privacy policy](PRIVACY.md) for the few features that go
+online and what the Android permissions are for.
+
+<table>
+<tr>
+<td width="62%"><img src="docs/images/touch/tablet-develop.jpg" alt="Touch layout on a tablet in landscape: a sunset photo filling the screen, a slim top bar with undo, compare, filmstrip, history, panel and share buttons, and a tool strip at the bottom"><br><sub><b>Tablet.</b> Photo first, tools at the bottom.</sub></td>
+<td width="38%" rowspan="2"><img src="docs/images/touch/phone-library.jpg" alt="Touch layout on a phone in portrait: the Library grid with two columns of demo photos"><br><sub><b>Phone.</b> The Library grid.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/touch/tablet-adjust.jpg" alt="Adjust mode: the Basic tool's sliders as chips under the photo, Shadows selected and shown as +35 at the top"><br><sub><b>Adjust.</b> Drag on the photo to set the chosen slider.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/touch/tablet-settings.jpg" alt="Touch Settings with the Layout row (Touch / Desktop) at the top of General"><br><sub><b>Settings.</b> Layout switches Touch / Desktop.</sub></td>
+<td><img src="docs/images/touch/tablet-export.jpg" alt="The touch Export sheet: JPEG full size, JPEG 2048 px for sharing or TIFF, long edge and quality buttons, and an Export button"><br><sub><b>Export.</b> Save to Pictures or share.</sub></td>
+</tr>
+</table>
+
+Install from the release's APKs:
 
 | Build | File | Notes |
 |---|---|---|
@@ -468,8 +497,10 @@ egui frontend is one swappable crate; nothing below it knows a UI exists. `mcp` 
 
 Humans and agents follow the same rules, so read [AGENTS.md](AGENTS.md) first. The short version:
 
-- **Clean-room.** Never read Adobe binaries or GPL raw/photo code (darktable, RawTherapee, LibRaw, rawspeed, dcraw…);
-  work from public specs and black-box observation.
+- **Clean-room.** Never read Adobe binaries or GPL / LGPL raw and photo code (darktable, RawTherapee, LibRaw,
+  rawspeed…); work from public specs and black-box observation. One exception: dcraw's functions outside its
+  RESTRICTED (Foveon) block, which its author releases free for all uses, may serve as a reference under the dcraw
+  reference policy in [AGENTS.md](AGENTS.md#clean-room-sources-in-addition-to-the-non-negotiables).
 - **No Adobe assets, ever:** no icons, screenshots, presets, profiles, LUTs or fonts from Adobe products. Every
   image, icon and font in the repo is original, public domain, Creative Commons, OFL or permissively licensed, and has
   an entry in [assets/ATTRIBUTION.md](assets/ATTRIBUTION.md) added in the same commit. New fonts go to
@@ -486,6 +517,8 @@ Humans and agents follow the same rules, so read [AGENTS.md](AGENTS.md) first. T
 The app is licensed under the [MIT License](LICENSE), except `crates/segment` and `crates/fetch`, which are
 Apache-2.0 only. It is a fork of an open-source project; that project's copyright notices and required
 third-party notices are in [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+Privacy: the app collects no data; see [PRIVACY.md](PRIVACY.md).
 
 Bundled fonts, icons, images and other assets keep their own open licenses; each one is listed
 with its author, source and license in [assets/ATTRIBUTION.md](assets/ATTRIBUTION.md).

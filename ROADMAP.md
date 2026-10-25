@@ -1,9 +1,9 @@
 # Roadmap
 
-*Last updated 2026-10-21 (version 0.8.2). Revision history: [Log](#log).*
+*Last updated 2026-10-25 (version 0.8.2). Revision history: [Log](#log).*
 
 Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
-Print, Web, publish) and Immich integration as this fork's own focus on top of the upstream engine. Estimates are for
+Print, Web, publish) and Immich integration as Chromaforge's own focus on top of the upstream engine. Estimates are for
 continuous agent-driven development with 4–6 parallel agents and are revised as milestones land.
 
 ## Where we stand
@@ -201,7 +201,7 @@ private 3:2 & 4:3 examples verified through native rendering & full-resolution 1
 
 CR3 lossless Bayer and version 0x100/0x200 C-RAW sensor decoding is verified pixel-exactly on Canon M50, R100 and R8, and EOS R5 Mark II C-RAW decodes from sensor data (four CC0 files pinned); any other CR3, or one that fails to decode, opens from its embedded JPEG as before. See [`docs/cr3.md`](docs/cr3.md) for coding limits, reference provenance and colour limitations.
 
-Decoded (CC0 corpus from raw.pixls.us, `cargo xtask corpus --download`, `crates/raw/tests/corpus.rs`): DNG (uncompressed,
+Decoded (CC0 corpus from raw.pixls.us, `cargo xtask corpus --download`, `crates/raw/tests/it/corpus.rs`): DNG (uncompressed,
 LJ92, lossy JPEG / Smart Previews, Deflate, float, linear, DNG 1.7 JPEG XL tiles: lossless ones bit-exact on synthetic files,
 lossy ones unclipped in the declared linear primaries, checked on one real file), CR2, ARW (uncompressed, ARW2, LJ92; as-shot white balance and black level of pre-2017 bodies from the encrypted
 `SR2SubIFD`, decrypted with a keystream recovered by black-box analysis, `crates/raw/src/vendor/sr2.rs`, `crates/raw/src/vendor/arw.rs`), NEF/NRW uncompressed and Huffman-compressed (lossless, lossy type 1/2, 12/14-bit), RAF uncompressed and lossless/lossy compressed (Bayer and
@@ -215,7 +215,7 @@ Not decoded yet — preview only (no permissively licensed description; black-bo
 **Camera colour matrices:** ARW, NEF, RW2, RAF, CR3, CR2, PEF, Samsung SRW and Olympus ORF files can use guarded, separate chromaticity and tone estimates from their own embedded JPEG (see `docs/camera-preview-colour.md`); this is a per-file camera-look estimate with relative WB, not measured calibration or absolute-Kelvin WB. 52 models whose fit is rejected (or that have no usable JPEG) start from matrices fitted to their measured spectral sensitivities instead (rawtoaces-data, Apache-2.0; `crates/raw/src/spectral.rs`). Other non-DNG raws and rejected fits use the documented neutral fallback (camera RGB ≈ linear sRGB, flagged
 `matrix_is_fallback`) with the file's as-shot white-balance multipliers. Clean sources to evaluate next: manufacturer
 matrices stored in the files themselves (Olympus ImageProcessing `ColorMatrix`, Pentax equivalents; Panasonic RW2 files carry none) and our
-own chart-based calibration (M11.4). Adobe matrices are never used.
+own calibration (M11.4): `<cli> calibrate-lightroom` fits a camera's colour model and looks black-box to Lightroom's exports of a contributor's own photos (maintainer decision 2026-10-25; [docs/calibrate-lightroom.md](docs/calibrate-lightroom.md)); no camera is calibrated yet. Adobe DCP/LCP files and matrices from Adobe-converted DNGs are never used.
 
 ## Lightroom Classic catalog migration
 
@@ -230,6 +230,14 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-25: upstream: no more merges after PR #486 (281 commits, 88 conflicted files, mostly UI the fork replaced);
+  upstream commits are reviewed weekly and the useful ones cherry-picked (`cargo xtask upstream-review`,
+  `docs/upstream-merge.md`); `crates/ui-egui/` joins the fork-owned paths.
+- 2026-10-25: M11.4: `<cli> calibrate-lightroom` (preset, fit, add, list): camera calibrations matched to Lightroom
+  by black-box fits to its exports of contributors' own photos; data rules amended (gaps 1 and 3; 0 cameras so far).
+- 2026-10-22 (upstream): Print page setup and PDF output gain the Japanese photo and postcard papers (L判, 2L判,
+  KG判, はがき, 往復はがき, 六切, 四切, 名刺) at their exact metric sizes, by their customary names in the Print dialog
+  and `print.set`.
 - 2026-10-21: M7: the Enhance Preview dialog (Photo ▸ Enhance…, Ctrl+Alt+I): Raw Details / Super Resolution with a
   before/after preview, output size, estimated time and Create Stack (LR-ENH-DIALOG ✅).
 - 2026-10-21: gap 14 closed: HDR renders (HDR views, HDR exports, gain maps) run on the GPU with the CPU as oracle
@@ -257,7 +265,7 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
 - 2026-10-18: Minolta / Konica Minolta MRW decodes from sensor data (12-bit packed and 16-bit words,
   RGGB and GBRG, as-shot WB from `WBG`); DiMAGE 7, 7Hi, A1, A2, A200 and Dynax / Maxxum 7D verified on
   CC0 files. 551 models verified, 201 preview-only; headline numbers unchanged.
-  checked against the camera JPEG (`crates/raw/tests/canon_pentax_corpus.rs`). 334 models verified, ~50% of
+  checked against the camera JPEG (`crates/raw/tests/it/canon_pentax_corpus.rs`). 334 models verified, ~50% of
   photographers on a verified body; headline numbers unchanged.
 - 2026-10-12 (upstream): Mamiya MEF (ZD) decodes from sensor data and is imported; verified on a CC0 file. 241 models
   verified, 35 unsupported; headline numbers unchanged.
@@ -269,7 +277,7 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
   decode. The EOS R6 Mark III gets its as-shot white balance (`ColorData` 66). 259 models verified; RAW
   decoding 77% → 83%; mainstream ~49% → ~51%, essentials ~64% → ~65%, full ~61%.
 - 2026-10-12 (upstream): 117 Nikon and Fujifilm bodies verified, one CC0 raw.pixls.us file each pinned and checked
-  against the camera JPEG (`crates/raw/tests/body_corpus.rs`); the sweep found COOLPIX 5700 / 8400 / 8800
+  against the camera JPEG (`crates/raw/tests/it/body_corpus.rs`); the sweep found COOLPIX 5700 / 8400 / 8800
   decoding wrongly. 354 models verified, ~58% of photographers on a verified body; headline numbers unchanged.
 - 2026-10-11 (upstream): Sony ILCA-99M2 (α99 II) camera colour: bundled profile from 144 photos; on 30 withheld photos
   mean ΔE vs the camera JPEG 5.11 → 4.87, 25 of them closer.

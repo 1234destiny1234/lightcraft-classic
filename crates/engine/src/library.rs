@@ -159,6 +159,7 @@ pub struct LibraryStores {
 #[serde(default, rename_all = "camelCase")]
 struct PresetsFile {
     user: Vec<Preset>,
+    folders: Vec<String>,
     favorites: Vec<String>,
     /// Favourite profiles, and the recently applied ones (newest first).
     profile_favorites: Vec<String>,
@@ -172,6 +173,7 @@ struct PresetsFile {
 #[derive(Default)]
 struct PresetsSaved {
     generation: u64,
+    folders: Vec<String>,
     profile_favorites: Vec<String>,
     profile_recent: Vec<String>,
     /// Hash of the bytes written: a list borrowed mutably but left as it was isn't rewritten.
@@ -182,6 +184,7 @@ impl PresetsSaved {
     fn state_of(s: &Session) -> PresetsSaved {
         PresetsSaved {
             generation: s.presets.generation(),
+            folders: s.preset_folders.clone(),
             profile_favorites: s.profile_favorites.clone(),
             profile_recent: s.profile_recent.clone(),
             hash: 0,
@@ -190,7 +193,10 @@ impl PresetsSaved {
 
     /// `s` changed its presets or profile lists since this state.
     fn differs(&self, s: &Session) -> bool {
-        self.generation != s.presets.generation() || self.profile_favorites != s.profile_favorites || self.profile_recent != s.profile_recent
+        self.generation != s.presets.generation()
+            || self.folders != s.preset_folders
+            || self.profile_favorites != s.profile_favorites
+            || self.profile_recent != s.profile_recent
     }
 }
 
@@ -341,6 +347,7 @@ fn presets_json(s: &Session) -> String {
     let presets = &s.presets;
     let f = PresetsFile {
         user: presets.iter().filter(|p| !p.builtin).cloned().collect(),
+        folders: s.preset_folders.clone(),
         favorites: presets.iter().filter(|p| p.builtin && p.favorite).map(|p| p.id.clone()).collect(),
         profile_favorites: s.profile_favorites.clone(),
         profile_recent: s.profile_recent.clone(),
@@ -598,7 +605,7 @@ impl Session {
         self.mask_tool_effects = prefs.mask_tool_effects;
         self.label_sets = prefs.label_sets;
         self.lut_profiles = prefs.lut_profiles;
-        crate::cmd::lut_profiles::register_all(self);
+        crate::cmd::lut_profiles::register_all(self, on_disk.then(|| dir.join("Profiles")).as_deref());
         self.keyword_sets = prefs.keyword_sets;
         self.keyword_set = prefs.keyword_set;
         self.recent_keywords = prefs.recent_keywords;
@@ -638,6 +645,7 @@ impl Session {
         }
         // presets
         if let Some(f) = settings.read::<PresetsFile>(files.as_mut(), "presets.json") {
+            self.preset_folders = f.folders;
             for p in &mut self.presets {
                 p.favorite = p.builtin && f.favorites.contains(&p.id) || (!p.builtin && p.favorite);
             }
@@ -718,6 +726,12 @@ impl Session {
                 lib.forgot_local = Some(plan);
             }
         }
+        // keywords read whole from a list a line long (before they were split) become one each
+        if self.split_multiline_keywords() > 0
+            && let Err(e) = self.persist()
+        {
+            log::error!("library: {e}");
+        }
         // smart previews written by an older camera-look fit are brought up to date in the background
         #[cfg(not(target_arch = "wasm32"))]
         if on_disk {
@@ -725,6 +739,34 @@ impl Session {
         }
         self.library_identity = std::sync::Arc::new(());
         Ok(())
+    }
+
+    /// Photos whose keywords hold line breaks (a camera preset's whole keyword list read as one
+    /// keyword by an earlier version) get one keyword a line, journaled, not an undo step. Returns
+    /// how many photos changed.
+    pub fn split_multiline_keywords(&mut self) -> usize {
+        let fix: Vec<(lcc_catalog::PhotoId, lcc_catalog::Meta)> = self
+            .catalog
+            .photos()
+            .filter(|p| p.meta.keywords.iter().any(|k| k.contains(['\r', '\n', '\u{2028}', '\u{2029}'])))
+            .map(|p| {
+                let mut meta = p.meta.clone();
+                meta.keywords = lcc_catalog::keywords::from_file(&meta.keywords, &[]);
+                (p.id, meta)
+            })
+            .collect();
+        let n = fix.len();
+        for (id, meta) in fix {
+            let op = lcc_catalog::Op::SetMeta { id, meta: Box::new(meta) };
+            match self.catalog.apply(op.clone()) {
+                Ok(_) => self.pending_log.push(op),
+                Err(e) => log::warn!("split keywords: {e}"),
+            }
+        }
+        if n > 0 {
+            log::info!("split the line-separated keywords of {n} photo(s) into one keyword a line");
+        }
+        n
     }
 
     /// Write pending ops to the log (fsynced), compact when due, and save changed presets.
@@ -844,6 +886,16 @@ impl Session {
             self.library_identity = std::sync::Arc::new(());
         }
         result
+    }
+
+    /// Let go of the open library's lock (and with it the owner note, `catalog.lock.owner`) while
+    /// the library stays open in this session. For a host that ends the process without running
+    /// destructors (`std::process::exit`), after [`Session::close_library`] has saved: the OS would
+    /// free the lock anyway, but only the lock's `Drop` removes the note. Nothing else is
+    /// protected after this, so call it only when the process is about to end. A no-op without a
+    /// library or a lock.
+    pub fn release_library_lock(&mut self) {
+        drop(self.library.as_mut().and_then(|l| l.lock.take()));
     }
 
     fn view_json(&self) -> Vec<u8> {
@@ -1096,6 +1148,26 @@ mod resolve_tests {
         let e = Session::new().with_fs().open_library(&other, false).err().unwrap().to_string();
         assert!(e.contains("is a file"), "{e}");
         assert!(!e.contains("File exists"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A host that ends the process without destructors releases the lock by hand: the owner note
+    /// goes and another opener is let in, while the session keeps its library.
+    #[test]
+    fn release_library_lock_removes_the_owner_note() {
+        let dir = std::env::temp_dir().join(format!("lc-release-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = Session::new().with_fs();
+        s.open_library(&dir, false).unwrap();
+        s.close_library().unwrap();
+        assert!(dir.join(lcc_catalog::lock::OWNER).exists(), "close_library keeps the lock");
+        assert!(matches!(LibraryLock::acquire(&dir, "other"), Err(lcc_catalog::lock::LockError::InUse(_))));
+        s.release_library_lock();
+        assert!(!dir.join(lcc_catalog::lock::OWNER).exists());
+        drop(LibraryLock::acquire(&dir, "other").unwrap());
+        s.release_library_lock();
+        assert!(s.library.is_some(), "the library stays open");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

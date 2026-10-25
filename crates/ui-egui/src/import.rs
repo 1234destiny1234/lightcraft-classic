@@ -79,6 +79,15 @@ pub struct ImportDialog {
     pub rename: String,
     /// Metadata preset name ("" = none).
     pub metadata_preset: String,
+    /// When true, an inline creator for a new metadata preset is shown.
+    #[serde(default)]
+    pub creating_meta_preset: bool,
+    #[serde(default)]
+    pub new_meta_name: String,
+    #[serde(default)]
+    pub new_meta_creator: String,
+    #[serde(default)]
+    pub new_meta_copyright: String,
     /// Copy: raws are copied as DNG.
     pub dng: bool,
     /// Per candidate: the library already has it in Recently Deleted ([`ImportDialog::set_trashed`]).
@@ -94,6 +103,10 @@ pub struct ImportDialog {
     pub last_clicked: Option<usize>,
     /// The source is a connected Immich server (browsed in the dialog) instead of the scanned files.
     pub immich: bool,
+    /// The library the scan was made in ([`lcc_engine::Session::library_generation`]): its duplicate
+    /// decisions and album ids belong to that catalog, so the review is not shown or confirmed in another.
+    #[serde(skip)]
+    pub library: Option<u64>,
 }
 
 /// A candidate's file type, as the review groups them: its format, or its extension when the
@@ -116,6 +129,11 @@ impl ImportDialog {
     pub fn new(candidates: Vec<ImportCandidate>) -> Self {
         let checked = candidates.iter().map(|c| c.duplicate.is_none() && c.error.is_none()).collect();
         ImportDialog { candidates, checked, on_deleted: "restore".into(), ..Default::default() }
+    }
+
+    /// Whether the library the scan was made in is still the open one (a review that names none counts).
+    fn in_library(&self, app: &LccApp) -> bool {
+        self.library.is_none_or(|g| g == app.session.library_generation())
     }
     /// Mark the candidates whose photo is in Recently Deleted. They are checked when the choice
     /// for them (`on_deleted`) imports them — by default it restores them, so a photo deleted by
@@ -492,6 +510,9 @@ pub fn open(app: &mut LccApp, paths: Vec<String>) -> Result<Value, String> {
     if app.scan.is_some() {
         return Err("a scan is already running".into());
     }
+    if app.review_pending.is_some() {
+        return Err("an import review is waiting for the open dialog to close".into());
+    }
     let sources = paths.clone();
     let (input, paths) = ScanInput::new(&mut app.session, &paths);
     let progress = std::sync::Arc::new(ScanProgress::default());
@@ -575,6 +596,7 @@ pub fn browse(app: &mut LccApp, path: &str, subfolders: Option<bool>) -> Result<
 
 /// Collect a finished scan and open the review (called every frame).
 pub fn poll_scan(app: &mut LccApp, ctx: &egui::Context) {
+    show_pending_review(app, ctx);
     let Some(task) = app.scan.as_ref() else { return };
     ctx.request_repaint_after(std::time::Duration::from_millis(100));
     let out = match task.rx.try_recv() {
@@ -642,7 +664,59 @@ pub fn poll_scan(app: &mut LccApp, ctx: &egui::Context) {
     // only an album the review offers (it may have been deleted while the scan ran)
     d.album = task.album.filter(|id| app.session.catalog.album(lcc_catalog::AlbumId(*id)).is_some_and(|a| !a.folder && !a.is_smart()));
     d.sources = task.sources;
-    app.ui.dialog = Some(crate::state::Dialog::Import { opts: Box::new(d) });
+    if let Some(mp) = &app.session.import_defaults.metadata_preset
+        && app.session.metadata_presets.iter().any(|m| m.name.eq_ignore_ascii_case(mp))
+    {
+        d.metadata_preset = mp.clone();
+    }
+    d.library = Some(app.session.library_generation());
+    app.review_pending = Some(crate::state::Dialog::Import { opts: Box::new(d) });
+    show_pending_review(app, ctx);
+}
+
+/// Open the review of a finished scan once no other dialog is open (a face model's licence, Settings…
+/// opened while the scan ran stays), checked again shortly while it waits. A review whose library was
+/// closed meanwhile (Settings can open another) is dropped.
+fn show_pending_review(app: &mut LccApp, ctx: &egui::Context) {
+    if app.review_pending.is_none() {
+        return;
+    }
+    if let Some(crate::state::Dialog::Import { opts }) = &app.review_pending
+        && !opts.in_library(app)
+    {
+        app.review_pending = None;
+        return;
+    }
+    // (a review over the Import screen's own review takes its place: picking another source there
+    // is what asked for it; any other dialog stays and the review waits)
+    if app.ui.dialog.is_none() || matches!(app.ui.dialog, Some(crate::state::Dialog::Import { .. })) {
+        app.ui.dialog = app.review_pending.take();
+    } else {
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+    }
+}
+
+/// Tests: a review scan that never ends while the returned value lives, so a drop meets it running.
+#[cfg(test)]
+pub(crate) fn stall_scan(app: &mut LccApp) -> Box<dyn std::any::Any> {
+    stall_scan_of(app, false)
+}
+
+/// Tests: the same, for a Local folder browse scan (`browse`) instead of the review's scan.
+#[cfg(test)]
+pub(crate) fn stall_scan_of(app: &mut LccApp, browse: bool) -> Box<dyn std::any::Any> {
+    let progress = std::sync::Arc::new(ScanProgress::default());
+    let (tx, rx) = std::sync::mpsc::channel::<ScanOutput>();
+    let guard = scan_guard(app, &progress, false);
+    app.scan = Some(ScanTask { progress, rx, copy: false, album: None, browse, sources: Vec::new(), guard });
+    Box::new(tx)
+}
+
+/// Whether an import or any scan (the review's, or a Local folder browse) is running, or a finished scan's
+/// review waits for a dialog to close, which a drop of photos must not replace: `open` refuses while a scan
+/// runs, and a browse that finishes replaces `app.import`.
+pub fn running(app: &LccApp) -> bool {
+    app.import.is_some() || app.scan.is_some() || app.review_pending.is_some()
 }
 
 impl ScanTask {
@@ -652,12 +726,20 @@ impl ScanTask {
     }
 }
 
-/// Start importing the dialog's checked files (the dialog's OK / `ui.dialog.confirm`).
+/// Start importing the dialog's checked files (the dialog's OK / `ui.dialog.confirm`). Refused while another
+/// import runs: replacing `app.import` would stop its worker.
 pub fn start(app: &mut LccApp, d: &ImportDialog) -> Result<Value, String> {
     busy_synchronizing(app)?;
     #[cfg(not(target_arch = "wasm32"))]
     if d.immich {
         return crate::panels::connections::start_import(app);
+    }
+    if !d.in_library(app) {
+        return Err("another library was opened since the photos were scanned: nothing was imported".into());
+    }
+    // a browse scan that finishes starts its own import, replacing this one
+    if app.import.is_some() || app.scan.as_ref().is_some_and(|t| t.browse) {
+        return Err(crate::i18n::tr("An import is running").to_string());
     }
     let queue = d.selected_paths();
     if queue.is_empty() {
@@ -687,8 +769,27 @@ pub fn start(app: &mut LccApp, d: &ImportDialog) -> Result<Value, String> {
     if !d.preset.is_empty() {
         params["preset"] = json!(d.preset);
     }
-    if !d.metadata_preset.is_empty() {
-        params["metadataPreset"] = json!(d.metadata_preset);
+    let mut meta_preset = d.metadata_preset.clone();
+    if d.creating_meta_preset && !d.new_meta_name.trim().is_empty() {
+        let name = d.new_meta_name.trim().to_string();
+        let mut fields = serde_json::Map::new();
+        if !d.new_meta_creator.trim().is_empty() {
+            fields.insert("creator".into(), json!(d.new_meta_creator.trim()));
+        }
+        if !d.new_meta_copyright.trim().is_empty() {
+            fields.insert("copyright".into(), json!(d.new_meta_copyright.trim()));
+        }
+        let _ = app.session.execute(
+            "metadata.savePreset",
+            &json!({
+                "name": name,
+                "fields": fields,
+            }),
+        );
+        meta_preset = name;
+    }
+    if !meta_preset.is_empty() {
+        params["metadataPreset"] = json!(meta_preset);
     }
     if d.copy {
         if !d.destination.trim().is_empty() {
@@ -714,8 +815,8 @@ pub fn start(app: &mut LccApp, d: &ImportDialog) -> Result<Value, String> {
 /// Start importing `paths` (files or folders) in the background, e.g. dropped on the window.
 pub fn start_paths(app: &mut LccApp, paths: Vec<String>) -> Result<Value, String> {
     busy_synchronizing(app)?;
-    if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
-        return Err("an import is running".into());
+    if running(app) {
+        return Err(crate::i18n::tr("An import is running").to_string());
     }
     let undo0 = app.session.undo.len();
     let total = paths.len();
@@ -723,29 +824,29 @@ pub fn start_paths(app: &mut LccApp, paths: Vec<String>) -> Result<Value, String
     Ok(json!({"importing": total}))
 }
 
-/// Photos or folders dropped on the window. A drop with a folder in it is scanned and reviewed
-/// exactly as File ▸ Import from Folder… does (one walk with progress, then the review); plain
-/// photo files are added at once. Errors are shown, and a frame is asked for so the scan or
-/// import starts even if the window then sits idle (no input follows a drop).
+/// Photos or folders dropped on the window. They are scanned and reviewed exactly as File ▸ Import
+/// from Folder… does (one walk with progress, then the review), or, with Settings ▸ Import ▸ Import
+/// dropped files without review, added at once on a worker thread. A drop while an import or any
+/// scan runs is refused (a browse that finishes replaces `app.import`). Errors are shown, and a
+/// frame is asked for so the scan or import starts even if the window then sits idle (no input
+/// follows a drop).
 pub fn drop_paths(app: &mut LccApp, ctx: &egui::Context, paths: Vec<String>) {
     ctx.request_repaint();
     if app.lightroom.is_some() {
         app.toast(ctx, crate::i18n::tr("Finish Lightroom catalog import before adding photos"));
         return;
     }
+    // an import (or a scan, a review waiting behind a dialog) stays the one that runs: a drop
+    // meanwhile would replace it
+    if running(app) {
+        app.toast(ctx, crate::i18n::tr("An import is running"));
+        return;
+    }
+    // a folder opens the import review; photo files are added at once
     let r = if paths.iter().any(|p| std::path::Path::new(p).is_dir()) {
-        busy_synchronizing(app).and_then(|_| {
-            if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
-                return Err("an import is running".to_string());
-            }
-            // a Local folder being read gives way, as Import from Folder… does
-            if let Some(t) = app.scan.take() {
-                t.progress.cancel.store(true, Ordering::Relaxed);
-            }
-            open(app, paths)
-        })
+        busy_synchronizing(app).and_then(|_| open(app, paths).map(|_| ()))
     } else {
-        start_paths(app, paths)
+        start_paths(app, paths).map(|_| ())
     };
     if let Err(e) = r {
         log::warn!("drop: {e}");
@@ -984,7 +1085,7 @@ fn show_existing(app: &mut LccApp, ctx: &egui::Context, existing: &[u64]) -> boo
 /// Skipped candidates: (already in the library, identical copies within the source, in Recently
 /// Deleted). Files of photos in Recently Deleted are not "already in the library", and a file with
 /// the same bytes as one earlier in the list (no library photo) is a copy in the source.
-fn dup_counts(d: &ImportDialog) -> (usize, usize, usize) {
+pub(crate) fn dup_counts(d: &ImportDialog) -> (usize, usize, usize) {
     let trashed = d.trashed.iter().filter(|t| **t).count();
     let in_source = d.candidates.iter().filter(|c| c.duplicate.as_deref() == Some("content") && c.existing.is_none()).count();
     let dups = d.candidates.iter().filter(|c| c.duplicate.is_some()).count().saturating_sub(trashed).saturating_sub(in_source);
@@ -1344,28 +1445,121 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
             }
         });
     });
-    if !app.session.metadata_presets.is_empty() {
-        field(ui, "Metadata", |ui| {
-            let cur = if d.metadata_preset.is_empty() { crate::i18n::tr("None").to_string() } else { d.metadata_preset.clone() };
-            crate::widgets::combo_box("import-metadata").selected_text(cur).show_ui(ui, |ui| {
-                if ui.selectable_label(d.metadata_preset.is_empty(), crate::i18n::tr("None")).clicked() {
-                    d.metadata_preset.clear();
-                }
-                for m in &app.session.metadata_presets {
-                    if ui.selectable_label(d.metadata_preset == m.name, &m.name).clicked() {
-                        d.metadata_preset = m.name.clone();
-                    }
-                }
-            });
-        });
-    }
+    field(ui, "Metadata", |ui| metadata_preset_picker(app, ui, d));
     field(ui, "Keywords", |ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut d.keywords).hint_text(crate::i18n::tr("comma, separated")).desired_width(f32::INFINITY));
         register(ui.ctx(), "field:importKeywords", r.rect);
     });
 }
 
-fn candidate_cell(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog, i: usize, rect: Rect) {
+/// The metadata preset to apply on import: None, the saved presets, New Preset… (with the inline
+/// name, creator and copyright fields that save one) and Import Presets…. Shared by the Import
+/// screen and the review's form.
+pub(crate) fn metadata_preset_picker(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            let cur = if d.creating_meta_preset {
+                crate::i18n::tr("New preset…").to_string()
+            } else if d.metadata_preset.is_empty() {
+                crate::i18n::tr("None").to_string()
+            } else {
+                d.metadata_preset.clone()
+            };
+            let combo = crate::widgets::combo_box("import-metadata").selected_text(cur).height(300.0).show_ui(ui, |ui| {
+                let none_btn = ui.selectable_label(!d.creating_meta_preset && d.metadata_preset.is_empty(), crate::i18n::tr("None"));
+                register(ui.ctx(), "button:importMetaNone", none_btn.rect);
+                if none_btn.clicked() {
+                    d.metadata_preset.clear();
+                    d.creating_meta_preset = false;
+                }
+                for m in &app.session.metadata_presets {
+                    let r = ui.selectable_label(!d.creating_meta_preset && d.metadata_preset == m.name, &m.name);
+                    register(ui.ctx(), format!("button:importMetaPreset-{}", m.name), r.rect);
+                    if r.clicked() {
+                        d.metadata_preset = m.name.clone();
+                        d.creating_meta_preset = false;
+                    }
+                }
+                ui.separator();
+                let new_btn = ui.selectable_label(d.creating_meta_preset, crate::i18n::tr("New Preset…"));
+                register(ui.ctx(), "button:importMetaNewPreset", new_btn.rect);
+                if new_btn.clicked() {
+                    d.creating_meta_preset = true;
+                    if d.new_meta_creator.is_empty() {
+                        d.new_meta_creator = app.session.import_defaults.creator.clone();
+                    }
+                    if d.new_meta_copyright.is_empty() {
+                        d.new_meta_copyright = app.session.import_defaults.copyright.clone();
+                    }
+                }
+                let import_btn = ui.button(crate::i18n::tr("Import Presets…"));
+                register(ui.ctx(), "button:importMetaImportPresets", import_btn.rect);
+                if import_btn.clicked() {
+                    let _ = app.run("file.importPresets", json!({}));
+                }
+            });
+            register(ui.ctx(), "combo:importMetadata", combo.response.rect);
+        });
+        if d.creating_meta_preset {
+            ui.add_space(3.0);
+            let t = Tokens::get(ui.ctx());
+            egui::Frame::new().fill(t.inset).inner_margin(egui::Margin::symmetric(8, 6)).corner_radius(4.0).show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(crate::i18n::tr("Preset Name:")).color(t.text_dim).small());
+                        let r =
+                            ui.add(egui::TextEdit::singleline(&mut d.new_meta_name).hint_text(crate::i18n::tr("Preset name")).desired_width(180.0));
+                        register(ui.ctx(), "field:importMetaPresetName", r.rect);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(crate::i18n::tr("Creator:")).color(t.text_dim).small());
+                        let r = ui
+                            .add(egui::TextEdit::singleline(&mut d.new_meta_creator).hint_text(crate::i18n::tr("Creator name")).desired_width(180.0));
+                        register(ui.ctx(), "field:importMetaPresetCreator", r.rect);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(crate::i18n::tr("Copyright:")).color(t.text_dim).small());
+                        let r = ui.add(
+                            egui::TextEdit::singleline(&mut d.new_meta_copyright).hint_text(crate::i18n::tr("© Year Name")).desired_width(180.0),
+                        );
+                        register(ui.ctx(), "field:importMetaPresetCopyright", r.rect);
+                    });
+                    ui.horizontal(|ui| {
+                        let can_save = !d.new_meta_name.trim().is_empty();
+                        let save_btn = ui.add_enabled(can_save, egui::Button::new(crate::i18n::tr("Save Preset")));
+                        register(ui.ctx(), "button:importMetaPresetSave", save_btn.rect);
+                        if save_btn.clicked() {
+                            let name = d.new_meta_name.trim().to_string();
+                            let mut fields = serde_json::Map::new();
+                            if !d.new_meta_creator.trim().is_empty() {
+                                fields.insert("creator".into(), json!(d.new_meta_creator.trim()));
+                            }
+                            if !d.new_meta_copyright.trim().is_empty() {
+                                fields.insert("copyright".into(), json!(d.new_meta_copyright.trim()));
+                            }
+                            let _ = app.session.execute(
+                                "metadata.savePreset",
+                                &json!({
+                                    "name": name,
+                                    "fields": fields,
+                                }),
+                            );
+                            d.metadata_preset = name;
+                            d.creating_meta_preset = false;
+                        }
+                        let cancel_btn = ui.button(crate::i18n::tr("Cancel"));
+                        register(ui.ctx(), "button:importMetaPresetCancel", cancel_btn.rect);
+                        if cancel_btn.clicked() {
+                            d.creating_meta_preset = false;
+                        }
+                    });
+                });
+            });
+        }
+    });
+}
+
+pub(crate) fn candidate_cell(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog, i: usize, rect: Rect) {
     let t = Tokens::get(ui.ctx());
     let c = d.candidates[i].clone();
     let ok = d.importable(i);
@@ -1374,7 +1568,7 @@ fn candidate_cell(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog, i: 
     crate::widgets::announce(&resp, c.name.clone());
     register(ui.ctx(), format!("import:{i}"), img);
     let p = ui.painter();
-    p.rect_filled(img, 3.0, Color32::from_gray(30));
+    p.rect_filled(img, 3.0, t.skeleton);
     // thumbnail (background job; the grid only asks for the cells in view)
     let slot = Slot::Import(i as u32);
     if !app.renderer.textures.contains_key(&slot)

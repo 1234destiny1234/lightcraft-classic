@@ -113,7 +113,7 @@ pub fn inspect(app: &LccApp, ctx: &egui::Context) -> Value {
         "selection": app.session.selection.ids.iter().map(|p| p.0).collect::<Vec<_>>(),
         "activeMask": app.session.active_mask,
         "widgetCount": app.widgets.len(),
-        "perf": {"viewFollowed": app.session.view_followed, "viewWorkedOut": app.session.view_worked_out, "frameMs": app.perf.frame_ms, "logicMs": app.perf.logic_ms, "updateMs": app.perf.update_ms, "maxUpdateMs": app.perf.max_update_ms, "fps": app.perf.fps, "lastRenderMs": app.renderer.last_main_ms, "renderQueue": app.renderer.queued(), "rendersInFlight": app.renderer.in_flight(), "pendingSlots": app.renderer.pending_slots(), "mergeRunning": app.merge.busy(), "lastMerge": app.merge.last_result, "rendersDone": app.renderer.completed, "thumbTextures": app.renderer.thumb_textures(), "variantTextures": app.renderer.variant_textures(), "gpu": (lcc_engine::gpu::ready() && lcc_engine::gpu::available()).then(lcc_engine::gpu::adapter_name).flatten(), "gpuReason": lcc_engine::gpu::unavailable_reason(), "gpuFallback": lcc_engine::gpu::last_fallback()},
+        "perf": {"viewFollowed": app.session.view_followed, "viewWorkedOut": app.session.view_worked_out, "frameMs": app.perf.frame_ms, "logicMs": app.perf.logic_ms, "updateMs": app.perf.update_ms, "maxUpdateMs": app.perf.max_update_ms, "fps": app.perf.fps, "lastRenderMs": app.renderer.last_main_ms, "adjustQuality": app.hq_drag.quality(app.session.interaction.as_ref().filter(|_| app.ui.settings.high_quality_adjustment_previews).map(|i| (i.photo, i.label.as_str()))).name(), "renderQueue": app.renderer.queued(), "rendersInFlight": app.renderer.in_flight(), "pendingSlots": app.renderer.pending_slots(), "mergeRunning": app.merge.busy(), "lastMerge": app.merge.last_result, "rendersDone": app.renderer.completed, "thumbTextures": app.renderer.thumb_textures(), "variantTextures": app.renderer.variant_textures(), "hdrWindowsKept": app.renderer.hdr_windows_kept(), "gpu": (lcc_engine::gpu::ready() && lcc_engine::gpu::available()).then(lcc_engine::gpu::adapter_name).flatten(), "gpuReason": lcc_engine::gpu::unavailable_reason(), "gpuFallback": lcc_engine::gpu::last_fallback()},
         "loupe": app.loupe_shown.map(|(p, src)| json!({
             "photo": p.0,
             "source": src,
@@ -222,6 +222,11 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
         "engine.execute" | "ui.menu.invoke" | "command" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             let params = p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
+            // a request from outside the app (an agent, a script): the program comes only from
+            // what the user set up
+            if let Err(e) = lcc_engine::cmd::edit_in::refuse_program_choice(&mut app.session, id, &params) {
+                return err(e);
+            }
             let r = app.run(id, params);
             ctx.request_repaint();
             wrap(r)
@@ -340,6 +345,23 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
             ctx.request_repaint();
             ok(Value::Null)
         }
+        "ui.dropFiles" => {
+            // every entry must be a string: a script is not told `ok` for a part of what it sent
+            let Some(paths) =
+                p.get("paths").and_then(Value::as_array).and_then(|a| a.iter().map(|v| v.as_str().map(str::to_string)).collect::<Option<Vec<_>>>())
+            else {
+                return err("ui.dropFiles: paths must be an array of strings");
+            };
+            if p.get("hover").and_then(Value::as_bool).unwrap_or(false) {
+                app.drop_hover = paths;
+            } else {
+                // the drag ends with the drop, as it does for the OS
+                app.drop_hover.clear();
+                app.drop_pending = paths;
+            }
+            ctx.request_repaint();
+            ok(Value::Null)
+        }
         "ui.text" => {
             app.synthetic.push(egui::Event::Text(s("text").unwrap_or("").to_string()));
             ctx.request_repaint();
@@ -393,6 +415,14 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
             lcc_develop::presets::deep_merge(&mut v, p);
             match serde_json::from_value::<crate::UiState>(v) {
                 Ok(mut u) => {
+                    // the editors Edit In starts are the user's to choose, in Settings (as for
+                    // `engine.execute` above)
+                    let (old, new) = (&app.ui.settings, &u.settings);
+                    if (&old.external_editor, &old.photocraft_path) != (&new.external_editor, &new.photocraft_path) {
+                        return err("ui.set: `settings.externalEditor` and `settings.photocraftPath` choose the program the app starts, so \
+                             they're set only in Settings ▸ External Editing, not over MCP or the control channel"
+                            .to_string());
+                    }
                     if let Err(error) = crate::docking::set_widths(&mut u, p) {
                         return err(error);
                     }
@@ -439,8 +469,10 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
                             | crate::state::Dialog::SamModel { .. }
                             | crate::state::Dialog::SmartRules { .. }
                             | crate::state::Dialog::SaveEffect { .. }
+                            | crate::state::Dialog::CaptureTime { .. }
                     ))
                     || (r.is_ok() && crate::panels::dialogs::keeps_open(app, &d))
+                    || (r.is_err() && crate::lightroom_destination::keeps_open_on_error(app, &d))
                 {
                     app.ui.dialog = Some(d);
                 }

@@ -4,7 +4,7 @@
 
 ## How changes reach `main`
 
-`main` on the fork is protected by two rulesets:
+`main` on Chromaforge is protected by two rulesets:
 
 - **No force-push, no deletion** — nobody bypasses this.
 - **Pull request required** (0 approvals, merge commits only) and the **"Linux (cargo xtask ci)"** check must be
@@ -23,7 +23,7 @@ Every change goes on a branch, opens a PR and is set to auto-merge
 | Push to `release` | none: the dispatched run tested that commit | none |
 
 `cargo xtask ci --fast` runs fmt, brand, docs, notes (release-note entries, `docs/whats-new/README.md`), clippy
-`-D warnings` (incl. the HEIF feature), parity refs, shared-check, layers, assets, deny, the wasm check and the Android check (`cargo xtask android check`, see
+`-D warnings` (incl. the HEIF feature), parity refs, layers, assets, deny, the wasm check and the Android check (`cargo xtask android check`, see
 [`android.md`](android.md)); it skips
 the workspace and HEIF test runs. The SIL step runs `cargo xtask sil` (docs/testing-sil.md) once that command
 exists and is skipped until then. Locally, `cargo xtask ci` stays the full run; use `--fast` per commit and run the targeted tests of what you touched.

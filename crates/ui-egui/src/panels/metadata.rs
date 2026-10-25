@@ -608,13 +608,13 @@ fn gps(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &[u64]) 
     ui.add_space(6.0);
 }
 
-fn rating(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+pub(crate) fn rating(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let t = Tokens::get(ui.ctx());
     small(ui, "Rating");
     let shared = common(photos, "rating");
     let current = shared.as_deref().and_then(|r| r.parse::<u8>().ok()).unwrap_or(0);
     ui.horizontal(|ui| {
-        if let Some(r) = crate::widgets::stars(ui, "info", current, 18.0) {
+        if let Some(r) = crate::rating::Rating::new("info", current).show(ui) {
             // in Compare / Survey only the active photo, as the rating keys and the bottom pill do
             let mut params = json!({"rating": r});
             crate::panels::compare::target_active(app, &mut params);
@@ -628,7 +628,7 @@ fn rating(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
 }
 
 /// Colour label: one swatch per label (hover shows its name); clicking the current one clears it.
-fn label(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+pub(crate) fn label(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let t = Tokens::get(ui.ctx());
     small(ui, "Label");
     let shared = common(photos, "label");
@@ -708,6 +708,12 @@ fn extras(app: &mut LccApp, ui: &mut egui::Ui, p: &Photo) {
         }
         if a.group.is_some() {
             line.push_str(crate::i18n::tr(if a.best { " · best of its burst" } else { " · in a burst" }));
+        }
+        if let Some(eyes) = a.eyes_open {
+            line.push_str(&crate::i18n::tr_format!(" · eyes {:.0}%", eyes * 100.0));
+        }
+        if let Some(aest) = a.aesthetic {
+            line.push_str(&crate::i18n::tr_format!(" · aesthetic {:.1}", aest));
         }
         ui.add_space(4.0);
         ui.label(egui::RichText::new(line).color(t.text_dim));

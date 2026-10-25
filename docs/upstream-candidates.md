@@ -1,7 +1,11 @@
 # Upstream candidates and our diff against upstream (U.5)
 
-Goal: keep the fork's diff in files shared with upstream (everything not `[owned]` in `upstream-owned.txt`) small, so
-the weekly upstream merge stays cheap. Fork-only logic lives in owned files; shared files carry one-line call-outs.
+> **Since 2026-10-25 the fork no longer merges upstream** (`docs/upstream-merge.md`): it reviews and cherry-picks
+> upstream commits instead, so a small diff in shared files no longer saves merge work. This list stays for the
+> generic fixes worth offering upstream (`cargo xtask upstream-pr`).
+
+Goal (until 2026-10-25): keep Chromaforge's diff in files shared with upstream (everything not `[owned]` in
+`upstream-owned.txt`) small, so the weekly upstream merge stays cheap. Chromaforge-only logic lives in owned files; shared files carry one-line call-outs.
 Generic fixes and features go upstream as PRs (this list) and disappear from our diff once merged.
 
 ## Measurement
@@ -17,18 +21,18 @@ divergence), shared paths only:
 The normalised number is the one that predicts merge work: rename-only lines are rewritten by
 `cargo xtask rename-crates --upstream`. What was done:
 
-- **Fork-only files in shared crates declared owned** (no upstream counterpart, so they never conflict): Immich,
+- **Chromaforge-only files in shared crates declared owned** (no upstream counterpart, so they never conflict): Immich,
   credentials and catalog commands, `remote.rs`, fork test files, `legacy.rs` files, brand/packaging tooling.
 - **Classic shell out of shared ui-egui files**, each into an owned child module (it sees the parent's private
   helpers, so the parent's signatures stay upstream's):
   - `panels/left.rs` → `panels/classic_left.rs` (Library's column, Catalog rows, disk folders): 416 → 49 lines.
   - `shortcuts.rs` → `keymap_classic.rs` (keymap sets, Classic table, keymap files, module keys, deferred Tab): 251 → 39.
-  - `menus.rs` → `menus_fork.rs` (one call-out each in `ui_commands`, `run_ui_command`, `ui_enabled`; the fork's
+  - `menus.rs` → `menus_fork.rs` (one call-out each in `ui_commands`, `run_ui_command`, `ui_enabled`; Chromaforge's
     command arms): 259 → 124. Table rows stay in place so menu order is unchanged.
   - `lib.rs` → `shell.rs` (the module shell's edges, Tab deferral): 153 → 116.
 - **Catalog steps of the apps**: `apps/app/src/catalog_hooks.rs`, `apps/cli/src/catalog_migrate.rs`.
 - **Locale catalogs split**: shared `locales/<code>.json` / `<code>-formats.json` now hold upstream's rows only;
-  the fork's added and changed messages are in owned `locales/fork/` and are merged over them at load
+  Chromaforge's added and changed messages are in owned `locales/fork/` and are merged over them at load
   (`i18n_fork.rs` for messages, `build.rs` for formats). Upstream rows that still name the legacy product are
   replaced in place (brand check). Remaining locale diff: rows upstream has that we dropped.
 

@@ -876,7 +876,9 @@ fn history_steps(
             "" => "Lightroom step".to_string(),
             n => n.chars().take(120).collect(),
         };
-        steps.push(lcc_catalog::HistoryStep { label, settings: Arc::new(lcc_develop::apply_partial(base, &partial, 1.0)) });
+        let mut settings = lcc_develop::apply_partial(base, &partial, 1.0);
+        crate::crs::keep_chosen_dcp(base, &mut settings);
+        steps.push(lcc_catalog::HistoryStep { label, settings: Arc::new(settings) });
     }
     if !steps.is_empty() && steps.last().is_some_and(|l| l.settings != *current) {
         steps.push(lcc_catalog::HistoryStep { label: "Lightroom catalog".into(), settings: current.clone() });
@@ -911,12 +913,9 @@ fn snapshot_versions(
             "" => "Lightroom snapshot".to_string(),
             n => n.chars().take(120).collect(),
         };
-        versions.push(lcc_catalog::Version {
-            name,
-            created: now.to_string(),
-            settings: Arc::new(lcc_develop::apply_partial(base, &partial, 1.0)),
-            auto: false,
-        });
+        let mut settings = lcc_develop::apply_partial(base, &partial, 1.0);
+        crate::crs::keep_chosen_dcp(base, &mut settings);
+        versions.push(lcc_catalog::Version { name, created: now.to_string(), settings: Arc::new(settings), auto: false });
     }
     (versions, skipped)
 }
@@ -1218,7 +1217,9 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, mut data: CatalogImport, co
             let base = p.develop.clone();
             match mapped_settings(&src.settings, target, aspect, orientation, stored_aspect) {
                 Ok((partial, unknown)) => {
-                    p.develop = Arc::new(lcc_develop::apply_partial(&base, &partial, 1.0));
+                    let mut develop = lcc_develop::apply_partial(&base, &partial, 1.0);
+                    crate::crs::keep_chosen_dcp(&base, &mut develop);
+                    p.develop = Arc::new(develop);
                     p.edited = Some(now.clone());
                     if !unknown.is_empty() {
                         unmapped.insert(src.source_id, unknown);
@@ -1669,14 +1670,16 @@ mod tests {
         let mut s = crate::Session::new();
         let mut data = sample();
         data.photos[1].history = vec![
-            row(json!({"id_local":3,"name":"Contrast","dateCreated":20.0,"text":"s = { Exposure2012 = 1.25, Contrast2012 = 17 }"})),
+            row(
+                json!({"id_local":3,"name":"Contrast","dateCreated":20.0,"text":"s = { Exposure2012 = 1.25, Contrast2012 = 17, CameraProfile = \"Example\" }"}),
+            ),
             row(json!({"id_local":2,"name":"Exposure","dateCreated":10.0,"text":"s = { Exposure2012 = 1.25 }"})),
             row(json!({"id_local":4,"name":"Broken","dateCreated":15.0,"text":"not lua {"})),
         ];
         let r = apply(&mut s, data, false).unwrap();
         let master = s.catalog.photo(PhotoId(r["mapping"]["1"].as_u64().unwrap())).unwrap();
         let labels: Vec<_> = master.history.iter().map(|h| h.label.as_str()).collect();
-        // the newest step lacks the camera profile field, which maps to nothing: same settings, no extra entry
+        // the newest step matches the current settings: no extra entry
         assert_eq!(labels, ["Exposure", "Contrast"]);
         assert_eq!(master.history[0].settings.light.exposure, 1.25);
         assert_eq!(master.history[0].settings.light.contrast, 0.0);
@@ -1797,12 +1800,14 @@ mod tests {
         let album = s.catalog.albums().find(|a| a.name == "Keepers").unwrap();
         assert_eq!(album.photos, vec![copy.id, master.id]);
         assert!(album.parent.is_some());
-        assert!(r["unmapped"]["1"].as_array().unwrap().iter().any(|v| v.as_str() == Some("CameraProfile")));
+        // Lightroom's profile name picks the camera's calibrated look of that name
+        assert_eq!(master.develop.profile.camera, "cal:example");
+        assert!(!r["unmapped"]["1"].as_array().is_some_and(|a| a.iter().any(|v| v.as_str() == Some("CameraProfile"))));
         assert_eq!(s.undo.len(), 1);
         s.undo_step().unwrap();
         assert!(s.catalog.is_empty());
         assert!(s.catalog.albums().next().is_none());
-        assert!(data.photos[1].settings.contains("CameraProfile")); // unmapped source stays intact
+        assert!(data.photos[1].settings.contains("CameraProfile")); // the source stays intact
     }
     #[test]
     fn smart_collections_become_smart_albums_and_stacks_are_kept() {

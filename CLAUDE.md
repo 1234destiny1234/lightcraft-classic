@@ -1,15 +1,19 @@
 # Instructions for agents
 
-The app is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. It is a fork of an upstream project (see `NOTICE`; merge procedure in `docs/upstream-merge.md`).
+Chromaforge (the app) is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. It is a fork of an upstream project (see `NOTICE`). Since 2026-10-25 the fork no longer merges upstream: upstream commits are reviewed weekly and the useful ones cherry-picked (`cargo xtask upstream-review`, procedure in `docs/upstream-merge.md`).
 
 ## The name lives in `brand.toml` only
 - The product name, binary names, app id, settings folder, env-var prefix, MCP server id, URL scheme and file
   extensions are defined once, in [`brand.toml`](brand.toml), and reach code through the `lcc-brand` crate. Never write
-  the product name (or a legacy upstream name) in code, UI strings, docs or tests: say "the app" in prose, use `{app}`
+  the product name (or a legacy upstream name) in code, UI strings or tests: use `{app}`
   (display name), `{cli}` and `{env}` in i18n catalogs, and `lcc_brand::…` constants in code.
-- `cargo xtask brand check` (part of `cargo xtask ci`) fails if the name appears anywhere else. Allowed exceptions:
+- **Docs name the fork: Chromaforge.** Markdown files (docs, READMEs, plans) refer to this fork as "Chromaforge",
+  literally, never "this fork" / "the fork" (maintainer decision 2026-10-25). Only the display name is allowed there;
+  binary names, the env prefix and legacy names still go through templates or placeholders.
+- `cargo xtask brand check` (part of `cargo xtask ci`) fails if the name appears anywhere else (Markdown files and `.md.in` templates may use
+  the display name). Allowed exceptions:
   `brand.toml`, `[legacy]` handling, `NOTICE`, `LICENSE`, `assets/ATTRIBUTION.md`, `docs/upstream-merge.md`.
-- Docs that genuinely need the name are written as `X.md.in` templates with `{{app}}`, `{{binary}}`, `{{cli_binary}}`,
+- Docs that need the binary names, env prefix or ids are written as `X.md.in` templates with `{{app}}`, `{{binary}}`, `{{cli_binary}}`,
   `{{env_prefix}}`, `{{app_id}}`, `{{settings_dir}}`, rendered by `cargo xtask docs`; otherwise docs write `<app>`,
   `<binary>`, `<cli>`, `<PREFIX>`, `<settings_dir>` for the `brand.toml` values.
 - Crates are `lcc-*`; the packages with binaries are `lcc-app` (desktop), `lcc-cli` and `lcc-web`. Inside `target/` the
@@ -60,7 +64,9 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **`unsafe` lives only in `crates/sysmem`** (two FFI calls: `malloc_zone_pressure_relief`, that returns freed
   allocator pages to macOS after raw decodes, and `fsync`, for volumes such as SMB shares that refuse std's `F_FULLFSYNC`) **and `crates/hdrmeta`** (wgpu-hal calls on Linux / BSD: open the
   window's Vulkan device with `VK_EXT_hdr_metadata`, and `vkSetHdrMetadataEXT` on its swapchain, so the Wayland
-  compositor shows HDR; no-op elsewhere). **`crates/android-host`** (JNI: adopt the Java VM and activity handles
+  compositor shows HDR; no-op elsewhere). **`crates/gpumem`** (wgpu-hal calls: read how much memory the window's GPU offers — Vulkan
+  device-local heaps, the DXGI budget, Metal's working set — so the HDR zoom cache is only offered where it fits;
+  `None` elsewhere). **`crates/android-host`** (JNI: adopt the Java VM and activity handles
   android-activity gives the Android app, for its pickers and links) **`crates/winspool`** (Win32 GDI / winspool calls on Windows: list the system's printers and draw rendered pages on
   one, for printing through the Windows print spooler; reports unsupported elsewhere) **and `apps/android`'s `android_main`** (the
   `#[unsafe(no_mangle)]` entry point android-activity looks up; nothing else). Every other production crate root has `#![forbid(unsafe_code)]`. A new
@@ -81,7 +87,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   integration tests, examples and benches. New crates start with the attribute.
 
 ## Non-negotiables
-- **Clean-room.** Never read/disassemble anything inside Adobe app bundles (names/listings only). Never copy Adobe icons, presets, profiles (DCP), lens profiles (LCP), camera matrices, fonts. Observation of the installed Lightroom is read-only (it syncs the user's personal library: never import/edit/rate/delete there). Never copy GPL/LGPL/AGPL code (darktable, RawTherapee, ART, LibRaw, rawspeed, rawloader, rawler, lensfun, dcraw-derived GPL code…).
+- **Clean-room.** Never read/disassemble anything inside Adobe app bundles (names/listings only). Never copy Adobe icons, presets, profiles (DCP), lens profiles (LCP), camera matrices, fonts (one exception: dcraw's `adobe_coeff` matrices, below). Observation of the installed Lightroom is read-only (it syncs the user's personal library: never import/edit/rate/delete there). Never copy GPL/LGPL/AGPL code (darktable, RawTherapee, ART, LibRaw, rawspeed, rawloader, rawler, lensfun, dcraw's RESTRICTED Foveon code, GPL descendants of dcraw…). dcraw's other functions fall under the dcraw reference policy below.
 - **Pure Rust** in the product. No C/C++ dependencies.
 - **Layering** (`plan/architecture.md` §3, enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
 - **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI, control channel and MCP all dispatch by id. Every slider is a `develop` control spec.
@@ -94,22 +100,50 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **Quality gates:** every commit/PR passes the fast checks, `cargo xtask ci --fast` (fmt, clippy -D warnings, build
   incl. the wasm check, brand, layers, assets, parity, deny; the required PR check) plus the SIL suite and the targeted
   tests of what you touched. The full `cargo xtask ci` (every test, all three OSes) runs before a release (a manual CI
-  dispatch on the commit that then goes to `release`). See [`docs/ci.md`](docs/ci.md).
+  dispatch on the commit that then goes to `release`). One `ci` runs at a time per machine; others wait their turn
+  (`xtask/src/ci_lock.rs`). See [`docs/ci.md`](docs/ci.md).
 - **Commits:** one task id per commit (`M2.3: local Laplacian highlights/shadows`). Only green states. End messages with the attribution line required by the environment.
 - **Release notes, one file per change:** a user-visible change adds `docs/whats-new/<YYYY-MM-DD>-<slug>.md` (one
   `### Title` and its bullets, for Help ▸ What's New) and, when the release's changelog should mention it,
   `docs/changelog/unreleased/<YYYY-MM-DD>-<slug>.md` (one `## Section` and its bullets); the READMEs there say how.
-  Never add to `docs/whats-new.md` (upstream's entries, changed only by upstream merges) or to a released
+  Never add to `docs/whats-new.md` (upstream's entries up to the last merge, now frozen) or to a released
   `docs/changelog/<version>.md`. `cargo xtask notes --check` (part of `ci`) checks every entry and fails when
   `docs/whats-new.md` changed outside an upstream merge.
 
 ## Clean-room sources (in addition to the non-negotiables)
+- **Maintainer decision 2026-10-26:** anything legal to redistribute, universal and helpful may ship in releases; the
+  clean-room rules no longer limit bundling beyond what the law and licences require. Applied so far: dcraw's
+  `adobe_coeff` matrices (dcraw.c's non-Foveon code is "free for all uses") ship as `crates/camdb/data/cameras/dcraw.toml`
+  (`lcc_camdb::Source::Dcraw`, ranked below measured and spectral data), generated by `tools/dcraw_adobe_coeff.py`.
+  Still out: Adobe's own files (DCP/LCP, presets, assets) and copyleft code or data (GPL/LGPL/AGPL/MPL, including
+  LibRaw's updated copies of dcraw's table).
 - darktable and Ansel may be used **as running applications, manuals and prose design notes only**.
 - Their source trees in `../darktable` and `../ansel` are **off-limits to agents**: never open, grep, read or copy
   them. The same goes for GPL data tables wherever they appear: `noiseprofiles.json`, `wb_presets.json`,
   `colormatrices.c`, basecurves.
+- **dcraw reference policy** (2026-10-24). Dave Coffin's `dcraw.c` may be read, and its raw-decoding
+  functions translated, **except** the block between `/* RESTRICTED code starts here */` and `/* RESTRICTED code ends
+  here */` (the `foveon_*` functions). The file's header releases everything outside that block "free for all uses",
+  which fits the MIT workspace; the restricted block is GPL-only and stays off-limits, so X3F stays clean-room.
+  - Only dcraw's own file, from dcraw's site or a verbatim mirror of it; name its `$Revision`. Never LibRaw
+    (LGPL-2.1 / CDDL), RawTherapee's `dcraw.cc` (GPL), UFRaw or any other dcraw descendant, even where a function
+    looks the same.
+  - Decoding code, and one table of camera data: `adobe_coeff`'s matrices (most read from Adobe's converter) ship as
+    `crates/camdb/data/cameras/dcraw.toml`, generated by `tools/dcraw_adobe_coeff.py` and ranked below measured and
+    spectral data (maintainer decision 2026-10-26). Its levels and any other dcraw data stay out.
+  - Say what was done. The module docs and the commit's **Sources:** line name the dcraw revision and function(s)
+    and say "translated from" or "read as a reference"; never "no code copied" when the structure follows dcraw.
+    `NOTICE` credits dcraw. Check every layout on CC0 samples as for any other decoder.
+  - Every other decoder source stays unread: rawspeed, rawloader, rawler / dnglab, LibRaw, darktable, RawTherapee,
+    ART. dcraw's last revision (1.478, 2018) predates CR3, Nikon HE and ARQ; those stay clean-room.
+  - Upstream doesn't share this policy: decoders built on dcraw are Chromaforge-only and are never offered upstream.
 - Camera matrices are **never harvested from Adobe-converted DNGs**: check the DNG's `Software` tag (Adobe DNG
   Converter, Lightroom, Camera Raw) and reject those. Camera-native DNGs (written by the camera itself) are fine.
+- **Black-box fits to Lightroom output images may ship** (maintainer decision 2026-10-25): a contributor runs
+  `<cli> calibrate-lightroom fit` on their own raws and Lightroom's exports of them, and the resulting aggregate
+  numbers (`crates/camdb/data/calibrations/*.json`, added with `<cli> calibrate-lightroom add`) may be committed and
+  bundled. Adobe DCP/LCP files, matrices from Adobe-converted DNGs and Adobe-rendered pixels never ship; no image,
+  file name, date, serial, location or lens enters a calibration (allow-listed fields only).
 - A person's **own** `.dcp` camera profiles and XMP looks may be imported at run time (`camera.importDcp`,
   `profile.import`; maintainer decision 2026-10-18). None is ever committed, bundled or used as a test fixture: tests
   build their bytes in code.
@@ -173,7 +207,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - Shared real-file test corpora (Photoshop-authored PSDs, etc.) live in [`storytold/photocraft-corpus`](https://github.com/storytold/photocraft-corpus), explained in [craftrules `standards/test-corpora.md`](https://github.com/storytold/craftrules/blob/main/standards/test-corpora.md). Never commit large binary fixtures to this repo; fetch them pinned by commit and sha256-verified, as PhotoCraft does with `cargo xtask corpus`.
 
 ## Testing & performance (do this often)
-- Unit/property tests next to the code; end-to-end tests drive real binaries (`crates/mcp/tests/e2e.rs`,
+- Unit/property tests next to the code; end-to-end tests drive real binaries (`crates/mcp/tests/it/e2e.rs`,
   `apps/cli/tests/`). Tests check behaviour and invariants, not implementation details: no change-detector tests
   (exact sizes, positions, frame counts, constants, labels) and no golden-output tests for image/decode quality. Crash
   fixes need a hostile-input no-panic check. Prefer the SIL harness (`cargo xtask sil`, `docs/testing-sil.md`) and

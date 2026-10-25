@@ -423,6 +423,110 @@ pub fn build_report(log: &str, manifest: &Manifest, range: &str) -> Report {
     Report { text, commits }
 }
 
+// ---------------------------------------------------------------- upstream-review
+
+/// The file recording the last upstream commit reviewed (the fork no longer merges upstream:
+/// `docs/upstream-merge.md`).
+const REVIEWED_FILE: &str = "upstream-reviewed.txt";
+
+/// The upstream commit last reviewed, from [`REVIEWED_FILE`] (its first line that isn't a comment).
+fn last_reviewed(root: &Path) -> Result<String, String> {
+    let text = std::fs::read_to_string(root.join(REVIEWED_FILE)).map_err(|e| format!("{REVIEWED_FILE}: {e}"))?;
+    text.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_string)
+        .ok_or_else(|| format!("{REVIEWED_FILE}: no commit recorded"))
+}
+
+/// What a path belongs to, for grouping a review: the crate or app it is in, else its top folder.
+pub fn area_of(path: &str) -> String {
+    let mut segs = path.split('/');
+    match (segs.next(), segs.next()) {
+        (Some("crates" | "apps"), Some(name)) => format!("{}/{name}", path.split('/').next().unwrap_or("")),
+        (Some(top), Some(_)) => top.to_string(),
+        (Some(file), None) => file.to_string(),
+        _ => String::new(),
+    }
+}
+
+/// `cargo xtask upstream-review [--ref REF] [--done [REF]]`: list the upstream commits since the last
+/// review (`upstream-reviewed.txt`), grouped by what they touch, into
+/// `target/upstream/review-YYYYMMDD.md` for porting by hand (`git cherry-pick -x`); `--done` records
+/// REF (default upstream/main) as reviewed.
+pub fn review(root: &Path, args: &[&str]) -> Result<(), String> {
+    let mut reference = DEFAULT_REF.to_string();
+    let mut done = false;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match *a {
+            "--ref" => reference = it.next().ok_or("--ref needs a value")?.to_string(),
+            "--done" => done = true,
+            r if done && !r.starts_with('-') => reference = r.to_string(),
+            other => return Err(format!("upstream-review: unknown argument `{other}`")),
+        }
+    }
+    if reference.starts_with("upstream/") && git_ok(root, &["remote", "get-url", "upstream"]) {
+        git(root, &["fetch", "-q", "upstream"])?;
+    }
+    let tip = git(root, &["rev-parse", "--verify", &format!("{reference}^{{commit}}")])?.trim().to_string();
+    if done {
+        let text = format!("# The last upstream commit reviewed for porting (`cargo xtask upstream-review`; docs/upstream-merge.md).\n{tip}\n");
+        std::fs::write(root.join(REVIEWED_FILE), text).map_err(|e| format!("{REVIEWED_FILE}: {e}"))?;
+        println!("upstream-review: recorded {} as reviewed in {REVIEWED_FILE}", short(&tip));
+        return Ok(());
+    }
+    let base = last_reviewed(root)?;
+    let manifest = Manifest::load(root)?;
+    let range = format!("{base}..{tip}");
+    let log = git(root, &["log", "--no-merges", "--no-renames", "--reverse", "--numstat", "--format=%x01%H%x09%s", &range])?;
+    let report = build_review(&log, &manifest, &range);
+    let dir = root.join("target/upstream");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("upstream-review-{}.md", today()));
+    std::fs::write(&path, &report.text).map_err(|e| e.to_string())?;
+    println!("upstream-review: {} commit(s) in {range}: {}", report.commits, path.display());
+    println!("  port what helps: git cherry-pick -x <hash>, then cargo xtask rename-crates --upstream --since HEAD~1");
+    println!("  when done: cargo xtask upstream-review --done {}", short(&tip));
+    Ok(())
+}
+
+/// The review list from `git log --numstat --format=%x01%H%x09%s`: each commit with the areas it
+/// touches; fork-owned paths are marked, since those changes usually don't apply.
+pub fn build_review(log: &str, manifest: &Manifest, range: &str) -> Report {
+    let mut text = format!(
+        "# Upstream commits to review ({range})\n\nThe fork no longer merges upstream (docs/upstream-merge.md). Tick what was ported (`git cherry-pick -x`) or decided against; paths marked *(ours)* are fork-owned and usually skipped.\n\n"
+    );
+    let mut commits = 0;
+    for chunk in log.split('\x01').filter(|c| !c.trim().is_empty()) {
+        let mut it = chunk.lines();
+        let header = it.next().unwrap_or("");
+        let (hash, subject) = header.split_once('\t').unwrap_or((header, ""));
+        let mut areas: BTreeSet<String> = BTreeSet::new();
+        let (mut owned, mut total) = (0usize, 0usize);
+        for l in it {
+            let mut cols = l.splitn(3, '\t');
+            let (Some(_), Some(_), Some(path)) = (cols.next(), cols.next(), cols.next()) else { continue };
+            total += 1;
+            if manifest.is_owned(path) {
+                owned += 1;
+                areas.insert(format!("{} *(ours)*", area_of(path)));
+            } else {
+                areas.insert(area_of(path));
+            }
+        }
+        commits += 1;
+        let short = hash.get(..10).unwrap_or(hash);
+        let note = if total > 0 && owned == total { " — only fork-owned paths" } else { "" };
+        let areas: Vec<String> = areas.into_iter().collect();
+        text.push_str(&format!("- [ ] `{short}` {subject}{note}\n  - {}\n", areas.join(", ")));
+    }
+    if commits == 0 {
+        text.push_str("Nothing new upstream.\n");
+    }
+    Report { text, commits }
+}
+
 // ---------------------------------------------------------------- upstream-pr
 
 pub fn pr(root: &Path, args: &[&str]) -> Result<(), String> {
@@ -587,6 +691,26 @@ mod tests {
     }
 
     #[test]
+    fn areas_group_by_crate_app_or_top_folder() {
+        assert_eq!(area_of("crates/raw/src/vendor/nef.rs"), "crates/raw");
+        assert_eq!(area_of("apps/app/src/main.rs"), "apps/app");
+        assert_eq!(area_of("docs/gaps.md"), "docs");
+        assert_eq!(area_of("Cargo.toml"), "Cargo.toml");
+        assert_eq!(area_of(""), "");
+    }
+
+    #[test]
+    fn the_review_lists_every_commit_and_marks_fork_owned_paths() {
+        let m = Manifest::parse("[owned]\ncrates/ui-egui/\n").unwrap();
+        let log = "\x01aaaaaaaaaaaa\tRaw: fix NEF tail\n3\t1\tcrates/raw/src/vendor/nef.rs\n\n\x01bbbbbbbbbbbb\tSettings window rework\n40\t9\tcrates/ui-egui/src/panels/settings.rs\n";
+        let r = build_review(log, &m, "a..b");
+        assert_eq!(r.commits, 2);
+        assert!(r.text.contains("- [ ] `aaaaaaaaaa` Raw: fix NEF tail\n  - crates/raw\n"), "{}", r.text);
+        assert!(r.text.contains("Settings window rework — only fork-owned paths\n  - crates/ui-egui *(ours)*"), "{}", r.text);
+        assert!(build_review("", &m, "a..a").text.contains("Nothing new upstream."));
+    }
+
+    #[test]
     fn manifest_sections() {
         let m = Manifest::parse("# c\n[owned]\ncrates/catalog/  # trailing\nplan/\n[regenerated]\nCargo.lock\n[exempt]\n*.md\n").unwrap();
         assert!(m.is_owned("crates/catalog/Cargo.toml"));
@@ -603,7 +727,9 @@ mod tests {
         let m = Manifest::load(&crate::root()).unwrap();
         assert!(m.is_owned("crates/catalog/src/lib.rs"));
         assert!(m.is_owned("crates/ui-egui/src/panels/classic.rs"));
-        assert!(m.is_shared("crates/ui-egui/src/app.rs"));
+        // the UI is the fork's own since upstream changes are reviewed and ported by hand (docs/upstream-merge.md)
+        assert!(m.is_owned("crates/ui-egui/src/app.rs"));
+        assert!(m.is_shared("crates/pipeline/src/lib.rs"));
         assert!(!m.is_shared("crates/ui-egui/locales/en/main.ftl"));
         assert!(!m.is_shared("docs/parity-checklist.md"));
     }

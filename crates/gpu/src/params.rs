@@ -32,6 +32,8 @@ const FIELDS: &[(&str, usize)] = &[
     ("DEHAZE", 1),
     ("DEHAZE_V3", 1),
     ("SHARPEN_V4", 1),
+    // process V5: over-range colours keep hue and saturation (`lcc_pipeline::finish::hue_clip`)
+    ("HUE_CLIP", 1),
     ("SHARPEN", 1),
     ("SHARPEN_MASK", 1),
     ("SHARPEN_LIMIT", 1),
@@ -87,6 +89,13 @@ const FIELDS: &[(&str, usize)] = &[
     ("PEAK", 1),
     ("DEEP", 1),
     ("DEEP_OFF", 1),
+    // soft proofing (matrix proofs; `ProofParams`): working → proof RGB, its luma, proof → output, warnings
+    ("PROOF", 1),
+    ("PROOF_M", 9),
+    ("PROOF_Y", 3),
+    ("PROOF_OUT", 9),
+    ("PROOF_DEST_WARN", 1),
+    ("PROOF_DISP_WARN", 1),
     // first row of a band dispatch (the kernel runs over rows Y0.., see `render`)
     ("Y0", 1),
 ];
@@ -211,6 +220,7 @@ pub fn finish_block(fp: &FinishParams, masks: &[[f32; MASK_TERMS]], curves: &[Op
     p.f("DEHAZE", fp.dehaze);
     p.b("DEHAZE_V3", fp.dehaze_v3);
     p.b("SHARPEN_V4", fp.sharpen_v4);
+    p.b("HUE_CLIP", fp.hue_clip);
     p.f("SHARPEN", fp.sharpen);
     p.f("SHARPEN_MASK", fp.sharpen_mask);
     p.f("SHARPEN_LIMIT", fp.sharpen_limit);
@@ -274,6 +284,14 @@ pub fn finish_block(fp: &FinishParams, masks: &[[f32; MASK_TERMS]], curves: &[Op
     p.u("OUT_TRC", trc);
     p.f("PEAK", if fp.peak.is_finite() { fp.peak.max(1.0) } else { 1.0 });
     p.f("OUT_GAMMA", gamma);
+    if let Some(pp) = fp.proof.as_ref().filter(|pp| pp.table.is_none()) {
+        p.b("PROOF", true);
+        p.fs("PROOF_M", pp.to_proof.as_flattened());
+        p.fs("PROOF_Y", &pp.luma);
+        p.fs("PROOF_OUT", pp.proof_to_out.as_flattened());
+        p.b("PROOF_DEST_WARN", pp.dest_warning);
+        p.b("PROOF_DISP_WARN", pp.display_warning);
+    }
     if let Some((amt, cell, rough, seed)) = fp.grain {
         p.b("GRAIN", true);
         p.f("GRAIN_AMT", amt);

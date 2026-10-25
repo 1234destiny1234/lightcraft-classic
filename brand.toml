@@ -12,6 +12,8 @@ repository     = "https://github.com/emmertex/lightcraft-classic"
 # until every install runs a build that knows the new one. Empty: `repository`.
 release_repository = "https://github.com/emmertex/lightcraft-classic"
 discord        = "https://discord.gg/c3dfYATzsQ"  # community chat (Help menu, About); leave out for none
+calibration_discord = "https://discord.gg/Vvqg2QhQXk" # where contributors send camera calibrations; leave out for the repository
+calibration_thread  = "Chromaforge-colour"            # the Discord thread for them
 developer_id   = "com.emmertex.lightcraftclassic" # AppStream <developer id>: lowercase reverse-DNS of whoever ships it
 binary         = "lightcraft-classic"            # desktop executable name in packages
 cli_binary     = "lightcraft-classic-cli"
@@ -53,6 +55,10 @@ catalog_exts  = ["nnycat"]
 # Repositories this app was released from before: their release files are still accepted as
 # updates (a renamed repository's URLs keep working through GitHub's redirect).
 repositories  = ["https://github.com/emmertex/lightcraft-classic"]
+# Earlier display names: the macOS disk image also carries a hidden `<name>.app` copy under each, because
+# the updater of a build released under that name looks for its own name in the image (fork #411). Remove
+# an entry a few days after the first release that has it, once installs have updated through it.
+display_names = ["LightCraft Classic"]
 app_ids       = ["org.example.NoNameYet", "org.example.LightCraftClassic", "com.emmertex.LightCraftClassic"]
 
 # The project this one is forked from, for docs that compare the two ({{upstream_name}}, … in `*.md.in`).

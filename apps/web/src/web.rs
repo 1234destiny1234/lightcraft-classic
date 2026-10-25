@@ -9,7 +9,7 @@ use std::sync::Arc;
 use lcc_engine::Session;
 use lcc_engine::catalog::Source;
 use lcc_engine::library::LibraryStores;
-use lcc_ui_egui::{LccApp, Services, UiState};
+use lcc_ui_egui::{ControlRequest, LccApp, Services, UiState};
 use serde_json::json;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -23,7 +23,11 @@ use crate::store::{Originals, content_hash, download_name, storage_key};
 use crate::wire::ThumbIndex;
 use crate::workers::{THUMB_INDEX, Workers};
 
-const ACCEPT: &str = ".jpg,.jpeg,.png,.tif,.tiff,.webp,.dng,.cr2,.nef,.arw,.psd,.jxl,.gif,.bmp";
+/// The web picker's accept list, derived from the engine's import extensions (both
+/// cases) so no format the engine can import is silently filtered out of the dialog.
+fn accept_list() -> String {
+    lcc_engine::import::accept_list()
+}
 
 /// After a failed save, wait this long before trying again (ms).
 const SAVE_RETRY_MS: f64 = 2000.0;
@@ -123,7 +127,7 @@ fn open_picker(originals: Originals, backend: Option<Backend>, ctx: egui::Contex
     let Ok(input) = doc.create_element("input").map(|e| e.unchecked_into::<web_sys::HtmlInputElement>()) else { return };
     input.set_type("file");
     input.set_multiple(true);
-    input.set_accept(ACCEPT);
+    input.set_accept(&accept_list());
     let inp = input.clone();
     let on_change = Closure::<dyn FnMut()>::new(move || {
         if let Some(files) = inp.files() {
@@ -226,6 +230,8 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         save_list_file: None,
         pick_slideshow_templates: None,
         save_slideshow_template: None,
+        pick_print_templates: None,
+        save_print_template: None,
         write: Some(Box::new(download)),
         // downloads happen on the main thread: exports run in the foreground on the web
         write_shared: None,
@@ -238,6 +244,8 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         open_all_with: None,
         check_editor: None,
         storage_access: None,
+        camera_roll: None,
+        save_to_gallery: None,
         open_url: Some(Box::new(|url: &str| {
             let w = web_sys::window().ok_or("no window")?;
             w.open_with_url_and_target(url, "_blank").map(|_| ()).map_err(|_| "the browser blocked the new tab".to_string())
@@ -279,6 +287,8 @@ async fn flush(files: Files, backend: Backend, dir: String, flushing: Rc<Cell<bo
         }
     }
     flushing.set(false);
+    // the page title drops its unsaved • now, even when nothing else wakes the page
+    request_repaint();
 }
 
 /// Everything loaded before the UI starts.
@@ -408,6 +418,8 @@ struct WebApp {
     lib_dir: String,
     bench: Option<Bench>,
     first_frame_logged: bool,
+    /// The page title last set (`document.title`), so it is written only when it changes.
+    title: String,
     last_save: f64,
     ui_written: Vec<u8>,
 }
@@ -467,6 +479,10 @@ impl WebApp {
         let frozen = Rc::new(Cell::new(read_failed));
         let mut app = LccApp::new(session, services(originals.clone(), backend.clone(), files.clone(), frozen.clone(), cc.egui_ctx.clone()))
             .with_chinese_font(chinese_font);
+        // The page's control channel ([`request`]).
+        let (control_tx, control_rx) = std::sync::mpsc::channel();
+        CONTROL.with(|c| *c.borrow_mut() = Some(control_tx));
+        app = app.with_control(control_rx);
         let ui_written = files.get("ui.json").unwrap_or_default();
         if let Ok(ui) = serde_json::from_slice::<UiState>(&ui_written) {
             app.ui = ui;
@@ -507,6 +523,7 @@ impl WebApp {
             lib_dir,
             bench: opts.bench.then(|| Bench::new(origin)),
             first_frame_logged: false,
+            title: String::new(),
             last_save: 0.0,
             ui_written,
         }
@@ -514,22 +531,37 @@ impl WebApp {
 
     fn import_dropped(&mut self, ctx: &egui::Context) {
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+        // a dialog is on screen (the card said so while the files hovered): nothing is read or imported
+        // (files read from an earlier drop still finish below)
+        if !dropped.is_empty() && self.app.ui.dialog.is_some() {
+            self.app.toast(ctx, lcc_ui_egui::i18n::tr("Close the open dialog, then drop the files again"));
+            return;
+        }
         for f in dropped {
             let (originals, backend, ctx) = (self.originals.clone(), self.backend.clone(), ctx.clone());
             wasm_bindgen_futures::spawn_local(async move {
                 let name = f.path().to_string_lossy().to_string();
                 match f.bytes_async().await {
                     Ok(bytes) => store_file(originals, backend, name, bytes, ctx).await,
-                    Err(e) => log::warn!("reading dropped {name}: {e}"),
+                    Err(e) => notice(lcc_ui_egui::i18n::dropped_file_unreadable(&name, &e.to_string())),
                 }
             });
         }
         let paths = self.originals.take_pending();
         if !paths.is_empty() {
-            let n = paths.len();
             match self.app.run("library.import", json!({"paths": paths})) {
-                Ok(_) => self.app.toast(ctx, format!("Added {n} photo{}", if n == 1 { "" } else { "s" })),
-                Err(e) => log::warn!("import: {e}"),
+                // what the import did, not what was submitted: duplicates and unsupported files add nothing,
+                // a drop that only finds duplicates says nothing (as the desktop import's toast does when it
+                // shows where they are), and one whose files could not be read says so
+                Ok(report) => {
+                    if let Some(notice) = lcc_ui_egui::i18n::dropped_photos_outcome(&report) {
+                        self.app.toast(ctx, notice);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("import: {e}");
+                    self.app.toast(ctx, lcc_ui_egui::i18n::dropped_import_failed(&e));
+                }
             }
         }
     }
@@ -610,6 +642,9 @@ thread_local! {
     /// Commands from JavaScript ([`command`]), run on the next frame.
     static INBOX: std::cell::RefCell<Vec<(String, String, Reply)>> = const { std::cell::RefCell::new(Vec::new()) };
     static CTX: std::cell::RefCell<Option<egui::Context>> = const { std::cell::RefCell::new(None) };
+    /// The control channel for [`request`], and the replies its callers still wait for.
+    static CONTROL: std::cell::RefCell<Option<std::sync::mpsc::Sender<ControlRequest>>> = const { std::cell::RefCell::new(None) };
+    static WAITING: std::cell::RefCell<Vec<(std::sync::mpsc::Receiver<serde_json::Value>, Reply)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Run a command by id from JavaScript (automation, tests): `await command("library.info", "{}")`
@@ -621,6 +656,64 @@ pub fn command(id: String, params: String) -> js_sys::Promise {
         INBOX.with(|q| q.borrow_mut().push((id.clone(), params.clone(), (resolve, reject))));
         CTX.with(|c| c.borrow().as_ref().map(|c| c.request_repaint()));
     })
+}
+
+/// Call a control method from JavaScript (`docs/control-protocol.md`, the methods the desktop control
+/// server and MCP use): `await request("ui.inspect", {})` resolves to the method's `result` and
+/// rejects with an `Error` carrying its message. `params` is an object, or JSON text as for
+/// [`command`]; anything else rejects and runs nothing. VectorCraft's and PhotoCraft's pages take the
+/// same calls, so one agent or host app can drive them all.
+#[wasm_bindgen]
+pub fn request(method: String, params: JsValue) -> js_sys::Promise {
+    // Params that have no JSON (a cyclic object, a function, a throwing `toJSON`) reject: as `{}` they
+    // would run the method with its defaults.
+    let text = if params.is_undefined() || params.is_null() {
+        Ok(String::new())
+    } else if let Some(s) = params.as_string() {
+        Ok(s)
+    } else {
+        js_sys::JSON::stringify(&params)
+            .ok()
+            .and_then(|s| s.as_string())
+            .ok_or_else(|| "params are not JSON (a cyclic object or a function?)".to_string())
+    };
+    js_sys::Promise::new(&mut |resolve, reject| {
+        let sent = text.clone().and_then(|text| crate::automation::params(&text)).map_err(|e| format!("{method}: {e}")).and_then(|params| {
+            let (req, rx) = ControlRequest::new(method.clone(), params);
+            let sent = CONTROL.with(|c| c.borrow().as_ref().is_some_and(|tx| tx.send(req).is_ok()));
+            if sent { Ok(rx) } else { Err("the app is not running yet".to_string()) }
+        });
+        match sent {
+            Ok(rx) => WAITING.with(|w| w.borrow_mut().push((rx, (resolve, reject)))),
+            Err(e) => {
+                let _ = reject.call1(&JsValue::NULL, &js_sys::Error::new(&e));
+            }
+        }
+        CTX.with(|c| c.borrow().as_ref().map(|c| c.request_repaint()));
+    })
+}
+
+/// Settle the promises of [`request`]s the app has answered (every frame).
+fn settle_requests() {
+    WAITING.with(|w| {
+        w.borrow_mut().retain(|(rx, (resolve, reject))| match rx.try_recv() {
+            Ok(v) => {
+                if v.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+                    let result = v.get("result").map_or(JsValue::NULL, |r| js_sys::JSON::parse(&r.to_string()).unwrap_or(JsValue::NULL));
+                    let _ = resolve.call1(&JsValue::NULL, &result);
+                } else {
+                    let msg = v.get("error").and_then(serde_json::Value::as_str).unwrap_or("error");
+                    let _ = reject.call1(&JsValue::NULL, &js_sys::Error::new(msg));
+                }
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                let _ = reject.call1(&JsValue::NULL, &js_sys::Error::new("request dropped"));
+                false
+            }
+        });
+    });
 }
 
 impl WebApp {
@@ -645,8 +738,11 @@ impl WebApp {
     fn run_inbox(&mut self) {
         let inbox = INBOX.with(|q| std::mem::take(&mut *q.borrow_mut()));
         for (id, params, (resolve, reject)) in inbox {
-            let params: serde_json::Value = serde_json::from_str(&params).unwrap_or(json!({}));
-            let r = if id == "web.stats" { Ok(self.web_stats()) } else { self.app.run(&id, params) };
+            let r = match crate::automation::params(&params) {
+                Err(e) => Err(format!("{id}: {e}")),
+                Ok(_) if id == "web.stats" => Ok(self.web_stats()),
+                Ok(params) => self.app.run(&id, params),
+            };
             let _ = match r {
                 Ok(v) => resolve.call1(&JsValue::NULL, &v.to_string().into()),
                 Err(e) => reject.call1(&JsValue::NULL, &e.into()),
@@ -662,6 +758,7 @@ impl eframe::App for WebApp {
             self.app.ui.toast = Some((text, now + NOTICE_SECS, None));
         }
         self.run_inbox();
+        settle_requests();
         self.import_dropped(ctx);
         self.load_originals(ctx);
         if let Some(w) = &self.workers {
@@ -670,6 +767,8 @@ impl eframe::App for WebApp {
             w.set_budget(self.app.session.cache_bytes());
         }
         self.app.logic(ctx);
+        // Replies the app sent just now (its control requests run in `logic`).
+        settle_requests();
         self.save();
         if let Some(b) = self.bench.as_mut()
             && let Some(report) = b.step(&mut self.app)
@@ -692,6 +791,14 @@ impl eframe::App for WebApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.app.ui(ui);
+        // eframe's web runner ignores `ViewportCommand::Title`: name the open photo in the page title
+        let title = self.app.page_title(self.files.is_dirty() || self.flushing.get());
+        if title != self.title
+            && let Some(doc) = window().and_then(|w| w.document())
+        {
+            doc.set_title(&title);
+            self.title = title;
+        }
         if !self.first_frame_logged && !self.app.widgets.is_empty() {
             self.first_frame_logged = true;
             log::info!("app first UI frame at {:.0} ms after navigation start", perf_now());

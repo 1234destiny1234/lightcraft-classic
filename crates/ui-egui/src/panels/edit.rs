@@ -6,6 +6,7 @@ use egui::{Align2, Color32, Pos2, Rect, RichText, Sense, Stroke, pos2, vec2};
 use lcc_catalog::PhotoId;
 use lcc_develop::{ControlSpec, DevelopSettings, Section, ToneCurve, Track, WbMode, controls};
 use lcc_geom::Point;
+use lcc_pipeline::{PARAM_AMOUNTS, ParametricCurve};
 use lcc_raster::{Clipped, Histogram, HistogramMode, HistogramScale};
 use serde_json::{Value, json};
 
@@ -46,7 +47,7 @@ pub(crate) fn control_as(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSetting
 }
 
 /// Relative temperature scale for rendered (non-raw) files: −100..100 ↔ Kelvin via mired shift.
-const REL_TEMP: ControlSpec = ControlSpec {
+pub(crate) static REL_TEMP: ControlSpec = ControlSpec {
     id: "wb.tempRel",
     label: "Temp",
     section: Section::Color,
@@ -57,7 +58,7 @@ const REL_TEMP: ControlSpec = ControlSpec {
     decimals: 0,
     track: Track::Temp,
 };
-const REL_TINT: ControlSpec = ControlSpec {
+pub(crate) static REL_TINT: ControlSpec = ControlSpec {
     id: "wb.tintRel",
     label: "Tint",
     section: Section::Color,
@@ -69,10 +70,10 @@ const REL_TINT: ControlSpec = ControlSpec {
     track: Track::Tint,
 };
 
-fn k_to_rel(k: f64) -> f64 {
+pub(crate) fn k_to_rel(k: f64) -> f64 {
     ((1e6 / 6500.0 - 1e6 / k) / 0.8).clamp(-100.0, 100.0)
 }
-fn rel_to_k(r: f64) -> f64 {
+pub(crate) fn rel_to_k(r: f64) -> f64 {
     1e6 / (1e6 / 6500.0 - r * 0.8)
 }
 
@@ -90,8 +91,25 @@ pub fn pinned_histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
 }
 
 /// The Edit panel under its histogram: soft proofing, the header and every section.
+/// The Edit panel with one section only, open and without its header (`key`: a section's id, or
+/// `profile` for the rows above Basic, `plugins` for the plug-in filters): the Modern layout's cards.
+pub(crate) fn show_section(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, key: &str) {
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(ONLY_SECTION), key.to_string()));
+    show_controls(app, ui, id);
+    ui.ctx().data_mut(|d| d.remove::<String>(egui::Id::new(ONLY_SECTION)));
+}
+
+const ONLY_SECTION: &str = "edit-only-section";
+
+/// The one section [`show_section`] asked for, if any.
+fn only_section(ui: &egui::Ui) -> Option<String> {
+    ui.ctx().data(|d| d.get_temp::<String>(egui::Id::new(ONLY_SECTION)))
+}
+
 pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
+    let only = only_section(ui);
+    let shows = |key: &str| only.as_deref().is_none_or(|o| o == key);
     let d = app.session.develop_of(id).unwrap_or_default();
     // a raw shown from its embedded JPEG (preview only) gets the rendered-file white balance scale
     let raw = app.session.catalog.photo(id).is_some_and(|p| p.develops_raw() && !p.relative_wb());
@@ -112,123 +130,132 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     }
     let preview_only = app.session.catalog.photo(id).and_then(|p| p.preview_only.clone());
 
-    if app.ui.soft_proof {
+    if app.ui.soft_proof && only.is_none() {
         soft_proofing(app, ui, id);
     }
-    // header: Edit (Reset sits in the bar under the panels, issue #116), then Lightroom Classic's Basic button row:
-    // Auto, B&W | HDR (issue #124)
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 14, bottom: 0 }).show(ui, |ui| {
-        ui.label(egui::RichText::new(crate::i18n::tr("Edit")).font(t.semibold(15.0)).color(t.text));
-    });
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 10, bottom: 14 }).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                if text_button(ui, "hdr", crate::i18n::tr("HDR"), d.hdr.enabled).on_hover_text(hdr_button_tip(app.hdr_display_sdr)).clicked() {
-                    let _ = app.run("develop.hdr", json!({"enabled": !d.hdr.enabled}));
-                }
-                // the separator between the treatment and HDR, as in Classic
-                let (sep, _) = ui.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
-                ui.painter().vline(sep.center().x, sep.y_range(), egui::Stroke::new(1.0, t.button_border));
-                let bw = crate::is_bw(&d);
-                if text_button(ui, "treatment-bw", crate::i18n::tr("B&W"), bw).on_hover_text(crate::i18n::tr("Black & White")).clicked() {
-                    let _ = app.run("develop.treatment", json!({"bw": !bw}));
-                }
-                let applied = app.session.auto_is_current(id);
-                let r = ui.add_enabled_ui(!applied, |ui| text_button(ui, "auto", crate::i18n::tr("Auto"), false)).inner;
-                if r.clicked() {
-                    let _ = app.run("develop.auto", json!({}));
-                    app.toast(ui.ctx(), crate::i18n::tr("Auto settings applied"));
-                }
-            });
+    if shows("profile") {
+        // header: Edit (Reset sits in the bar under the panels, issue #116), then Lightroom Classic's Basic button row:
+        // Auto, B&W | HDR (issue #124)
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 14, bottom: 0 }).show(ui, |ui| {
+            ui.label(egui::RichText::new(crate::i18n::tr("Edit")).font(t.semibold(15.0)).color(t.text));
         });
-    });
-    if let Some(why) = &preview_only {
-        let reload = egui::Frame::NONE
-            .inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 12 })
-            .show(ui, |ui| crate::widgets::preview_only_notice(ui, "edit", why))
-            .inner;
-        if reload {
-            reload_preview_only(app, ui.ctx(), id);
-        }
-    }
-    let n = app.session.selection.ids.len();
-    if n > 1 && matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid) {
-        quick_develop(app, ui, n);
-    }
-    if app.session.auto_sync && n > 1 {
-        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 10, bottom: 14 }).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(crate::i18n::tr_format!("Auto Sync: edits apply to {n} photos", n = n)).color(t.accent).size(12.0));
+                ui.spacing_mut().item_spacing.x = 8.0;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if text_button(ui, "autoSyncOff", crate::i18n::tr("Turn Off"), false).clicked() {
-                        let _ = app.run("develop.autoSync", json!({"on": false}));
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    if text_button(ui, "hdr", crate::i18n::tr("HDR"), d.hdr.enabled).on_hover_text(hdr_button_tip(app.hdr_display_sdr)).clicked() {
+                        let _ = app.run("develop.hdr", json!({"enabled": !d.hdr.enabled}));
+                    }
+                    // the separator between the treatment and HDR, as in Classic
+                    let (sep, _) = ui.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
+                    ui.painter().vline(sep.center().x, sep.y_range(), egui::Stroke::new(1.0, t.button_border));
+                    let bw = crate::is_bw(&d);
+                    if text_button(ui, "treatment-bw", crate::i18n::tr("B&W"), bw).on_hover_text(crate::i18n::tr("Black & White")).clicked() {
+                        let _ = app.run("develop.treatment", json!({"bw": !bw}));
+                    }
+                    let applied = app.session.auto_is_current(id);
+                    let r = ui.add_enabled_ui(!applied, |ui| text_button(ui, "auto", crate::i18n::tr("Auto"), false)).inner;
+                    if r.clicked() {
+                        let _ = app.run("develop.auto", json!({}));
+                        app.toast(ui.ctx(), crate::i18n::tr("Auto settings applied"));
                     }
                 });
             });
         });
-    }
-    divider(ui);
-    // profile row
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 12, bottom: 12 }).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(crate::i18n::tr("Profile")).font(t.font(13.0)).color(t.text_dim));
-            let name = app.session.profile_info(&d.profile.id).map(|(name, _)| name).unwrap_or("Color");
-            // a long name is cut short before Browse Profiles: a wider row would widen the whole panel's
-            // content, and the sliders below would run past its edge
-            let max = ui.available_width() - 28.0 - ui.spacing().item_spacing.x;
-            let r = crate::widgets::dropdown_within(ui, "profile", crate::i18n::profile_label(&d.profile.id, name), t.font(15.0), t.text_label, max);
-            let below = r.rect.bottom();
-            egui::Popup::menu(&r).show(|ui| profile_menu(app, ui, &d, below));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if crate::widgets::icon_button(
-                    ui,
-                    "profileBrowser",
-                    Icon::ProfileGrid,
-                    vec2(28.0, 28.0),
-                    false,
-                    true,
-                    crate::i18n::tr("Browse Profiles"),
-                )
-                .clicked()
-                {
-                    let _ = app.run("panel.profiles", json!({}));
-                }
+        if let Some(why) = &preview_only {
+            let reload = egui::Frame::NONE
+                .inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 12 })
+                .show(ui, |ui| crate::widgets::preview_only_notice(ui, "edit", why))
+                .inner;
+            if reload {
+                reload_preview_only(app, ui.ctx(), id);
+            }
+        }
+        let n = app.session.selection.ids.len();
+        if n > 1 && matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid) {
+            quick_develop(app, ui, n);
+        }
+        if app.session.auto_sync && n > 1 {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(crate::i18n::tr_format!("Auto Sync: edits apply to {n} photos", n = n)).color(t.accent).size(12.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if text_button(ui, "autoSyncOff", crate::i18n::tr("Turn Off"), false).clicked() {
+                            let _ = app.run("develop.autoSync", json!({"on": false}));
+                        }
+                    });
+                });
+            });
+        }
+        divider(ui);
+        // profile row
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 12, bottom: 12 }).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(crate::i18n::tr("Profile")).font(t.font(13.0)).color(t.text_dim));
+                let name = app.session.profile_info(&d.profile.id).map(|(name, _)| name).unwrap_or("Color");
+                // a long name is cut short before Browse Profiles: a wider row would widen the whole panel's
+                // content, and the sliders below would run past its edge
+                let max = ui.available_width() - 28.0 - ui.spacing().item_spacing.x;
+                let r =
+                    crate::widgets::dropdown_within(ui, "profile", crate::i18n::profile_label(&d.profile.id, name), t.font(15.0), t.text_label, max);
+                let below = r.rect.bottom();
+                egui::Popup::menu(&r).show(|ui| profile_menu(app, ui, &d, below));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if crate::widgets::icon_button(
+                        ui,
+                        "profileBrowser",
+                        Icon::ProfileGrid,
+                        vec2(28.0, 28.0),
+                        false,
+                        true,
+                        crate::i18n::tr("Browse Profiles"),
+                    )
+                    .clicked()
+                    {
+                        let _ = app.run("panel.profiles", json!({}));
+                    }
+                });
             });
         });
-    });
-    if d.profile.id != "lc.color" {
-        control(app, ui, &d, "profile.amount", true);
-        ui.add_space(6.0);
+        if d.profile.id != "lc.color" {
+            control(app, ui, &d, "profile.amount", true);
+            ui.add_space(6.0);
+        }
+        // whether to offer the two file options below: facts of the file that stay put while sources are decoded again
+        // (an edit, crop mode), so the rows under them never move
+        let facts = app.session.media.profile_facts(id);
+        // a raw carrying its own local tone mapping (Apple ProRAW's gain table map): off renders it as
+        // Lightroom Classic does, on as the camera does
+        if facts.local_tone {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
+                let mut on = d.profile.camera_local_tone;
+                let r = ui.checkbox(&mut on, crate::i18n::tr("Camera local tone mapping"));
+                crate::widgets::register(ui.ctx(), "check:profile.cameraLocalTone", r.rect);
+                if r.on_hover_text(crate::i18n::tr("Apply the local tone mapping stored in the raw (Apple ProRAW), as the camera renders it"))
+                    .changed()
+                {
+                    let _ =
+                        app.run("develop.merge", json!({"settings": {"profile": {"camera_local_tone": on}}, "label": "Camera Local Tone Mapping"}));
+                }
+            });
+        }
+        // a raw without colour matrices whose camera model has measured ones: off starts from the look fitted to the
+        // camera's JPEG (Auto), on from the measured colour with the app's own tone curve (Colorimetric)
+        if facts.colorimetric {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
+                let mut on = d.profile.camera_colour == lcc_develop::CameraColour::Colorimetric;
+                let r = ui.checkbox(&mut on, crate::i18n::tr("Calibrated camera colour"));
+                crate::widgets::register(ui.ctx(), "check:profile.cameraColour", r.rect);
+                let tip = "Start from the colour measured for this camera model instead of the look fitted to the camera's JPEG";
+                if r.on_hover_text(crate::i18n::tr(tip)).changed() {
+                    let mode = if on { "colorimetric" } else { "auto" };
+                    let _ = app.run("develop.merge", json!({"settings": {"profile": {"camera_colour": mode}}, "label": "Calibrated Camera Colour"}));
+                }
+            });
+        }
+        divider(ui);
     }
-    // a raw carrying its own local tone mapping (Apple ProRAW's gain table map): off renders it as
-    // Lightroom Classic does, on as the camera does
-    if app.session.source_info(id).local_tone.is_some() {
-        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
-            let mut on = d.profile.camera_local_tone;
-            let r = ui.checkbox(&mut on, crate::i18n::tr("Camera local tone mapping"));
-            crate::widgets::register(ui.ctx(), "check:profile.cameraLocalTone", r.rect);
-            if r.on_hover_text(crate::i18n::tr("Apply the local tone mapping stored in the raw (Apple ProRAW), as the camera renders it")).changed() {
-                let _ = app.run("develop.merge", json!({"settings": {"profile": {"camera_local_tone": on}}, "label": "Camera Local Tone Mapping"}));
-            }
-        });
-    }
-    // a raw without colour matrices whose camera model has measured ones: off starts from the look fitted to the
-    // camera's JPEG (Auto), on from the measured colour with the app's own tone curve (Colorimetric)
-    if app.session.source_info(id).colorimetric {
-        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
-            let mut on = d.profile.camera_colour == lcc_develop::CameraColour::Colorimetric;
-            let r = ui.checkbox(&mut on, crate::i18n::tr("Calibrated camera colour"));
-            crate::widgets::register(ui.ctx(), "check:profile.cameraColour", r.rect);
-            let tip = "Start from the colour measured for this camera model instead of the look fitted to the camera's JPEG";
-            if r.on_hover_text(crate::i18n::tr(tip)).changed() {
-                let mode = if on { "colorimetric" } else { "auto" };
-                let _ = app.run("develop.merge", json!({"settings": {"profile": {"camera_colour": mode}}, "label": "Calibrated Camera Colour"}));
-            }
-        });
-    }
-    divider(ui);
 
     let video = crate::video_ui::photo_is_video(app, id);
     // Lightroom Classic's Basic panel: white balance, then Tone (with Auto), then Presence
@@ -259,10 +286,21 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 app.ui.toggle_flyout("sdrRendition");
             }
             if open {
+                // as in Lightroom Classic, the SDR sliders take effect where the screen shows the
+                // SDR rendition: while it shows the HDR render they are greyed out (an agent can
+                // still set them), with the way to see them
+                let sdr_shown = !super::detail::hdr_shown(app);
+                if !sdr_shown {
+                    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 2, bottom: 4 }).show(ui, |ui| {
+                        let t = Tokens::get(ui.ctx());
+                        let r = ui.label(egui::RichText::new(crate::i18n::tr(SDR_SLIDERS_NOTE)).font(t.font(12.0)).color(t.text_dim));
+                        register(ui.ctx(), "note:sdrSlidersHidden", r.rect);
+                    });
+                }
                 for c in
                     ["hdr.sdrBrightness", "hdr.sdrContrast", "hdr.sdrHighlights", "hdr.sdrShadows", "hdr.sdrWhites", "hdr.sdrClarity", "hdr.sdrBlend"]
                 {
-                    control(app, ui, d, c, true);
+                    control(app, ui, d, c, sdr_shown);
                 }
                 ui.add_space(6.0);
             }
@@ -462,7 +500,9 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(8.0);
     });
-    super::plugin_filters::show(app, ui, &d);
+    if shows("plugins") {
+        super::plugin_filters::show(app, ui, &d);
+    }
     ui.add_space(40.0);
 }
 
@@ -604,6 +644,14 @@ pub(crate) fn section_with(
     switch: bool,
     body: impl FnOnce(&mut LccApp, &mut egui::Ui, &DevelopSettings),
 ) {
+    // one section alone (the Modern layout's card): open, no header
+    if let Some(only) = only_section(ui) {
+        if only == id {
+            let blocked = !crate::video_ui::section_allowed(id) && app.session.active().is_some_and(|p| crate::video_ui::photo_is_video(app, p));
+            crate::video_ui::video_gate(ui, blocked, |ui| body(app, ui, d));
+        }
+        return;
+    }
     let open = app.ui.section_open(id);
     let (resp, toggled) = section_header(ui, id, title, open, switch.then(|| d.section_enabled(id)));
     // video takes the global Light and Color controls only: the rest show greyed out
@@ -656,7 +704,7 @@ fn paint_clip_triangle(p: &egui::Painter, rect: Rect, out: f32, color: Color32, 
 }
 
 /// The current photo's existing preview histogram, shared by Histogram and Tone Curve.
-fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram> {
+pub(crate) fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram> {
     app.renderer
         .textures
         .get(&Slot::Main)
@@ -673,7 +721,7 @@ const PANEL_HISTOGRAM_EDGE: usize = 512;
 /// — the panel's own small render of the photo as it is now, asked for when missing. In the Library
 /// grid the selected photo has only its thumbnail's histogram, which keeps no waveform, so the
 /// scopes stayed empty there except for the photo last opened in the loupe.
-fn panel_render_histogram(app: &mut LccApp, id: PhotoId, mode: lcc_raster::HistogramMode, hist: Option<Histogram>) -> Option<Histogram> {
+pub(crate) fn panel_render_histogram(app: &mut LccApp, id: PhotoId, mode: lcc_raster::HistogramMode, hist: Option<Histogram>) -> Option<Histogram> {
     if hist.as_ref().is_some_and(|h| !mode.is_waveform() || h.has_waveform()) {
         return hist;
     }
@@ -710,14 +758,55 @@ fn steady_hdr_histogram(ctx: &egui::Context, id: PhotoId, hdr_edit: bool, hist: 
     }
 }
 
-pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
-    let t = Tokens::get(ui.ctx());
-    let w = ui.available_width();
+/// How long (s) after a drag its live histogram is kept when the loupe has no render on its way
+/// (the release frame, before the loupe asks for its render).
+const HISTOGRAM_HOLD_S: f64 = 0.25;
+
+/// The histogram both of the panel's plots draw: a drag's live HDR histogram, else the loupe render
+/// of this photo, else its thumbnail (grid view before the loupe has rendered it). On an HDR display
+/// a drag of an HDR edit sends the loupe only float drafts, so its 8-bit render (and that histogram)
+/// stays as it was until the release.
+fn current_histogram(app: &LccApp, ctx: &egui::Context, id: PhotoId, hdr_edit: bool) -> Option<Histogram> {
+    // (only while the edit is HDR: one left from a drag before HDR was turned off would bring the
+    // HDR layout back for each later drag, #277)
+    let interacting = app.session.interaction.is_some();
+    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && hdr_edit && l.0 == id).map(|l| l.2.clone());
+    // After such a drag its last live histogram stays until the loupe's render of the released edit
+    // lands: until then the loupe render there is (on an HDR display) the one from before the drag,
+    // and showing it would make the plots jump back for a moment on release.
+    let hold = egui::Id::new(("histogramHold", id));
+    let now = ctx.input(|i| i.time);
+    let main_key = app.renderer.textures.get(&Slot::Main).filter(|t| t.photo == id).map(|t| t.key);
+    let live = match live {
+        Some(h) => {
+            ctx.data_mut(|d| d.insert_temp(hold, (main_key, h.clone(), now)));
+            Some(h)
+        }
+        None if !interacting && hdr_edit => {
+            let held = ctx.data(|d| d.get_temp::<(Option<u64>, Histogram, f64)>(hold));
+            // (released once the loupe's texture is replaced, or once nothing renders it: a release
+            // that changed nothing renders nothing)
+            let pending = app.renderer.is_pending(Slot::Main);
+            match held.filter(|(key, _, at)| *key == main_key && (pending || now - *at < HISTOGRAM_HOLD_S)) {
+                Some((_, h, _)) => Some(h),
+                None => {
+                    ctx.data_mut(|d| d.remove::<(Option<u64>, Histogram, f64)>(hold));
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+    live.or_else(|| preview_histogram(app, id))
+}
+
+/// What a histogram of photo `id` drawn in `mode` shows this frame (the panel's first plot, the
+/// Modern layout's floating one), asking for the renders it needs.
+pub(crate) fn shown_histogram(app: &mut LccApp, ctx: &egui::Context, id: PhotoId, mode: HistogramMode) -> Option<Histogram> {
     let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
     // a drag of an HDR edit: its drafts have no HDR histogram, so a small render beside them
     // gives one (at its own pace: the drafts don't wait for it)
-    let interacting = app.session.interaction.is_some();
-    if interacting && hdr_edit {
+    if app.session.interaction.is_some() && hdr_edit {
         let edge = lcc_pipeline::HDR_HISTOGRAM_DRAG_EDGE;
         if let Some(job) = app.session.render_job(id, edge, edge, false, app.ui.right != RightPanel::Crop)
             && app.renderer.live_hdr_histogram.as_ref().is_none_or(|l| l.1 != job.key)
@@ -725,15 +814,17 @@ pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             app.renderer.request(Slot::HdrHistogram, job, 95);
         }
     }
-    // (only while the edit is HDR: one left from a drag before HDR was turned off would bring the
-    // HDR layout back for each later drag, #277)
-    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && hdr_edit && l.0 == id).map(|l| l.2.clone());
-    // else the loupe render of this photo, else its thumbnail (grid view before the loupe has
-    // rendered it)
-    let mode = super::histogram::mode_of(app);
-    let hist = live.or_else(|| preview_histogram(app, id));
+    let hist = current_histogram(app, ctx, id, hdr_edit);
     let hist = panel_render_histogram(app, id, mode, hist);
-    let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
+    steady_hdr_histogram(ctx, id, hdr_edit, hist)
+}
+
+pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    let t = Tokens::get(ui.ctx());
+    let w = ui.available_width();
+    let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
+    let mode = super::histogram::mode_of(app);
+    let hist = shown_histogram(app, ui.ctx(), id, mode);
     let scale = super::histogram::scale_of(app);
     // an HDR edit's 1D histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR
     // label row under the plot; a 2D scope gets a taller plot instead so its disc has room
@@ -808,15 +899,13 @@ pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let mut clicked = resp.clicked();
     // the panel's floating scroll bar widens over the right edge when hovered: both buttons keep
     // clear of it, the left one too so they stay symmetric (#1640)
-    let scroll = ui.spacing().scroll;
-    let inset = 20.0 + scroll.bar_width + scroll.bar_outer_margin;
+    let [shadow_rect, highlight_rect] = super::histogram::clipping_rects(ui, plot);
     // the clipping mask the pointer is resting on, previewed on the photo this frame
     let mut preview = false;
-    for (name, x, out, label, clipped) in [
-        ("shadows", plot.left() + inset, -1.0, "Shadow clipping", clipping.map(|c| c.shadow_channels())),
-        ("highlights", plot.right() - inset, 1.0, "Highlight clipping", clipping.map(|c| c.highlight_channels())),
+    for (name, rect, out, label, clipped) in [
+        ("shadows", shadow_rect, -1.0, "Shadow clipping", clipping.map(|c| c.shadow_channels())),
+        ("highlights", highlight_rect, 1.0, "Highlight clipping", clipping.map(|c| c.highlight_channels())),
     ] {
-        let rect = Rect::from_center_size(pos2(x, plot.top() + 14.0), vec2(24.0, 22.0));
         let response = ui.interact(rect, ui.id().with(("histogram-clipping", name)), Sense::click());
         register(ui.ctx(), format!("histogram:{name}"), rect);
         response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), app.ui.show_clipping, crate::i18n::tr(label)));
@@ -961,7 +1050,7 @@ fn histogram_height(mode: HistogramMode) -> f32 {
 /// warnings stay on the first.
 fn second_histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, mode: HistogramMode, scale: HistogramScale, hdr_edit: bool) {
     let t = Tokens::get(ui.ctx());
-    let hist = preview_histogram(app, id);
+    let hist = current_histogram(app, ui.ctx(), id, hdr_edit);
     let hist = panel_render_histogram(app, id, mode, hist);
     let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist).map(|h| if mode.is_scope() { h } else { Histogram { hdr: None, ..h } });
     ui.add_space(2.0);
@@ -1155,148 +1244,8 @@ fn draw_curve_histogram(p: &egui::Painter, r: Rect, h: &lcc_raster::Histogram, c
     p.add(mesh);
 }
 
-/// The four shape controls of the parametric curve, in graph order: region 0 is the darkest.
-pub(crate) const PARAM_AMOUNTS: [&str; 4] = ["curve.shadows", "curve.darks", "curve.lights", "curve.highlights"];
-/// Resolution the parametric curve is sampled at, matching `lcc_pipeline::finish`'s table.
-const PARAM_LUT: usize = 1024;
 /// Segments the graph's curve line is drawn with.
 pub(crate) const CURVE_SAMPLES: i32 = 96;
-
-/// The parametric (region) curve of a [`ToneCurve`]: the four region amounts, each a cosine bump
-/// over its window between two splits, summed and then forced monotone.
-///
-/// This is the renderer's curve, not an approximation of it — `lcc_pipeline::finish::curve_luts`
-/// builds the same shape (its own table, whose `x` is the encoded level the curve sees). The graph
-/// draws this curve, so the line and the sliders can never disagree: both come from the settings,
-/// recomputed every frame, with no state of their own.
-///
-/// The running maximum is what makes the curve monotone. Two neighbouring regions pushed opposite
-/// ways can otherwise fold it back on itself, and a fold is exactly what a drawn line used to show
-/// while the renderer straightened it out.
-pub(crate) struct ParametricCurve {
-    /// The curve, sampled and already forced monotone.
-    lut: [f32; PARAM_LUT],
-    /// The three region boundaries as fractions of the graph.
-    pub(crate) splits: [f64; 3],
-    /// The four region amounts, in graph order (0 = the darkest).
-    pub(crate) amounts: [f64; 4],
-}
-
-impl ParametricCurve {
-    pub(crate) fn new(c: &ToneCurve) -> ParametricCurve {
-        let splits = [c.split_shadows / 100.0, c.split_mid / 100.0, c.split_highlights / 100.0];
-        let amounts = [c.shadows, c.darks, c.lights, c.highlights];
-        let s = [splits[0] as f32, splits[1] as f32, splits[2] as f32];
-        let regions = [(0.0, s[0], amounts[0]), (s[0], s[1], amounts[1]), (s[1], s[2], amounts[2]), (s[2], 1.0, amounts[3])];
-        let mut lut = [0.0_f32; PARAM_LUT];
-        let mut prev = 0.0_f32;
-        for i in 0..PARAM_LUT {
-            let x = i as f32 / (PARAM_LUT - 1) as f32;
-            let mut d = 0.0_f32;
-            for (a, b, amt) in regions {
-                if amt == 0.0 {
-                    continue;
-                }
-                let (ctr, half) = ((a + b) / 2.0, (b - a) * 0.75 + 0.05);
-                let t = ((x - ctr) / half).clamp(-1.0, 1.0);
-                d += (amt / 100.0) as f32 * 0.22 * (0.5 + 0.5 * (t * std::f32::consts::PI).cos());
-            }
-            let y = (x + d * 4.0 * x * (1.0 - x)).clamp(0.0, 1.0);
-            // the running maximum: the renderer's own monotone pass
-            prev = prev.max(y);
-            lut[i] = prev;
-        }
-        ParametricCurve { lut, splits, amounts }
-    }
-
-    /// The curve at `x` (0 = black, 1 = white), read off the table (so it never overshoots the ends).
-    pub(crate) fn at(&self, x: f64) -> f64 {
-        let x = x.clamp(0.0, 1.0) as f32;
-        let at = x * (PARAM_LUT - 1) as f32;
-        let i = at.floor().clamp(0.0, (PARAM_LUT - 1) as f32) as usize;
-        let next = self.lut.get(i + 1).copied().unwrap_or(self.lut[i]);
-        let f = at - i as f32;
-        (self.lut[i] + (next - self.lut[i]) * f) as f64
-    }
-
-    /// Where region `region`'s handle sits on the input axis: the middle of its own window, so a
-    /// handle never has to cross a split to be grabbed.
-    pub(crate) fn region_x(&self, region: usize) -> f64 {
-        let (a, b) = self.region_window(region);
-        (a + b) / 2.0
-    }
-
-    /// The window (two splits, as fractions of the graph) region `region` owns.
-    fn region_window(&self, region: usize) -> (f64, f64) {
-        let s = [self.splits[0], self.splits[1], self.splits[2]];
-        match region {
-            0 => (0.0, s[0]),
-            1 => (s[0], s[1]),
-            2 => (s[1], s[2]),
-            _ => (s[2], 1.0),
-        }
-    }
-
-    /// The half-width of region `region`'s own bump, as fraction of the graph.
-    fn region_half(&self, region: usize) -> f64 {
-        let (a, b) = self.region_window(region);
-        (b - a) * 0.75 + 0.05
-    }
-
-    /// The cosine window region `region` applies at `x` (1 at its centre, 0 at the window edges).
-    fn region_window_at(&self, region: usize, x: f64) -> f64 {
-        let ctr = self.region_x(region);
-        let t = ((x - ctr) / self.region_half(region)).clamp(-1.0, 1.0);
-        0.5 + 0.5 * (t * std::f64::consts::PI).cos()
-    }
-
-    /// The region that owns graph position `x`: the one whose own window contains it. The four
-    /// windows tile 0..1, so this is always defined and a drag anywhere on the curve moves exactly
-    /// one slider — the region under the pointer.
-    pub(crate) fn region_at(&self, x: f64) -> usize {
-        let x = x.clamp(0.0, 1.0);
-        // the bands are black..split0, split0..split1, split1..split2, split2..white
-        let (s0, s1, s2) = (self.split_x(0), self.split_x(1), self.split_x(2));
-        if x <= s0 {
-            0
-        } else if x <= s1 {
-            1
-        } else if x <= s2 {
-            2
-        } else {
-            3
-        }
-    }
-
-    /// How much output level region `region`'s bump gains at `x` per unit of its slider: the bump is
-    /// linear in the amount, so this is a constant for a given `x`. A drag converts the pointer's
-    /// vertical motion into a slider change through it.
-    pub(crate) fn level_per_unit(&self, region: usize, x: f64) -> f64 {
-        let x = x.clamp(0.0, 1.0);
-        0.22 / 100.0 * self.region_window_at(region, x) * 4.0 * x * (1.0 - x)
-    }
-
-    /// The curve level region `region` sits at when its slider holds `amount`, at graph position `x`
-    /// — where the curve is at the point a drag grabbed, which is what that drag starts from.
-    pub(crate) fn handle_level_at(&self, region: usize, amount: f64, x: f64) -> f64 {
-        (x.clamp(0.0, 1.0) + amount * self.level_per_unit(region, x)).clamp(0.0, 1.0)
-    }
-
-    /// The amount that puts region `region`'s curve at `level` at `x` — the inverse of
-    /// [`Self::handle_level_at`]. A level the region cannot reach saturates rather than jumping.
-    pub(crate) fn amount_at_level(&self, region: usize, level: f64, x: f64) -> f64 {
-        let per_unit = self.level_per_unit(region, x);
-        if per_unit.abs() <= f64::EPSILON {
-            return 0.0;
-        }
-        ((level.clamp(0.0, 1.0) - x.clamp(0.0, 1.0)) / per_unit).clamp(-100.0, 100.0).round()
-    }
-
-    /// The graph position split `split` (0..3) sits at, 0..1.
-    pub(crate) fn split_x(&self, split: usize) -> f64 {
-        self.splits.get(split).copied().unwrap_or(0.5)
-    }
-}
 
 /// What the parametric graph draws and drags: the region curve with the master point curve on top
 /// of it, stacked as `lcc_pipeline::finish::curve_luts` stacks them. A Point Curve preset such as
@@ -1373,6 +1322,9 @@ const PARAM_GRAB: f32 = 14.0;
 /// gesture back, not the last frame of it), and every write goes through `develop.set`, so the
 /// slider, the curve and what is drawn are the same state rather than three things kept in step.
 fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Response, d: &DevelopSettings) {
+    if r.width() <= 1.0 || r.height() <= 1.0 {
+        return;
+    }
     let t = Tokens::get(ui.ctx());
     let stacked = StackedCurve::new(&d.curve);
     let model = &stacked.param;
@@ -1385,9 +1337,10 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
     };
     let drag_id = egui::Id::new("curve-param-drag");
     let cursor_id = egui::Id::new("curve-param-cursor");
-    // the region being dragged, and the graph x the drag is anchored at (stored as an `Option` so a
-    // stale value can be cleared, as the point-curve editor's drag state is)
-    let mut dragged: Option<(usize, f64)> = ui.data(|dd| dd.get_temp::<Option<(usize, f64)>>(drag_id)).flatten();
+    // (region, x, initial_amount, start_y): the region being dragged, the graph x the drag is anchored
+    // at, the region's starting amount, and the starting screen Y position (stored as an `Option` so
+    // a stale value can be cleared, as the point-curve editor's drag state is)
+    let mut dragged: Option<(usize, f64, f64, f32)> = ui.data(|dd| dd.get_temp::<Option<(usize, f64, f64, f32)>>(drag_id)).flatten();
     let hovered = dragged.is_none() && resp.hover_pos().is_some_and(|q| near_curve(q) <= PARAM_GRAB);
     let mut set: Option<(&'static str, f64)> = None;
     // the press, not where the pointer is once the drag threshold has passed: a press slightly off
@@ -1399,10 +1352,13 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
     {
         let x = from_screen_x(q);
         let _ = app.run("develop.beginInteraction", json!({"label": "Parametric Curve"}));
-        dragged = Some((model.region_at(x), x));
-        ui.data_mut(|dd| dd.insert_temp(cursor_id, to_screen(x, stacked.at(x))));
+        let region = model.region_at(x);
+        let initial_amount = model.amounts.get(region).copied().unwrap_or(0.0);
+        let start_pos = to_screen(x, stacked.at(x));
+        dragged = Some((region, x, initial_amount, start_pos.y));
+        ui.data_mut(|dd| dd.insert_temp(cursor_id, start_pos));
     }
-    if let Some((region, x)) = dragged
+    if let Some((region, x, initial_amount, start_y)) = dragged
         && resp.dragged()
     {
         // Follow the pointer's motion from where the curve was grabbed, so the press itself moves
@@ -1410,13 +1366,19 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
         let alt = ui.input(|i| i.modifiers.alt);
         let dd = ui.input(|i| i.pointer.delta());
         let step = if alt { vec2(dd.x * 0.1, dd.y * 0.1) } else { vec2(dd.x, dd.y) };
-        let start = to_screen(x, stacked.master_at(model.handle_level_at(region, model.amounts[region], x)));
-        let cursor = ui.data(|d| d.get_temp::<Pos2>(cursor_id)).unwrap_or(start) + step;
+        let cursor = ui.data(|d| d.get_temp::<Pos2>(cursor_id)).unwrap_or(pos2(0.0, start_y)) + step;
         ui.data_mut(|d| d.insert_temp(cursor_id, cursor));
-        // the pointer is on the drawn (stacked) line: the region curve has to reach what the
-        // master curve takes to that level
-        let level = ((r.bottom() - cursor.y) / r.height()).clamp(0.0, 1.0) as f64;
-        set = Some((PARAM_AMOUNTS[region], model.amount_at_level(region, stacked.param_level(level), x)));
+        // Only the vertical motion since the grab counts (a horizontal drag changes nothing, however
+        // much the neighbouring regions lift the curve there). The pointer is on the drawn (stacked)
+        // line, so the motion is measured in region-curve levels: what the master curve takes to it.
+        let level_of = |y: f32| ((r.bottom() - y) / r.height()).clamp(0.0, 1.0) as f64;
+        let delta_level = stacked.param_level(level_of(cursor.y)) - stacked.param_level(level_of(start_y));
+        let per_unit = model.level_per_unit(region, x);
+        let new_amount =
+            if per_unit.abs() > f64::EPSILON { (initial_amount + delta_level / per_unit).clamp(-100.0, 100.0).round() } else { initial_amount };
+        if let Some(&id) = PARAM_AMOUNTS.get(region) {
+            set = Some((id, new_amount));
+        }
     }
     if let Some((id, v)) = set {
         let _ = app.run("develop.set", json!({"control": id, "value": v}));
@@ -1426,7 +1388,7 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
         dragged = None;
         ui.data_mut(|d| {
             d.remove::<Pos2>(cursor_id);
-            d.remove::<Option<(usize, f64)>>(drag_id);
+            d.remove::<Option<(usize, f64, f64, f32)>>(drag_id);
         });
     }
     ui.data_mut(|dd| dd.insert_temp(drag_id, dragged));
@@ -1436,13 +1398,13 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
     // the region under the pointer (or the one in hand), named as its slider below reads it
-    let shown = dragged.map(|(region, _)| region).or_else(|| hovered.then(|| resp.hover_pos()).flatten().map(|q| model.region_at(from_screen_x(q))));
-    if let Some(region) = shown {
-        let id = PARAM_AMOUNTS[region];
-        if let Some(v) = controls::get(d, id) {
-            let name = controls::find(id).map_or("", |s| s.label);
-            ui.painter().text(r.left_top() + vec2(6.0, 4.0), Align2::LEFT_TOP, format!("{name} {v:.0}"), t.font(11.0), t.text_dim);
-        }
+    let shown = dragged.map(|(region, ..)| region).or_else(|| hovered.then(|| resp.hover_pos()).flatten().map(|q| model.region_at(from_screen_x(q))));
+    if let Some(region) = shown
+        && let Some(&id) = PARAM_AMOUNTS.get(region)
+        && let Some(v) = set.and_then(|(s_id, v)| (s_id == id).then_some(v)).or_else(|| controls::get(d, id))
+    {
+        let name = controls::find(id).map_or("", |s| s.label);
+        ui.painter().text(r.left_top() + vec2(6.0, 4.0), Align2::LEFT_TOP, format!("{name} {v:.0}"), t.font(11.0), t.text_dim);
     }
 }
 
@@ -2154,8 +2116,10 @@ fn hdr_button_tip(sdr_window: bool) -> String {
 
 const HDR_SDR_WINDOW_NOTE: &str = "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.";
 
+const SDR_SLIDERS_NOTE: &str = "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.";
+
 /// The Light panel's HDR settings while HDR editing is on (the switch itself is the HDR button
-/// next to B&W): Visualize HDR range and the headroom limit.
+/// next to B&W): Visualize HDR range, Preview for SDR Display and the headroom limit.
 fn hdr_row(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     if !d.hdr.enabled {
         return;
@@ -2166,6 +2130,21 @@ fn hdr_row(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
         register(ui.ctx(), "check:hdrVisualize", r.rect);
         if r.on_hover_text("Grey below SDR white; yellow, orange, red, magenta up to 1, 2, 3 and over 3 stops above it").changed() {
             app.ui.hdr_visualize = v;
+        }
+        // Lightroom Classic's Preview for SDR Display: the photo as SDR displays and SDR exports
+        // show it (its SDR rendition) instead of in HDR. The same switch as View ▸ HDR Preview,
+        // the other way round; on a window that can't show HDR it is always on.
+        let hdr_window = app.hdr_headroom.is_some();
+        let mut sdr = !hdr_window || !app.ui.hdr_preview;
+        let r = ui.add_enabled(hdr_window, egui::Checkbox::new(&mut sdr, crate::i18n::tr("Preview for SDR Display")));
+        register(ui.ctx(), "check:hdrSdrPreview", r.rect);
+        let r = r
+            .on_hover_text(crate::i18n::tr("Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition"))
+            .on_disabled_hover_text(crate::i18n::tr(HDR_SDR_WINDOW_NOTE));
+        if r.changed()
+            && let Err(e) = app.run("view.hdrPreview", json!({"on": !sdr}))
+        {
+            app.ui.status = e;
         }
     });
     control(app, ui, d, "hdr.maxEv", true);
@@ -2273,7 +2252,8 @@ fn grading_wheel(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo
     // puck as it is at that moment.
     let grab_id = egui::Id::new(("wheelGrab", key));
     let mods = ui.input(|i| WheelMods::from_modifiers(i.modifiers));
-    let grab = match resp.interact_pointer_pos() {
+    let pointer = wheel_pointer(ui, &resp);
+    let grab = match pointer {
         Some(q) if resp.dragged() || resp.clicked() => {
             let held = ui.data(|m| m.get_temp::<WheelGrab>(grab_id)).filter(|g| g.mods == mods && !resp.drag_started());
             Some(held.unwrap_or_else(|| {
@@ -2312,13 +2292,20 @@ fn grading_wheel(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo
         let _ = app.run("develop.beginInteraction", json!({"label": crate::i18n::tr_format!("{label} Grading", label = label)}));
     }
     if (resp.dragged() || resp.clicked())
-        && let Some(q) = resp.interact_pointer_pos()
+        && let Some(q) = pointer
     {
         let (hue, sat) = grab.map_or_else(|| wheel_pick(q - c, rad, None), |g| g.pick(q - c, rad));
         let _ = app.run("develop.set", json!({"values": {format!("grading.{key}.hue"): hue.round(), format!("grading.{key}.sat"): sat.round()}}));
     }
     if resp.drag_stopped() || resp.clicked() {
         let _ = app.run("develop.endInteraction", json!({}));
+    }
+    // released, or Esc (egui ends a drag on it)
+    if resp.drag_stopped()
+        && let Some(held) = ui.ctx().data_mut(|m| m.remove_temp::<WheelCapture>(egui::Id::new(WHEEL_CAPTURE)))
+        && !held.dropped
+    {
+        give_pointer_back(ui.ctx(), held.origin);
     }
     if resp.double_clicked() {
         let _ = app.run("develop.set", json!({"values": {format!("grading.{key}.hue"): 0, format!("grading.{key}.sat"): 0}}));
@@ -2420,6 +2407,99 @@ impl WheelGrab {
             v
         };
         wheel_pick(v, rad, self.lock())
+    }
+}
+
+/// A wheel drag holds the pointer, as in Lightroom (issue #1899): it is hidden for the drag, the
+/// puck follows the mouse's own travel, and on release the pointer is back where the button went
+/// down, so a long (Alt) drag doesn't leave it far from the wheels. On macOS the pointer is locked
+/// in place for the drag; elsewhere it moves unseen and is put back. The browser can't move it
+/// (eframe's web host ignores the command), so there it only shows again where the drag ended.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct WheelCapture {
+    /// Where the button went down: the pointer goes back there.
+    origin: Pos2,
+    /// Where the pointer would be had it been free: where the drag began plus the travel since.
+    pos: Pos2,
+    /// Let go early (the window lost focus): the rest of this drag leaves the wheel alone.
+    dropped: bool,
+    /// The pass that last drew the dragged wheel.
+    pass: u64,
+}
+
+/// One wheel is dragged at a time, so one capture for them all.
+const WHEEL_CAPTURE: &str = "wheelCapture";
+
+/// The mouse's travel this frame: the pointer's, or, while the pointer stands still (locked, or
+/// against a screen edge), the raw motion the host reports.
+fn wheel_travel(delta: egui::Vec2, motion: Option<egui::Vec2>) -> egui::Vec2 {
+    if delta != egui::Vec2::ZERO {
+        return delta;
+    }
+    motion.filter(|m| m.x.is_finite() && m.y.is_finite()).unwrap_or(egui::Vec2::ZERO)
+}
+
+/// Where the wheel `resp` reads the pointer this frame: where it clicked, or for a drag the held
+/// pointer ([`WheelCapture`]), `None` once a lost focus let go of it (Esc ends the drag itself:
+/// egui stops a drag on Esc).
+fn wheel_pointer(ui: &egui::Ui, resp: &egui::Response) -> Option<Pos2> {
+    let q = resp.interact_pointer_pos()?;
+    if !resp.dragged() {
+        return Some(q);
+    }
+    let ctx = ui.ctx();
+    let id = egui::Id::new(WHEEL_CAPTURE);
+    let held = ctx.data(|m| m.get_temp::<WheelCapture>(id)).filter(|_| !resp.drag_started());
+    let mut cap = held.unwrap_or_else(|| {
+        if cfg!(target_os = "macos") {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::Locked));
+        }
+        WheelCapture { origin: ui.input(|i| i.pointer.press_origin()).unwrap_or(q), pos: q, ..Default::default() }
+    });
+    cap.pass = ctx.cumulative_pass_nr();
+    if !cap.dropped {
+        let (travel, unfocused) = ui.input(|i| {
+            // the event, not `focused`: a click that activates the window may land before its focus
+            let unfocused = i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false)));
+            (wheel_travel(i.pointer.delta(), i.pointer.motion()), unfocused)
+        });
+        if !resp.drag_started() {
+            cap.pos += travel;
+        }
+        if unfocused {
+            give_pointer_back(ctx, cap.origin);
+            cap.dropped = true;
+        } else {
+            ctx.set_cursor_icon(egui::CursorIcon::None);
+        }
+    }
+    ctx.data_mut(|m| m.insert_temp(id, cap));
+    (!cap.dropped).then_some(cap.pos)
+}
+
+/// Unlock and show the pointer a wheel drag held, back at `origin`.
+fn give_pointer_back(ctx: &egui::Context, origin: Pos2) {
+    if cfg!(target_os = "macos") {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
+    }
+    if cfg!(not(target_arch = "wasm32")) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(origin));
+    }
+}
+
+/// Once a frame, after the panels: a held pointer stays hidden over whatever set its own cursor,
+/// and is given back if no wheel drew this pass (the flyout closed or the view changed under the
+/// drag), so it is never left locked or hidden.
+pub(crate) fn wheel_pointer_frame_end(ctx: &egui::Context) {
+    let id = egui::Id::new(WHEEL_CAPTURE);
+    let Some(cap) = ctx.data(|m| m.get_temp::<WheelCapture>(id)) else { return };
+    if cap.pass != ctx.cumulative_pass_nr() {
+        ctx.data_mut(|m| m.remove::<WheelCapture>(id));
+        if !cap.dropped {
+            give_pointer_back(ctx, cap.origin);
+        }
+    } else if !cap.dropped {
+        ctx.set_cursor_icon(egui::CursorIcon::None);
     }
 }
 

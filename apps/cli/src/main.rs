@@ -13,6 +13,8 @@
 //! <cli> commands [--json]
 //! <cli> controls [--json]
 //! <cli> calibrate [--max N] [--out DIR] FOLDERS/FILES…
+//! <cli> calibrate-lightroom preset|fit|add|list|verify …
+//! <cli> compare REFERENCE TEST [--size N] [--no-align] [--diff OUT.png] [--json]
 //! <cli> camdb extract [--contributor NAME] NATIVE.dng…
 //! <cli> camdb show MAKE MODEL
 //! ```
@@ -20,7 +22,9 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod alloc_release;
+mod calibrate_lightroom;
 mod catalog_migrate;
+mod compare;
 mod run_action;
 mod sync_folder;
 
@@ -130,6 +134,26 @@ USAGE:
       model, written as <model>.json to DIR (default: the profiles folder {app} reads,
       <config>/camera-profiles, or ${P}_CAMERA_PROFILES). Raws of a profiled model then
       take their colour from the profile and only their tone from their own JPEG.
+  {cli} calibrate-lightroom preset -o FILE.xmp
+      Write the baseline Lightroom preset to apply (on virtual copies) before exporting for a fit.
+  {cli} calibrate-lightroom fit --raws DIR… --exports DIR… [-o OUTDIR] [--contributor NAME] [--dry-run]
+      Fit a camera's colour model and looks to Lightroom's exports of your own raws (16-bit TIFF, one export
+      folder per Lightroom profile). Writes <Make>_<Model>.json (the file to send: numbers only, no images) and
+      one .dcp per look for your own testing. --dry-run pairs and reports coverage without fitting.
+  {cli} calibrate-lightroom add FILE [--repo DIR] [--contributor NAME]
+      Developers: validate a contributed calibration, write it to crates/camdb/data/calibrations/ and add its
+      assets/ATTRIBUTION.md row (DIR: the repository root, default .).
+  {cli} calibrate-lightroom list
+      The calibrations built into this binary, with their looks and held-out colour error.
+  {cli} calibrate-lightroom verify --raws DIR… --exports DIR… [--report DIR] [--json] [--size N] [--max N]
+      Moving from another editor: render your edited raws the way {app} imports them (their XMP sidecars, or the
+      settings Lightroom embeds in its exports) and measure each against its edited export (CIEDE2000), per photo
+      and per group of controls the edits used. --report writes verify.json and a ΔE00 map per photo.
+  {cli} compare REFERENCE TEST [--size N] [--no-align] [--diff OUT.png] [--json]
+      How far TEST is from REFERENCE: two renders of the same photo from any editor or camera (JPEG, TIFF, PNG,
+      …, read through their embedded colour profiles). Lines them up, then prints CIEDE2000 (mean, median, p95,
+      p99) overall, by tone band and by hue, with the lightness, saturation and hue bias. --size: long edge
+      compared (default 512); --no-align: compare pixel for pixel; --diff: write a false-colour ΔE00 map.
   {cli} camdb extract [--contributor NAME] NATIVE.dng…
       Print camera database entries (TOML, for data/cameras/<maker>.toml in the camdb crate) from DNGs the
       camera wrote itself. DNGs written by Adobe software or by {app}'s own export are refused.
@@ -218,6 +242,8 @@ fn main() -> ExitCode {
         Some("denoise-serve") => denoise_serve(&args[1..]),
         Some("calibrate") => calibrate(&args[1..]),
         Some("camdb") => camdb(&args[1..]),
+        Some("calibrate-lightroom") => calibrate_lightroom::run(&args[1..]),
+        Some("compare") => compare::run(&args[1..]),
         Some("--version" | "-V" | "version") => {
             println!("{CLI} {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -706,6 +732,8 @@ fn run(args: &[String]) -> Result<(), String> {
                     h.session.execute("library.select", &json!({"ids": ids, "active": first})).map_err(|e| e.to_string())?;
                 }
             }
+            // the user at a shell may name the program Edit In starts; `mcp` may not
+            h.trusted = true;
             Box::new(h)
         }
     };
@@ -1094,7 +1122,11 @@ fn snapshot(args: &[String]) -> Result<(), String> {
 
 fn commands(args: &[String]) -> Result<(), String> {
     let mut h = Headless::demo();
-    let cmds = h.call("engine.commands", json!({}))?;
+    let mut cmds = h.call("engine.commands", json!({}))?;
+    // Listed by id so each family (`photo.*`, `mask.*`, …) reads together; the registry keeps its own order.
+    if let Some(list) = cmds.as_array_mut() {
+        list.sort_by(|a, b| a["id"].as_str().unwrap_or("").cmp(b["id"].as_str().unwrap_or("")));
+    }
     let mut out = std::io::stdout().lock();
     if args.iter().any(|a| a == "--json") {
         writeln!(out, "{}", serde_json::to_string_pretty(&cmds).unwrap_or_default()).map_err(|e| e.to_string())?;

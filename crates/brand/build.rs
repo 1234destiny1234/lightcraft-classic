@@ -85,11 +85,16 @@ const OPTIONAL: &[(&str, &str, &str)] = &[
     ("updates.public_keys", "UPDATES_PUBLIC_KEYS", "&[&str] = &[]"),
     // no community chat: no Discord link in the Help menu or About
     ("product.discord", "DISCORD", "&str = \"\""),
+    // no calibration channel: contributors attach calibrations to an issue on `product.repository`
+    ("product.calibration_discord", "CALIBRATION_DISCORD", "&str = \"\""),
+    ("product.calibration_thread", "CALIBRATION_THREAD", "&str = \"\""),
     // no upstream: the About window credits no upstream project
     ("upstream.name", "UPSTREAM_NAME", "&str = \"\""),
     ("upstream.repository", "UPSTREAM_REPOSITORY", "&str = \"\""),
     // no earlier repositories: updates come only from `product.repository`
     ("legacy.repositories", "LEGACY_REPOSITORIES", "&[&str] = &[]"),
+    // no earlier display names: the macOS updater looks only for `<display_name>.app` in a disk image
+    ("legacy.display_names", "LEGACY_DISPLAY_NAMES", "&[&str] = &[]"),
     // the manifest names its files under `product.repository`
     ("product.release_repository", "RELEASE_REPOSITORY", "&str = \"\""),
 ];

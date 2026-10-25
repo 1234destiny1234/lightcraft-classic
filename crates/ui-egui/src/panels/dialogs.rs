@@ -128,7 +128,14 @@ fn watermark_preview(app: &mut LccApp, ui: &mut egui::Ui, wm: &lcc_engine::expor
                 Ok(img) => img,
                 Err(e) => {
                     let note = if e.is_some() { "Preview unavailable" } else { "Loading preview…" };
-                    let r = crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
+                    let r = ui
+                        .horizontal(|ui| {
+                            if e.is_none() {
+                                crate::progress::spinner(ui, 12.0);
+                            }
+                            crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim))
+                        })
+                        .inner;
                     if let Some(e) = e {
                         r.on_hover_text(e);
                     }
@@ -173,7 +180,8 @@ fn window_id(dialog: &Dialog) -> egui::Id {
         Dialog::Import { .. } => "app-import-dialog",
         Dialog::Print => "app-print-dialog",
         Dialog::Export { .. } => "app-export-dialog",
-        Dialog::Settings { .. } => "app-settings-dialog",
+        // (the Settings screen's own layer: `settings_screen::LAYER`)
+        Dialog::Settings { .. } => crate::settings_screen::LAYER,
         _ => "app-dialog",
     })
 }
@@ -190,6 +198,10 @@ pub(crate) fn prepare(app: &LccApp, ui: &mut egui::Ui) {
 }
 
 pub fn show(app: &mut LccApp, ctx: &egui::Context) {
+    // the Modern layout's Settings screen and Export sheet (fork)
+    if crate::modern_sheets::show(app, ctx) {
+        return;
+    }
     let Some(mut dlg) = app.ui.dialog.clone() else { return };
     let at_start = dlg.clone();
     // Esc with a popup open in the dialog (a dropdown, a date picker's calendar) closes the popup
@@ -247,6 +259,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::SmartRules { .. } => "Edit Smart Collection",
         Dialog::AutoStack { .. } => "Auto-Stack by Capture Time",
         Dialog::CreatePreset { .. } => "Create Preset",
+        Dialog::CreatePresetFolder { .. } => "Create Preset Folder",
         Dialog::CopySettings { .. } => "Choose Edit Settings to Copy",
         Dialog::PasteSettings { .. } => "Paste Selected Settings",
         Dialog::SyncSettings { .. } => "Synchronize Settings",
@@ -263,6 +276,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::ConfirmPurge { .. } => "Delete Permanently",
         Dialog::MovePhotos { .. } => "Move Photos",
         Dialog::LightroomCatalog { .. } => "Lightroom Classic Catalog",
+        Dialog::LightroomDestination { .. } => "Import Lightroom Catalog",
         Dialog::SaveEffect { .. } => "New Effect Preset",
         Dialog::ManageEffects { .. } => "Manage Effect Presets",
         Dialog::DeleteEffects { names } if names.len() == 1 => "Delete Effect Preset",
@@ -281,7 +295,16 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::Watermark { .. } => "Watermark Editor",
     }
     .to_string();
-    let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(16, 12));
+    // a card: rounded, a faint light edge, a soft shadow; the title inside it (below)
+    // On a phone the small dialogs (not the full-window screens) are bottom sheets: the window's
+    // full width, on its bottom edge, the top corners rounded, a grab handle that closes them.
+    let sheet = crate::dialog_frame::phone_sheet(ctx, &dlg);
+    let insets = app.ui.modern.insets;
+    let frame = egui::Frame::window(&ctx.global_style())
+        .inner_margin(egui::Margin { left: 18, right: 18, top: if sheet { 6 } else { 14 }, bottom: 14 })
+        .corner_radius(if sheet { egui::CornerRadius { nw: 20, ne: 20, sw: 0, se: 0 } } else { egui::CornerRadius::same(16) })
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
+        .shadow(egui::epaint::Shadow { offset: [0, 10], blur: 32, spread: 0, color: egui::Color32::from_black_alpha(110) });
     // The import review can be resized (its photo grid takes the room); it keeps a window id of its
     // own so the size it is given doesn't carry over to the other dialogs. Its content scrolls
     // rather than growing the window when the options below the grid get taller (e.g. Copy).
@@ -300,16 +323,35 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let widest_id = window_id.with("widest");
     let widest = if settings { ctx.data(|d| d.get_temp::<f32>(widest_id)).unwrap_or(0.0).min(screen.width() * 0.9) } else { 0.0 };
     let mut content_w = 0.0f32;
-    let shown = egui::Window::new(crate::i18n::tr(&title)).id(window_id)
+    // before the window: drawing it closes a dropdown the click lands outside of
+    let popup_was_open = egui::Popup::is_any_open(ctx);
+    let heading = crate::i18n::tr(&title).to_string();
+    let shown = egui::Window::new(heading.clone()).id(window_id)
+        .title_bar(false)
         .collapsible(false)
         .resizable([import || export, import])
         .vscroll(import)
         .resize(|r| if import { r.default_height(crate::import::DIALOG_SIZE[1]) } else { r })
         .frame(frame)
-        .anchor(if settings { egui::Align2::CENTER_TOP } else { egui::Align2::CENTER_CENTER }, [0.0, if settings { top } else { 0.0 }])
-        .min_width(widest)
-        .max_width(if export { (screen.width() - 2.0 * crate::dialog_frame::SCREEN_MARGIN).max(320.0) } else { f32::INFINITY })
-        .default_width(match dlg {
+        .anchor(
+            if sheet {
+                egui::Align2::CENTER_BOTTOM
+            } else if settings {
+                egui::Align2::CENTER_TOP
+            } else {
+                egui::Align2::CENTER_CENTER
+            },
+            [(insets.left - insets.right) / 2.0, if sheet { -insets.bottom } else if settings { top } else { 0.0 }],
+        )
+        .min_width(if sheet { sheet_w(screen, insets) } else { widest })
+        .max_width(if sheet {
+            sheet_w(screen, insets)
+        } else if export {
+            (screen.width() - 2.0 * crate::dialog_frame::SCREEN_MARGIN).max(320.0)
+        } else {
+            f32::INFINITY
+        })
+        .default_width(if sheet { sheet_w(screen, insets) } else { match dlg {
             Dialog::Import { .. } => crate::import::DIALOG_SIZE[0],
             Dialog::SmartRules { .. } => 680.0,
             Dialog::AllMetadata { .. } => 620.0,
@@ -317,15 +359,23 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             Dialog::Print => 1100.0,
             Dialog::FaceModel { .. } => 460.0,
             Dialog::LightroomCatalog { .. } => 440.0,
+            Dialog::LightroomDestination { .. } => 480.0,
             Dialog::ManageEffects { .. } => 560.0,
             // (the preset column beside a form: its label column, then the controls)
             Dialog::Export { .. } => 900.0_f32.min(screen.width() - 2.0 * crate::dialog_frame::SCREEN_MARGIN),
             Dialog::Rename { .. } | Dialog::ContactSheet { .. } | Dialog::Timelapse { .. } | Dialog::SlideshowExport { .. } => 480.0,
-            Dialog::CaptureTime { .. } | Dialog::LabelNames { .. } | Dialog::CreatePreset { .. } => 440.0,
+            Dialog::CaptureTime { .. } | Dialog::LabelNames { .. } | Dialog::CreatePreset { .. } | Dialog::CreatePresetFolder { .. } => 440.0,
             _ => 380.0,
-        })
+        } })
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
+            if sheet && crate::dialog_frame::grab_handle(ui) {
+                close = true;
+            }
+            // the title, left-aligned at the card's top (no title bar)
+            let h = ui.label(egui::RichText::new(&heading).font(t.semibold(16.0)).color(t.text));
+            crate::widgets::register(ui.ctx(), "dialog:title", h.rect);
+            ui.add_space(2.0);
             // fixed header (tabs) / scrolling body / fixed footer (buttons), capped to the screen;
             // the import review sizes and scrolls itself (it can be resized)
             let mut layout = if settings {
@@ -342,6 +392,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             let formed = matches!(
                 dlg,
                 Dialog::CreatePreset { .. }
+                    | Dialog::CreatePresetFolder { .. }
                     | Dialog::Rename { .. }
                     | Dialog::ContactSheet { .. }
                     | Dialog::Timelapse { .. }
@@ -358,7 +409,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             .logarithmic(true)
                             .smallest_positive(1.0)
                             .custom_formatter(|v, _| crate::panels::dialogs::fmt_gap(v))
-                            .custom_parser(|s| s.trim().trim_end_matches('s').parse().ok()),
+                            .custom_parser(crate::panels::dialogs::parse_gap),
                     );
                     crate::widgets::named(r, crate::i18n::tr("Stack photos taken within this time of each other:"));
                     let preview = app.session.execute("stack.auto", &json!({"gap": *gap, "preview": true})).unwrap_or_default();
@@ -367,7 +418,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         egui::RichText::new(crate::i18n::tr_format!("Creates {} stacks from {} of {scope}", preview["stacks"], preview["photos"], scope = crate::i18n::tr(scope))).color(t.text_dim),
                     );
                 }
-                Dialog::Cull { reject_below, pick_best } => {
+                Dialog::Cull { reject_below, pick_best, burst_gap, similarity } => {
                     let n = app.session.selection.ids.len();
                     let scope = if n > 1 { crate::i18n::tr_format!("the {n} selected photos", n = n) } else { crate::i18n::tr_format!("the {} photos in view", app.session.visible_cloned().len()) };
                     ui.label(egui::RichText::new(crate::i18n::tr_format!("Scores {scope} for focus and exposure and finds similar shots taken within seconds of each other (bursts).", scope = scope)).color(t.text_label));
@@ -377,7 +428,32 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(if *reject_below > 0.0 { "Blurry photos below the score are flagged as rejects." } else { "0: nothing is rejected." })).color(t.text_dim));
                     let r = crate::dialog_frame::checkbox(ui, pick_best, crate::i18n::tr("Pick the sharpest photo of each burst"));
                     crate::widgets::register(ui.ctx(), "check:cullPick", r.rect);
-                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.")).color(t.text_dim));
+                    ui.add_space(6.0);
+                    // the sliders drag over the usual range; their value fields take whatever
+                    // `photo.analyze` accepts (a gap of 0 s to a day, a similarity of 0 to 1)
+                    let r = ui.add(
+                        egui::Slider::new(burst_gap, 1.0..=600.0)
+                            .logarithmic(true)
+                            .smallest_positive(1.0)
+                            .clamping(egui::SliderClamping::Never)
+                            .text(crate::i18n::tr("Burst: shots at most this far apart"))
+                            .custom_formatter(|v, _| crate::panels::dialogs::fmt_gap(v))
+                            .custom_parser(crate::panels::dialogs::parse_gap),
+                    );
+                    crate::widgets::register(ui.ctx(), "field:cullGap", r.rect);
+                    let r = ui.add(
+                        egui::Slider::new(similarity, 0.70..=0.99)
+                            .clamping(egui::SliderClamping::Never)
+                            .text(crate::i18n::tr("Burst: how alike (loose … strict)"))
+                            // a typed 0.995 is kept (whole hundredths would round it to 1.00)
+                            .step_by(0.001)
+                            .min_decimals(2)
+                            .max_decimals(3),
+                    );
+                    crate::widgets::register(ui.ctx(), "field:cullSimilar", r.rect);
+                    clamp_cull_burst(burst_gap, similarity);
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Lower it when a panning or moving burst splits into several groups.")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus, Eyes Open, Aesthetic and Cull Score.")).color(t.text_dim));
                 }
                 Dialog::WhatsNew => {
                     ui.scope(|ui| {
@@ -561,11 +637,19 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             "file" => None,
                             _ => Some((*zone as f64 * 3600.0).round() as i64),
                         };
-                        let after = delta.and_then(|d| lcc_catalog::dates::shift_iso(&cur, d));
+                        // the photo's own time is the problem (a Lightroom catalog's capture time
+                        // is copied verbatim), not what was typed
+                        let unreadable = lcc_catalog::dates::shift_iso(&cur, 0).is_none();
+                        let after = match (mode.as_str(), unreadable && n == 1) {
+                            // alone, it simply gets the time typed (photo.setCaptureTime repairs it)
+                            ("set", true) => lcc_catalog::dates::normalize_iso(time),
+                            _ => delta.and_then(|d| lcc_catalog::dates::shift_iso(&cur, d)),
+                        };
                         ui.label(
                             egui::RichText::new(match after {
                                 Some(a) => format!("{name}: {} → {}", cur.replace('T', " "), a.replace('T', " ")),
                                 None if mode == "file" => String::new(),
+                                None if unreadable && !(mode == "set" && n == 1) => crate::i18n::tr("The active photo's capture time can't be read").to_string(),
                                 None => "Enter a date as YYYY-MM-DD HH:MM:SS".into(),
                             })
                             .color(t.text_label),
@@ -655,7 +739,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             });
                         }
                         None => {
-                            crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Checking names…")).color(t.text_dim));
+                            ui.horizontal(|ui| {
+                                crate::progress::spinner(ui, 12.0);
+                                crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Checking names…")).color(t.text_dim));
+                            });
                         }
                     }
                     let more = total.saturating_sub(RENAME_PREVIEW_ROWS);
@@ -756,6 +843,17 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     });
                     crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("Settings to include")));
                     let _ = group_checklist(ui, "presetInclude", groups);
+                }
+                Dialog::CreatePresetFolder { name, parent } => {
+                    if let Some(par) = parent.as_ref() {
+                        field(ui, "Parent folder", |ui| {
+                            ui.label(par.as_str());
+                        });
+                    }
+                    field(ui, "Folder name", |ui| {
+                        let r = ui.add(egui::TextEdit::singleline(name).hint_text(crate::i18n::tr("Folder name")).desired_width(f32::INFINITY));
+                        crate::widgets::named(r, crate::i18n::tr("Folder name"));
+                    });
                 }
                 Dialog::CopySettings { groups } => {
                     let _ = group_checklist(ui, "copyGroup", groups);
@@ -1019,13 +1117,17 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 Dialog::LightroomCatalog { folder, catalog } => {
                     ui.label(crate::i18n::tr("This is a Lightroom catalog, not a {app} library. Import it into a {app} library instead?"));
                     crate::dialog_frame::note(ui, egui::RichText::new(catalog.as_deref().unwrap_or(folder.as_str())).color(t.text_dim));
-                    crate::dialog_frame::note(ui,
-                        egui::RichText::new(crate::i18n::tr(
-                            "The import reads the catalog without changing it and adds its photos, edits, keywords and collections to the library open now.",
-                        ))
-                        .color(t.text_dim),
-                    );
+                    // (the import then asks where the catalog goes, unless Settings says to merge, #2672)
+                    let asks = app.ui.settings.lightroom_import == crate::state::LightroomImport::Ask
+                        && app.session.library.as_ref().is_some_and(|l| l.on_disk);
+                    let what = if asks {
+                        "The import reads the catalog without changing it. Next, choose whether its photos, edits, keywords and collections join the library open now or go into a new library."
+                    } else {
+                        "The import reads the catalog without changing it and adds its photos, edits, keywords and collections to the library open now."
+                    };
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(what)).color(t.text_dim));
                 }
+                d @ Dialog::LightroomDestination { .. } => crate::lightroom_destination::body(app, ui, d),
                 Dialog::RemoveFolder { name, count, path, disk } => {
                     ui.label(crate::i18n::tr_format!(
                         "Remove “{name}” and its {count} photo{} from the library?",
@@ -1293,6 +1395,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Dialog::KeywordTag { .. } => "Save",
                     Dialog::RemoveFolder { .. } => "Remove",
                     Dialog::LightroomCatalog { .. } => "Import Lightroom Catalog…",
+                    d @ Dialog::LightroomDestination { .. } => crate::lightroom_destination::ok_label(d),
                     Dialog::SynchronizeFolder { .. } if informational => "Close",
                     Dialog::SynchronizeFolder { .. } | Dialog::SyncSettings { .. } => "Synchronize",
                     Dialog::SamModel { then: Some(_), .. } if sam_installed => "Continue",
@@ -1326,13 +1429,16 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 // (each kind of dialog its own buttons: the keyboard's place doesn't carry from a
                 // dialog to the one it opens)
                 let kind = std::mem::discriminant(&dlg);
-                let cancel_button = Button::new(cancel).widget("button:dialogCancel").id_salt(kind).min_width(72.0);
+                // (finger-sized on a phone's bottom sheet)
+                let (min_w, min_h) = if sheet { (110.0, 44.0) } else { (72.0, 0.0) };
+                let cancel_button = Button::new(cancel).widget("button:dialogCancel").id_salt(kind).min_width(min_w).min_height(min_h);
                 let ok_button = Button::new(ok)
                     .kind(if primary { Kind::Primary } else { Kind::Secondary })
                     .enabled(can_confirm)
                     .widget("button:dialogOk")
                     .id_salt(kind)
-                    .min_width(72.0);
+                    .min_width(min_w)
+                    .min_height(min_h);
                 // (Cancel first, then the confirm: the keyboard goes through them as the eye does)
                 let gap = ui.spacing().item_spacing.x;
                 let mut buttons_w = 0.0;
@@ -1367,6 +1473,12 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     if !import {
         crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
     }
+    if let Some(w) = &shown {
+        // (the import review keeps its hand-picked photos however the click lands)
+        if app.ui.settings.close_dialogs_outside && !import && clicked_backdrop(ctx, w.response.rect, popup_was_open) {
+            close = true;
+        }
+    }
     if let Some(w) = shown {
         ctx.memory_mut(|m| m.set_modal_layer(w.response.layer_id));
         ctx.move_to_top(w.response.layer_id);
@@ -1380,7 +1492,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     if confirm {
         match confirm_dialog(app, &dlg) {
             // the import review stays open on an error (e.g. an unusable folder template), and so
-            // does Export (e.g. no folder chosen) so the choices aren't lost
+            // does Export (e.g. no folder chosen) so the choices aren't lost, and Edit Capture Time
+            // (a time that isn't a date, or a shift it refuses)
             Err(e)
                 if matches!(
                     dlg,
@@ -1397,6 +1510,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         | Dialog::KeywordSet { .. }
                         | Dialog::SynchronizeFolder { .. }
                         | Dialog::SaveEffect { .. }
+                        | Dialog::CaptureTime { .. }
                 ) =>
             {
                 app.toast(ctx, e)
@@ -1428,6 +1542,17 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 app.toast(ctx, e);
                 close = true;
             }
+            // photos whose capture time doesn't read are left as they were: say so
+            Ok(r) if matches!(dlg, Dialog::CaptureTime { .. }) && r["unreadable"].as_u64().is_some_and(|n| n > 0) => {
+                app.toast(ctx, crate::i18n::tr("Photos whose capture time can't be read were left as they were"));
+                close = true;
+            }
+            // where a Lightroom catalog goes: stays open to be corrected (a folder that isn't
+            // empty), unless the library it names has gone
+            Err(e) if matches!(dlg, Dialog::LightroomDestination { .. }) => {
+                close = !crate::lightroom_destination::keeps_open_on_error(app, &dlg);
+                app.toast(ctx, e);
+            }
             Ok(_) if keeps_open(app, &dlg) => {
                 if let Dialog::SamModel { error, .. } = &mut dlg {
                     *error = None;
@@ -1444,7 +1569,48 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     if std::mem::take(&mut app.close_dialog) {
         close = true;
     }
+    if !close {
+        let frame = ctx.cumulative_frame_nr();
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new(BACKDROP_SHOWN), frame));
+    }
     app.ui.dialog = if close { None } else { Some(dlg) };
+}
+
+/// The last frame a dialog was drawn and stayed open, for [`clicked_backdrop`].
+const BACKDROP_SHOWN: &str = "dialog-backdrop-shown";
+
+/// A click on the dimmed backdrop around the dialog: it closes the dialog like Esc. Pressed and
+/// released outside the window, so a slider dragged past its edge doesn't close it; a press while a
+/// popup is open (a dropdown, a date picker's calendar) only closes the popup: `popup_was_open` is
+/// read before the window is drawn, since drawing it already closes the popup. Only a press made
+/// while the dialog is shown counts: in the frame a dialog appears, its input is the click that
+/// opened it (a quick click on a slow frame presses and releases in that one frame), so it never
+/// closes it. (Read from the raw events: egui forgets the press origin on release.)
+fn clicked_backdrop(ctx: &egui::Context, window: egui::Rect, popup_was_open: bool) -> bool {
+    let press_id = egui::Id::new("dialog-backdrop-press");
+    let frame = ctx.cumulative_frame_nr();
+    // the same frame too: a second pass of it gets no input
+    let shown = ctx.data(|d| d.get_temp::<u64>(egui::Id::new(BACKDROP_SHOWN))).is_some_and(|f| f + 1 >= frame);
+    if !shown {
+        ctx.data_mut(|d| d.remove_temp::<bool>(press_id));
+        return false;
+    }
+    let (press, release, clicked) = ctx.input(|i| {
+        let at = |down: bool| {
+            i.events.iter().rev().find_map(|e| match e {
+                egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, .. } if *pressed == down => Some(*pos),
+                _ => None,
+            })
+        };
+        (at(true), at(false), i.pointer.primary_clicked())
+    });
+    if let Some(p) = press {
+        let outside = !window.contains(p) && !popup_was_open;
+        ctx.data_mut(|d| d.insert_temp(press_id, outside));
+    }
+    let Some(release) = release else { return false };
+    let pressed_outside = ctx.data_mut(|d| d.remove_temp::<bool>(press_id)).unwrap_or(false);
+    clicked && pressed_outside && !window.contains(release)
 }
 
 /// A list that scrolls on its own never gets shorter than this to make its dialog fit.
@@ -1461,6 +1627,61 @@ pub fn list_height(ui: &egui::Ui, preferred: f32) -> f32 {
 }
 
 /// Apply a dialog's action (also used by `ui.dialog.confirm`).
+/// What [`fmt_gap`] writes, read back: `90`, `90 s`, `1 min 30 s`, `2 h 5 min`, `1 day`
+/// (units `s`, `min`, `h`, `day`, each optional after a plain number of seconds).
+pub fn parse_gap(text: &str) -> Option<f64> {
+    // the one translated text `fmt_gap` writes ("1 Tag")
+    if text.trim() == crate::i18n::tr("1 day") {
+        return Some(86400.0);
+    }
+    let mut total = 0.0;
+    let mut seen = false;
+    let mut words = text.split_whitespace().peekable();
+    while let Some(word) = words.next() {
+        // "90s" as well as "90 s"
+        let split = word.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(word.len());
+        let (num, unit) = word.split_at(split);
+        let n: f64 = num.parse().ok().filter(|n: &f64| n.is_finite())?;
+        let unit = if unit.is_empty() {
+            match words.peek() {
+                Some(u) if u.parse::<f64>().is_err() => words.next().unwrap_or_default(),
+                _ => "s",
+            }
+        } else {
+            unit
+        };
+        let scale = match unit.trim_end_matches('.').to_lowercase().as_str() {
+            "s" | "sec" | "secs" | "second" | "seconds" => 1.0,
+            "m" | "min" | "mins" | "minute" | "minutes" => 60.0,
+            "h" | "hr" | "hrs" | "hour" | "hours" => 3600.0,
+            "d" | "day" | "days" => 86400.0,
+            _ => return None,
+        };
+        total += n * scale;
+        seen = true;
+    }
+    seen.then_some(total)
+}
+
+/// The longest burst gap `photo.analyze` accepts: a day.
+pub const MAX_BURST_GAP: f32 = 86_400.0;
+
+/// Keep what was typed in the Assisted Culling value fields within what `photo.analyze` accepts
+/// (a gap of 0 s to a day, a similarity of 0 to 1), not within the sliders' drag range.
+pub fn clamp_cull_burst(gap: &mut f32, similarity: &mut f32) {
+    *gap = if gap.is_finite() { gap.clamp(0.0, MAX_BURST_GAP) } else { 10.0 };
+    *similarity = if similarity.is_finite() { similarity.clamp(0.0, 1.0) } else { 0.93 };
+}
+
+/// The `photo.analyze` parameters of the Assisted Culling dialog, its values as they are.
+pub fn cull_params(reject_below: f32, pick_best: bool, burst_gap: f32, similarity: f32) -> serde_json::Value {
+    let mut p = json!({"pickBest": pick_best, "burstGap": burst_gap, "similarity": similarity});
+    if reject_below > 0.0 {
+        p["rejectBelow"] = json!(reject_below);
+    }
+    p
+}
+
 /// `90` → `1 min 30 s`.
 /// The About dialog's tabs: the header above its scrolling body.
 const ABOUT_TAB_ID: &str = "about_tab";
@@ -1487,7 +1708,9 @@ pub fn fmt_gap(v: f64) -> String {
         60..3600 if v.is_multiple_of(60) => format!("{} min", v / 60),
         60..3600 => format!("{} min {} s", v / 60, v % 60),
         3600..86400 if v.is_multiple_of(3600) => format!("{} h", v / 3600),
-        3600..86400 => format!("{} h {} min", v / 3600, v % 3600 / 60),
+        3600..86400 if v.is_multiple_of(60) => format!("{} h {} min", v / 3600, v % 3600 / 60),
+        // the seconds too, so editing the text reads back the same gap
+        3600..86400 => format!("{} h {} min {} s", v / 3600, v % 3600 / 60, v % 60),
         _ => crate::i18n::tr("1 day").into(),
     }
 }
@@ -1567,10 +1790,8 @@ fn sam_model_body(app: &mut LccApp, ui: &mut egui::Ui, error: Option<&str>) {
     let seg = &app.session.segmenter;
     if d.running {
         ui.add_space(4.0);
-        let frac = if d.total > 0 { d.done as f64 / d.total as f64 } else { 0.0 };
         let text = format!("{:.2} / {:.2} GB · {}", gb(d.done), gb(d.total), d.file);
-        let r = ui.add(egui::ProgressBar::new(frac as f32).text(text));
-        crate::widgets::register(ui.ctx(), "progress:samDownload", r.rect);
+        crate::progress::Progress::new(crate::progress::fraction_of(d.done, d.total)).label(text).widget("progress:samDownload").show(ui);
         let r = ui.button(crate::i18n::tr("Cancel Download"));
         crate::widgets::register(ui.ctx(), "button:samCancel", r.rect);
         if r.clicked() {
@@ -1802,12 +2023,9 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         Dialog::DenoiseModel { info, accepted } => crate::panels::denoise::install(app, info, *accepted),
         Dialog::FaceModel { path, info, accepted } => crate::panels::faces::install(app, path, info, *accepted),
         Dialog::AllMetadata { .. } | Dialog::SystemInfo { .. } | Dialog::WhatsNew => Ok(serde_json::Value::Null),
-        Dialog::Cull { reject_below, pick_best } => {
-            let mut p = json!({"pickBest": pick_best});
-            if *reject_below > 0.0 {
-                p["rejectBelow"] = json!(reject_below);
-            }
-            app.run("photo.analyze", p)
+        Dialog::Cull { reject_below, pick_best, burst_gap, similarity } => {
+            app.ui.cull_burst = Some((*burst_gap, *similarity));
+            app.run("photo.analyze", cull_params(*reject_below, *pick_best, *burst_gap, *similarity))
         }
         Dialog::SmartRules { id, name, rules, parent } => {
             // refused before anything changes (not even the name)
@@ -1832,6 +2050,10 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
                 "groups": groups,
             }),
         ),
+        Dialog::CreatePresetFolder { name, parent } => {
+            let n = name.trim();
+            if n.is_empty() { Ok(serde_json::Value::Null) } else { app.run("preset.createGroup", json!({"name": n, "parent": parent})) }
+        }
         Dialog::ContactSheet { options } => app.run("app.contactSheet", json!(options)),
         Dialog::Timelapse { .. } => app.run("app.timelapse", crate::timelapse_ui::dialog_params(dlg).unwrap_or_default()),
         Dialog::SlideshowExport { settings } => app.run("app.slideshowExport", json!(settings)),
@@ -1864,15 +2086,19 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
             if *library != app.session.library_generation() {
                 return Err(crate::i18n::tr("Another library was opened since the photos were dropped: nothing was moved").to_string());
             }
-            if *dont_ask {
+            let moved = crate::panels::left::move_photos(app, Some(ids), folder)?;
+            // only a move that began turns the question off: one refused, or that found the photos there already,
+            // leaves it as it was
+            if *dont_ask && moved > 0 {
                 app.ui.settings.ask_before_move = false;
             }
-            crate::panels::left::move_photos(app, Some(ids), folder).map(|n| json!({"moved": n}))
+            Ok(json!({"moved": moved}))
         }
         // the catalog found: no file dialog; none: File ▸ Import Lightroom Catalog… asks for it
         Dialog::LightroomCatalog { catalog, .. } => {
             app.run("file.importLightroom", catalog.as_ref().map_or_else(|| json!({}), |c| json!({"path": c})))
         }
+        d @ Dialog::LightroomDestination { .. } => crate::lightroom_destination::confirm(app, d),
         Dialog::SaveEffect { name, group, fields, amount, brush } => {
             crate::panels::mask_effects::save_confirm(app, name, group, fields, *amount, *brush)
         }
@@ -1893,6 +2119,11 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
             Ok(serde_json::Value::Null)
         }
     }
+}
+
+/// A bottom sheet's width: the window's, inside its side insets.
+fn sheet_w(screen: egui::Rect, insets: crate::modern::Insets) -> f32 {
+    (screen.width() - insets.left - insets.right).max(200.0)
 }
 
 /// Open a one-field dialog that runs `command` with `params` + `{key: typed value}`.
@@ -2105,12 +2336,233 @@ const EXPORT_FOLDED_AT_FIRST: &[&str] = &["Sizing", "Sharpening", "Metadata", "W
 /// ([`EXPORT_FOLDED_AT_FIRST`]); once the person flips it, that is kept in the settings
 /// (`groupOpen`, `export:<key>`).
 fn export_section(app: &mut LccApp, ui: &mut egui::Ui, key: &str, title: &str, summary: &str) -> bool {
+    // the Export screen: every section open, as a titled card the rail can jump to
+    if ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new(EXPORT_SCREEN)).unwrap_or(false)) {
+        let heading_top = ui.cursor().top();
+        crate::dialog_frame::group_begin(ui, Some(title));
+        let top = ui.cursor().top();
+        // (the old fold bar's id, on the heading)
+        crate::widgets::register(ui.ctx(), format!("section:export{key}"), egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), heading_top..=top));
+        ui.ctx().data_mut(|d| {
+            let mut tops: Vec<(String, f32, String)> = d.get_temp(egui::Id::new(EXPORT_TOPS)).unwrap_or_default();
+            tops.push((key.to_string(), top, summary.to_string()));
+            d.insert_temp(egui::Id::new(EXPORT_TOPS), tops);
+        });
+        if ui.ctx().data_mut(|d| d.get_temp::<String>(egui::Id::new(EXPORT_JUMP)).is_some_and(|k| k == key)) {
+            ui.scroll_to_rect(egui::Rect::from_min_size(egui::pos2(ui.max_rect().left(), top - 40.0), egui::vec2(1.0, 1.0)), Some(egui::Align::TOP));
+            ui.ctx().data_mut(|d| d.remove::<String>(egui::Id::new(EXPORT_JUMP)));
+        }
+        return true;
+    }
     let id = format!("export:{key}");
     let mut open = app.ui.group_is_open(&id, !EXPORT_FOLDED_AT_FIRST.contains(&key));
     if crate::dialog_frame::fold_group(ui, &format!("export{key}"), title, summary, &mut open) {
         app.ui.group_open.insert(id, open);
     }
     open
+}
+
+/// Context flag: the export rows are drawn on the Export screen (sections are open cards).
+const EXPORT_SCREEN: &str = "export-screen-mode";
+/// This frame's section tops on the Export screen: (key, y, summary).
+const EXPORT_TOPS: &str = "export-screen-tops";
+/// A section the rail asked to scroll to.
+const EXPORT_JUMP: &str = "export-screen-jump";
+
+/// The Export screen's rail: its groups (name, the section keys it covers).
+const EXPORT_GROUPS: [(&str, &[&str]); 7] = [
+    ("Where", &["Location", "Naming"]),
+    ("Video", &["Video"]),
+    ("File", &["FileSettings"]),
+    ("Size & Sharpening", &["Sizing", "Sharpening"]),
+    ("Metadata", &["Metadata"]),
+    ("Watermark", &["Watermark"]),
+    ("After Export", &["PostProcessing"]),
+];
+
+/// Export as a full-window screen, in every layout: the header (Back, how many photos, where they
+/// go), the presets and a rail of the settings' groups on the left (a tap scrolls to one; the one in
+/// view is lit), every setting on one scrolling page, and a bar along the bottom that always says
+/// what will be written, with Export. Back, Esc and Cancel close it. Own design.
+pub(crate) fn export_screen(app: &mut LccApp, ctx: &egui::Context) {
+    use lcc_engine::export::DestinationMode as D;
+    let Some(Dialog::Export { mut opts, mut full_size, mut resize, mut preset_name, mut limit_kb, mut dir }) = app.ui.dialog.clone() else { return };
+    let at_start = app.ui.dialog.clone();
+    let t = Tokens::get(ctx);
+    let screen = ctx.content_rect();
+    let roomy = screen.width() >= crate::settings_screen::ROOMY;
+    let mut cancel = !egui::Popup::is_any_open(ctx)
+        && !ctx.egui_wants_keyboard_input()
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    let mut go = false;
+    let n = app.session.selection.ids.len().max(1);
+    // last frame's section tops, for the rail's highlight
+    let tops: Vec<(String, f32, String)> = ctx.data_mut(|d| d.remove_temp(egui::Id::new(EXPORT_TOPS))).unwrap_or_default();
+    // the dialog's own id and the modal layer: popups opened in it (dropdowns) stay open
+    let shown = egui::Area::new(egui::Id::new("app-export-dialog")).movable(false).order(egui::Order::Middle).fixed_pos(screen.min).show(ctx, |ui| {
+        // (hover only: the area on top already keeps clicks from the window below, and a
+        // nameless clickable backdrop would be an unnamed control to a screen reader)
+        let (bg, _) = ui.allocate_exact_size(screen.size(), egui::Sense::hover());
+        ui.painter().rect_filled(bg, 0.0, t.chrome);
+        // (the dialog's id, as the window had)
+        crate::widgets::register(ui.ctx(), "dialog:window", bg);
+        // header
+        let header = egui::Rect::from_min_size(bg.min, egui::vec2(bg.width(), 56.0));
+        let b = egui::Rect::from_min_size(egui::pos2(header.left() + 10.0, header.center().y - 18.0), egui::Vec2::splat(36.0));
+        let back = ui.interact(b, ui.id().with("export-back"), egui::Sense::click());
+        back.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::i18n::tr("Back")));
+        crate::widgets::register(ui.ctx(), "export:back", b);
+        ui.painter().circle_filled(b.center(), 18.0, if back.hovered() { t.pressed } else { t.button });
+        crate::icons::paint(ui.painter(), egui::Rect::from_center_size(b.center(), egui::Vec2::splat(18.0)), crate::icons::Icon::ChevronLeft, t.text);
+        if back.clicked() {
+            cancel = true;
+        }
+        let title = crate::i18n::tr_format!("Export {n} photo{}", if n == 1 { "" } else { "s" }, n = n);
+        ui.painter().text(egui::pos2(b.right() + 12.0, header.center().y), egui::Align2::LEFT_CENTER, title, t.semibold(17.0), t.text);
+        // where: the destination as one segmented choice, top right
+        const WHERE: [(D, &str); 3] = [(D::ChooseLater, "Ask"), (D::SpecificFolder, "Folder"), (D::SameAsOriginal, "Next to Originals")];
+        if roomy && !cfg!(target_arch = "wasm32") {
+            let w = 330.0;
+            let r = egui::Rect::from_min_size(egui::pos2(header.right() - 16.0 - w, header.top() + 8.0), egui::vec2(w, 40.0));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::right_to_left(egui::Align::Center)));
+            let labels: Vec<&str> = WHERE.iter().map(|(_, l)| *l).collect();
+            let chosen = WHERE.iter().position(|(m, _)| *m == opts.destination_mode);
+            if let Some(i) = crate::widgets::segments(&mut child, "exportWhere", &labels, chosen)
+                && let Some((m, _)) = WHERE.get(i)
+            {
+                opts.destination_mode = *m;
+            }
+        }
+        ui.painter().hline(bg.x_range(), header.bottom(), egui::Stroke::new(1.0, t.divider));
+        // the bar along the bottom: what will be written, Cancel, Export
+        let bar = egui::Rect::from_min_max(egui::pos2(bg.left(), bg.bottom() - 60.0), bg.max);
+        ui.painter().hline(bg.x_range(), bar.top(), egui::Stroke::new(1.0, t.divider));
+        let summary_of = |key: &str| tops.iter().find(|(k, _, _)| k == key).map(|(_, _, s)| s.clone()).filter(|s| !s.is_empty());
+        let mut parts = vec![crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n)];
+        parts.extend(["FileSettings", "Sizing"].iter().filter_map(|k| summary_of(k)));
+        let summary = parts.join(" · ");
+        let room = bar.width() - 300.0;
+        let mut job = egui::text::LayoutJob::simple_singleline(summary, t.font(13.0), t.text_label);
+        job.wrap = egui::text::TextWrapping { max_width: room.max(60.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+        let g = ui.painter().layout_job(job);
+        let gr = egui::Rect::from_min_size(egui::pos2(bar.left() + 18.0, bar.center().y - g.size().y / 2.0), g.size());
+        crate::widgets::register(ui.ctx(), "export:summary", gr);
+        ui.painter().galley(gr.min, g, t.text_label);
+        let mut buttons = ui
+            .new_child(egui::UiBuilder::new().max_rect(bar.shrink2(egui::vec2(16.0, 10.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        buttons.spacing_mut().item_spacing.x = 8.0;
+        if crate::button::Button::new("Export")
+            .kind(crate::button::Kind::Primary)
+            .size(crate::button::Size::Large)
+            .widget("button:dialogOk")
+            .show(&mut buttons)
+            .clicked()
+        {
+            go = true;
+        }
+        if crate::button::Button::new("Cancel").size(crate::button::Size::Large).widget("button:dialogCancel").show(&mut buttons).clicked() {
+            cancel = true;
+        }
+        let body = egui::Rect::from_min_max(egui::pos2(bg.left(), header.bottom() + 1.0), egui::pos2(bg.right(), bar.top() - 1.0));
+        // the rail: the groups (a tap scrolls there; the one in view is lit), then the presets
+        let rail_w = if roomy { 240.0 } else { 0.0 };
+        let content = egui::Rect::from_min_max(egui::pos2(body.left() + rail_w, body.top()), body.max);
+        if roomy {
+            let rail = egui::Rect::from_min_size(body.min, egui::vec2(rail_w, body.height()));
+            ui.painter().vline(rail.right(), body.y_range(), egui::Stroke::new(1.0, t.divider));
+            let mut r = ui.new_child(egui::UiBuilder::new().max_rect(rail.shrink2(egui::vec2(10.0, 10.0))));
+            r.spacing_mut().item_spacing.y = 2.0;
+            let lit = tops.iter().rev().find(|(_, y, _)| *y <= content.top() + 60.0).or(tops.first()).map(|(k, _, _)| k.clone()).unwrap_or_default();
+            for (label, keys) in EXPORT_GROUPS {
+                if !keys.iter().any(|k| tops.iter().any(|(t, _, _)| t == k)) && !tops.is_empty() {
+                    continue;
+                }
+                let (row, resp) = r.allocate_exact_size(egui::vec2(r.available_width(), 38.0), egui::Sense::click());
+                let on = keys.contains(&lit.as_str());
+                let name = crate::i18n::tr(label);
+                resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, name));
+                crate::widgets::register(r.ctx(), format!("export:group:{}", keys.first().copied().unwrap_or_default()), row);
+                if on {
+                    r.painter().rect_filled(row, 10.0, egui::Color32::from_white_alpha(30));
+                } else if resp.hovered() {
+                    r.painter().rect_filled(row, 10.0, egui::Color32::from_white_alpha(14));
+                }
+                r.painter().text(
+                    egui::pos2(row.left() + 14.0, row.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    name,
+                    t.font(14.0),
+                    if on { t.text } else { t.text_label },
+                );
+                if resp.clicked()
+                    && let Some(k) = keys.first()
+                {
+                    r.ctx().data_mut(|d| d.insert_temp(egui::Id::new(EXPORT_JUMP), k.to_string()));
+                }
+            }
+            r.add_space(10.0);
+            let f = ExportForm {
+                opts: &mut opts,
+                full_size: &mut full_size,
+                resize: &mut resize,
+                preset_name: &mut preset_name,
+                limit_kb: &mut limit_kb,
+                dir: &mut dir,
+            };
+            let h = r.available_height();
+            export_presets(app, &mut r, f, h);
+        }
+        // every setting, one scrolling page
+        let w = content.width().min(860.0);
+        let column = egui::Rect::from_min_size(
+            egui::pos2(content.left() + ((content.width() - w) / 2.0).max(0.0), content.top()),
+            egui::vec2(w, content.height()),
+        );
+        let mut page = ui.new_child(egui::UiBuilder::new().max_rect(column.shrink2(egui::vec2(16.0, 0.0))));
+        page.ctx().data_mut(|d| d.insert_temp(egui::Id::new(EXPORT_SCREEN), true));
+        egui::ScrollArea::vertical().id_salt("export-page").auto_shrink([false, false]).show(&mut page, |ui| {
+            ui.add_space(12.0);
+            ui.set_width((ui.available_width() - 12.0).max(120.0));
+            let stacked = column.width() < 520.0;
+            let f = ExportForm {
+                opts: &mut opts,
+                full_size: &mut full_size,
+                resize: &mut resize,
+                preset_name: &mut preset_name,
+                limit_kb: &mut limit_kb,
+                dir: &mut dir,
+            };
+            let body = |ui: &mut egui::Ui| export_settings(app, ui, f, !roomy);
+            if stacked {
+                crate::dialog_frame::stacked_form(ui, 120.0, body);
+            } else {
+                crate::dialog_frame::form(ui, EXPORT_LABEL_W, body);
+            }
+            ui.add_space(40.0);
+        });
+        page.ctx().data_mut(|d| d.remove::<bool>(egui::Id::new(EXPORT_SCREEN)));
+    });
+    ctx.memory_mut(|m| m.set_modal_layer(shown.response.layer_id));
+    // the rows may have closed Export or opened another dialog (a folder picker, Watermark…)
+    if app.ui.dialog != at_start {
+        return;
+    }
+    let now = Some(Dialog::Export { opts, full_size, resize, preset_name, limit_kb, dir });
+    app.ui.dialog = now.clone();
+    if cancel {
+        app.ui.dialog = None;
+        return;
+    }
+    if go && let Some(dlg) = now {
+        match confirm_dialog(app, &dlg) {
+            Ok(_) => {
+                if app.ui.dialog.as_ref() == Some(&dlg) {
+                    app.ui.dialog = None;
+                }
+            }
+            Err(e) => app.toast_error(ctx, e),
+        }
+    }
 }
 
 /// One line saying what an Export dialog setting is, for its section's header.
@@ -2376,6 +2828,15 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
                 &[(Z::None, "None"), (Z::Lzw, "LZW"), (Z::Deflate, "ZIP")],
                 &mut opts.tiff_compression,
             );
+            // upstream #2890 (issue #2882 there): LZW stays as picked, with a note on what it costs
+            if opts.tiff_compression == Z::Lzw {
+                let note = if opts.effective_depth() == lcc_engine::export::OutputDepth::U16 {
+                    "At 16 bit, LZW is often larger than no compression, and larger and slower than ZIP. Use it only if other software needs LZW."
+                } else {
+                    "LZW is usually larger and slower than ZIP, and can be larger than no compression. Use it only if other software needs LZW."
+                };
+                crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
+            }
         }
         if opts.format == F::Dng {
             use lcc_engine::export::DngCompression as Z;
@@ -3017,13 +3478,15 @@ fn person_rename_plan(cat: &lcc_catalog::Catalog, from: &str, to: &str) -> Perso
     PersonRenamePlan { faces, needs_merge: needs_merge && from_key != to_key, block }
 }
 
-/// A dialog's one text field: it keeps the focus (except while its own menu has it) and opens
-/// with its text selected, so typing replaces it. True when Return confirms the dialog; Esc
-/// cancels the dialog (`show`). Taking the focus back with a bare `TextEdit` every frame hid the
-/// focus Return gives up, and Return did nothing.
+/// A dialog's one text field: it takes the focus when the dialog opens, and opens with its text
+/// selected, so typing replaces it. It takes the focus back only while nothing else has it: taking
+/// it back every frame would keep Tab from ever reaching the dialog's buttons and check boxes.
+/// True when Return confirms the dialog; Esc cancels the dialog (`show`).
 fn dialog_field(ui: &mut egui::Ui, widget: &str, text: &mut String, hint: &str) -> bool {
     let r = crate::text_field::TextField::singleline(widget, text).hint(crate::i18n::tr(hint)).width(f32::INFINITY).select_on_focus(true).show(ui);
-    if !r.editing {
+    // (and takes it back when nothing has it: after a click on the dialog's background or a check box,
+    // or when Return gave it up on a refusal; a control Tab reached keeps it)
+    if just_opened(ui, widget) || (!r.editing && r.ending.is_none() && ui.memory(|m| m.focused().is_none())) {
         r.response.request_focus();
     }
     r.ending == Some(crate::text_field::Ending::Return)
@@ -3101,4 +3564,133 @@ fn only_shows(dlg: &Dialog) -> bool {
             // the updater has its own buttons in the body; the footer only closes
             | Dialog::Update
     ) || matches!(dlg, Dialog::SynchronizeFolder { counts: Some(c), .. } if c.up_to_date())
+}
+
+#[cfg(test)]
+mod gap_tests {
+    use super::{fmt_gap, parse_gap};
+
+    #[test]
+    fn gap_text_reads_back_what_it_shows() {
+        for v in [0.0, 1.0, 12.0, 59.0, 60.0, 90.0, 600.0, 3599.0, 3600.0, 3601.0, 3661.0, 3900.0, 7325.0, 86340.0, 86399.0] {
+            assert_eq!(parse_gap(&fmt_gap(v)), Some(v), "{}", fmt_gap(v));
+        }
+        assert_eq!(parse_gap("1 day"), Some(86400.0));
+        assert_eq!(parse_gap("45"), Some(45.0));
+        assert_eq!(parse_gap(" 45s "), Some(45.0));
+        assert_eq!(parse_gap("2min 5s"), Some(125.0));
+        for bad in ["", "abc", "5 parsecs", "NaN", "1 min x"] {
+            assert_eq!(parse_gap(bad), None, "{bad:?}");
+        }
+        // a day reads back in the UI language too ("1 Tag")
+        crate::i18n::set_language(crate::i18n::Locale::De);
+        let shown = fmt_gap(86400.0);
+        let back = parse_gap(&shown);
+        crate::i18n::set_language(crate::i18n::Locale::En);
+        assert_eq!((shown.as_str(), back), ("1 Tag", Some(86400.0)));
+    }
+
+    #[test]
+    fn gaps_past_the_slider_read_back_too() {
+        // the Assisted Culling slider drags to 10 min; its value field takes up to a day
+        for (v, text) in [(1800.0, "30 min"), (5400.0, "1 h 30 min"), (3601.0, "1 h 0 min 1 s"), (86400.0, "1 day")] {
+            assert_eq!(fmt_gap(v), text);
+            assert_eq!(parse_gap(text), Some(v), "{text}");
+        }
+        assert_eq!(parse_gap("1800"), Some(1800.0));
+        assert_eq!(parse_gap("0"), Some(0.0));
+    }
+}
+
+#[cfg(test)]
+mod cull_dialog_tests {
+    use std::time::Duration;
+
+    use serde_json::json;
+
+    use super::{clamp_cull_burst, cull_params};
+    use crate::headless::Headless;
+    use crate::state::Dialog;
+    use crate::{LccApp, Services};
+
+    const T: Duration = Duration::from_secs(20);
+
+    #[test]
+    fn typed_values_are_kept_within_what_photo_analyze_accepts() {
+        for (gap, sim) in [(0.0, 0.0), (1800.0, 1.0), (86400.0, 0.5), (0.5, 0.995)] {
+            let (mut g, mut s) = (gap, sim);
+            clamp_cull_burst(&mut g, &mut s);
+            assert_eq!((g, s), (gap, sim), "in range: kept as typed");
+        }
+        for ((gap, sim), want) in [((-5.0, -0.1), (0.0, 0.0)), ((90000.0, 1.5), (86400.0, 1.0)), ((f32::NAN, f32::INFINITY), (10.0, 0.93))] {
+            let (mut g, mut s) = (gap, sim);
+            clamp_cull_burst(&mut g, &mut s);
+            assert_eq!((g, s), want);
+        }
+        assert_eq!(cull_params(0.0, true, 1800.0, 1.0), json!({"pickBest": true, "burstGap": 1800.0, "similarity": 1.0}));
+        assert_eq!(cull_params(20.0, false, 0.0, 0.7)["rejectBelow"], 20.0);
+    }
+
+    /// Click the value field right of a slider registered as `id`, type `text`, Enter.
+    fn type_value(h: &mut Headless, id: &str, text: &str) {
+        let r = h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r).unwrap_or_else(|| panic!("{id} not on screen"));
+        let spacing = h.view.ctx.global_style().spacing.clone();
+        let x = r.left() + spacing.slider_width + spacing.item_spacing.x + 6.0;
+        assert_eq!(h.request("ui.click", json!({"x": x, "y": r.center().y}), T)["ok"], true);
+        h.step();
+        for key in ["a", "Backspace"] {
+            assert_eq!(h.request("ui.key", json!({"key": key, "cmd": key == "a"}), T)["ok"], true);
+        }
+        assert_eq!(h.request("ui.text", json!({"text": text}), T)["ok"], true);
+        assert_eq!(h.request("ui.key", json!({"key": "Enter"}), T)["ok"], true);
+        h.step();
+        h.step();
+    }
+
+    fn burst(h: &Headless) -> (f32, f32) {
+        match &h.app.ui.dialog {
+            Some(Dialog::Cull { burst_gap, similarity, .. }) => (*burst_gap, *similarity),
+            d => panic!("{d:?}"),
+        }
+    }
+
+    #[test]
+    fn the_culling_value_fields_take_values_past_the_sliders() {
+        let app = LccApp::new(lcc_engine::Session::with_demo(), Services::default());
+        let mut h = Headless::new(app, [1400.0, 1000.0], 1.0);
+        h.step();
+        h.app.run("dialog.cull", json!({})).unwrap();
+        for _ in 0..4 {
+            h.step();
+        }
+        assert_eq!(burst(&h), (10.0, 0.93));
+        // half an hour and "only identical shots": past the sliders' 10 min and 0.99
+        type_value(&mut h, "field:cullGap", "30 min");
+        type_value(&mut h, "field:cullSimilar", "1.0");
+        assert_eq!(burst(&h), (1800.0, 1.0));
+        // a day is as far as photo.analyze goes; more is held there
+        type_value(&mut h, "field:cullGap", "2 days");
+        assert_eq!(burst(&h).0, 86400.0);
+        type_value(&mut h, "field:cullGap", "0");
+        assert_eq!(burst(&h), (0.0, 1.0));
+        type_value(&mut h, "field:cullGap", "1800");
+        assert_eq!(burst(&h).0, 1800.0);
+        // a similarity between the slider's hundredths is kept to the thousandth
+        type_value(&mut h, "field:cullSimilar", "0.995");
+        assert_eq!(burst(&h).1, 0.995);
+        type_value(&mut h, "field:cullSimilar", "0.9951");
+        assert_eq!(burst(&h).1, 0.995);
+        type_value(&mut h, "field:cullSimilar", "1.0");
+        assert_eq!(burst(&h).1, 1.0);
+        // OK hands them to photo.analyze as typed (it refuses values out of its range)
+        let r = h.request("ui.dialog.confirm", json!({}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        assert!(h.app.ui.dialog.is_none(), "{:?}", h.app.ui.dialog);
+        assert_eq!(h.app.ui.cull_burst, Some((1800.0, 1.0)));
+        // and the next opening starts from them, not from the sliders' range
+        h.app.run("dialog.cull", json!({})).unwrap();
+        h.step();
+        h.step();
+        assert_eq!(burst(&h), (1800.0, 1.0));
+    }
 }

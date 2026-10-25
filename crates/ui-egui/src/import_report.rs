@@ -218,15 +218,18 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let mut open = true;
     let mut chosen: Option<Vec<u64>> = None;
     let (mut copy, mut save, mut close) = (false, false, false);
+    let mut closed = false;
     let shown = egui::Window::new(tr("Import Warnings"))
         .id(id)
-        .open(&mut open)
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
         .collapsible(false)
         .default_width(560.0)
         .pivot(egui::Align2::CENTER_CENTER)
         .default_pos(ctx.content_rect().center())
         .max_height(crate::dialog_frame::max_window_height(ctx))
         .show(ctx, |ui| {
+            closed = crate::dialog_frame::card_header(ui, tr("Import Warnings"), Some("import-warnings:close"));
             let mut layout = crate::dialog_frame::ModalLayout::begin(ui, id);
             ui.add(egui::Label::new(RichText::new(report.intro()).color(t.text_label)).wrap());
             ui.add_space(6.0);
@@ -275,6 +278,9 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             });
         });
     crate::dialog_frame::ModalLayout::finish(ctx, id, shown.as_ref().map(|w| w.response.rect));
+    if closed {
+        open = false;
+    }
     if copy {
         ctx.copy_text(report.text());
     }

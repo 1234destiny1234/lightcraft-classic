@@ -40,6 +40,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("tiff", Class::Layer(0)),
     ("sysmem", Class::Layer(0)),
     ("hdrmeta", Class::Layer(0)),
+    ("gpumem", Class::Layer(0)),
     ("winspool", Class::Layer(0)),
     ("android-host", Class::Layer(0)),
     ("peer", Class::Layer(0)),
@@ -93,6 +94,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("slideshow", Class::Layer(1)),
     ("ui-egui", Class::Layer(5)),
     ("mcp", Class::Layer(5)),
+    ("colourfit", Class::Layer(5)),
     ("testkit", Class::Testkit),
     ("fuzzkit", Class::Testkit),
     // L6 apps and tooling

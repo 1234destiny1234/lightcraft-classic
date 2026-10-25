@@ -75,6 +75,38 @@ fn directional_sliders() {
     assert!(at("effects.dehaze", -100.0) != base);
 }
 
+/// Dehaze crushed dark regions next to bright ones to black: the dark channel is a blur, not a
+/// patch minimum, so near the boundary it credited the dark pixels with the bright side's veil and
+/// the subtraction went past zero (#2504). The veil credited to a pixel is now bounded by its own
+/// minimum channel, so a uniform dark region renders uniformly under dehaze.
+#[test]
+fn dehaze_does_not_crush_dark_regions_next_to_bright_ones() {
+    // a dark field against a bright hazy sky; the blur bleeds the sky's dark channel ~10 px into
+    // the field, which is where the blotches formed
+    let src = Rgb32f::from_fn(240, 160, |x, _| if x < 120 { [0.02, 0.03, 0.012] } else { [0.45, 0.5, 0.55] });
+    let mut s = DevelopSettings::default();
+    s.effects.dehaze = 80.0;
+    let r = render(&src, &SourceInfo::default(), &s, &RenderRequest::fit(240, 160)).image;
+    for ch in 0..3 {
+        let mut v: Vec<u8> = Vec::with_capacity(160 * 100);
+        for y in 0..160 {
+            for x in 0..100 {
+                v.push(r.get(x, y)[ch]);
+            }
+        }
+        v.sort_unstable();
+        let mid = v[v.len() / 2] as i32;
+        // a field rendered all black would pass the comparison below vacuously
+        assert!(mid > 2, "the dark field itself is crushed in ch {ch}: level {mid}");
+        for y in 0..160 {
+            for x in 0..120 {
+                let p = r.get(x, y)[ch] as i32;
+                assert!(p >= mid - 2, "crushed at {x},{y} ch {ch}: {p} vs field level {mid}");
+            }
+        }
+    }
+}
+
 #[test]
 fn resolution_independence_of_local_contrast() {
     // Clarity at two preview sizes should give similar results after downscaling.
@@ -713,4 +745,66 @@ fn small_preview_grain_is_not_stronger_than_the_export_scaled_down() {
     assert!(preview <= 3.0 * export + 0.5, "preview grain {preview} vs export scaled down {export}");
     assert!(crate::local::texture_fade(50.0) < crate::local::texture_fade(500.0));
     assert_eq!(crate::local::texture_fade(4000.0), 1.0);
+}
+
+/// A raw's linear Rec.2020 as decoding leaves it since it stopped clamping channels at zero: a dark ramp with
+/// sensor noise through a saturating camera matrix (a NIKON D780 profile's), so near black many channels are
+/// negative, and a few strongly out-of-gamut pixels.
+fn negative_noise() -> Rgb32f {
+    let m = [[3.48f32, -2.41, -0.06], [-0.41, 1.57, -0.16], [0.32, -1.86, 2.58]];
+    // ±0.004 of noise per channel, a hash of the position
+    let noise = |x: usize, y: usize, c: usize| {
+        let h = ((x * 7919 + y * 104_729 + c * 1_299_709) as u32).wrapping_mul(2_654_435_761);
+        (h >> 8) as f32 / (1u32 << 24) as f32 * 0.008 - 0.004
+    };
+    Rgb32f::from_fn(48, 32, |x, y| {
+        if (x + y) % 37 == 0 {
+            return [-0.05, 0.01, -0.02];
+        }
+        let g = 0.0005 * 1.15f32.powi(x as i32);
+        let cam: [f32; 3] = std::array::from_fn(|c| g + noise(x, y, c));
+        std::array::from_fn(|i| m[i][0] * cam[0] + m[i][1] * cam[1] + m[i][2] * cam[2])
+    })
+}
+
+/// Negative channels from decoding reach every stage after it: every slider at its ends, at every output depth
+/// (HDR on and off), and the auto settings give finite values only.
+#[test]
+fn negative_channels_render_finite_everywhere() {
+    use crate::{DeepSamples, OutputDepth, auto};
+    let src = negative_noise();
+    assert!(src.data.iter().flatten().filter(|v| **v < 0.0).count() > src.data.len() / 4, "the source has few negatives");
+    let info = SourceInfo { raw: true, ..Default::default() };
+    let finite = |s: &DevelopSettings, depth: OutputDepth, what: &str| {
+        let r = render(&src, &info, s, &RenderRequest { depth, ..RenderRequest::fit(48, 48) });
+        assert!(r.histogram.total > 0, "{what}");
+        if let Some(DeepSamples::F32(v)) = r.deep.map(|d| d.samples) {
+            assert!(v.iter().all(|v| v.is_finite()), "{what} {depth:?}: non-finite output");
+        }
+    };
+    let mut pushed = DevelopSettings::default();
+    pushed.light.exposure = 4.0;
+    pushed.light.shadows = 100.0;
+    pushed.light.blacks = 100.0;
+    for hdr in [false, true] {
+        let mut s = pushed.clone();
+        s.hdr.enabled = hdr;
+        for depth in [OutputDepth::U8, OutputDepth::U16, OutputDepth::F32Linear, OutputDepth::F32Hdr] {
+            finite(&s, depth, &format!("pushed, hdr {hdr}"));
+        }
+    }
+    for c in controls::CONTROLS {
+        for v in [c.min, c.max] {
+            let mut s = pushed.clone();
+            controls::set(&mut s, c.id, v);
+            finite(&s, OutputDepth::F32Linear, &format!("{} = {v}", c.id));
+        }
+    }
+    let tone = auto::auto_tone(&src, &info, &pushed);
+    let t = [tone.exposure, tone.contrast, tone.highlights, tone.shadows, tone.whites, tone.blacks, tone.vibrance, tone.saturation];
+    assert!(t.iter().all(|v| v.is_finite()), "auto tone {t:?}");
+    assert!(auto::auto_bw_mix(&src, &info, &pushed).iter().all(|v| v.is_finite()));
+    let (t, k) = auto::auto_wb(&src, &info);
+    assert!(t.is_finite() && k.is_finite(), "auto WB {t} {k}");
+    assert!(auto::scene_log_mean(&src, &info, &pushed).is_none_or(f64::is_finite));
 }

@@ -84,6 +84,20 @@ fn the_tick_box_gives_a_keyword_to_the_selection() {
     assert!(ids.iter().all(|id| keywords_of(&h, *id).contains(&"Weddings".to_string())), "some had it: now all do");
 }
 
+/// A photo with only a keyword below another gives the parent's box a dash; clicking the dash
+/// adds the parent itself, and only then is it ticked.
+#[test]
+fn a_keyword_below_gives_its_parent_a_dash() {
+    let (mut h, ids) = keywords_panel();
+    run(&mut h, "photo.setMeta", json!({"ids": ids, "addKeywords": ["Events|Weddings"]}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "field:keywordFilter"}));
+    ask(&mut h, "ui.text", json!({"text": "wedd"}));
+    assert!(ids.iter().all(|id| !keywords_of(&h, *id).iter().any(|k| k == "Events")));
+    ask(&mut h, "ui.clickWidget", json!({"id": "keywordCheck:Events"}));
+    assert!(ids.iter().all(|id| keywords_of(&h, *id).iter().any(|k| k == "Events")), "the dash added the parent");
+    assert!(ids.iter().all(|id| keywords_of(&h, *id).iter().any(|k| k == "Events|Weddings")), "the child stays");
+}
+
 /// Typing in the filter box keeps the keywords whose name holds the text, with their parents.
 #[test]
 fn the_filter_box_narrows_the_list() {
@@ -152,6 +166,45 @@ fn double_clicking_a_keyword_edits_it() {
     let i = info(&mut h, "Marriages");
     assert_eq!((i["includeOnExport"].as_bool(), i["synonyms"].clone()), (Some(false), json!(["marriage"])), "{i}");
     assert_eq!(h.app.session.undo.len(), undo + 1, "one undo step");
+}
+
+/// ⌘⇧K (Ctrl+Shift+K) is Edit Keywords: it shows the Keywords panel with its Keyword List open,
+/// and the keyword picked there opens in Edit Keyword Tag.
+#[test]
+fn cmd_shift_k_edits_the_picked_keyword() {
+    let (mut h, _) = keywords_panel();
+    run(&mut h, "keyword.create", json!({"name": "Weddings", "synonyms": ["marriage"]}));
+    find(&mut h, "wedd");
+    ask(&mut h, "ui.clickWidget", json!({"id": "keywordRow:Weddings"}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "section:keywordList"}));
+    assert!(h.app.ui.section_folded("keywordList"));
+    ask(&mut h, "ui.key", json!({"key": "K", "cmd": true, "shift": true}));
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Keywords, "the Keywords panel");
+    assert!(!h.app.ui.section_folded("keywordList"), "the Keyword List is open");
+    let Some(crate::state::Dialog::KeywordTag { editing, name, synonyms, .. }) = h.app.ui.dialog.clone() else { panic!("{:?}", h.app.ui.dialog) };
+    assert_eq!((editing.as_deref(), name.as_str(), synonyms.as_str()), (Some("Weddings"), "Weddings", "marriage"));
+    ask(&mut h, "ui.dialog.cancel", json!({}));
+    ask(&mut h, "ui.key", json!({"key": "K", "cmd": true, "shift": true}));
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Keywords, "pressed again: the panel stays");
+    assert!(matches!(&h.app.ui.dialog, Some(crate::state::Dialog::KeywordTag { editing: Some(k), .. }) if k == "Weddings"), "{:?}", h.app.ui.dialog);
+}
+
+/// With no keyword picked in the Keyword List, or with the picked one deleted, ⌘⇧K shows the
+/// Keywords panel and its list and opens no dialog.
+#[test]
+fn cmd_shift_k_without_a_picked_keyword_opens_no_dialog() {
+    let (mut h, _) = keywords_panel();
+    ask(&mut h, "ui.set", json!({"right": "none"}));
+    ask(&mut h, "ui.key", json!({"key": "K", "cmd": true, "shift": true}));
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Keywords, "the Keywords panel");
+    assert!(has(&h, "field:keywordFilter"), "the Keyword List is shown");
+    assert_eq!(h.app.ui.dialog, None, "nothing picked");
+    run(&mut h, "keyword.create", json!({"name": "Weddings"}));
+    find(&mut h, "wedd");
+    ask(&mut h, "ui.clickWidget", json!({"id": "keywordRow:Weddings"}));
+    run(&mut h, "keyword.delete", json!({"keyword": "Weddings"}));
+    ask(&mut h, "ui.key", json!({"key": "K", "cmd": true, "shift": true}));
+    assert_eq!(h.app.ui.dialog, None, "the picked keyword is gone");
 }
 
 /// The − button deletes the picked keyword after asking how many photos lose it; Cancel keeps it, and undo

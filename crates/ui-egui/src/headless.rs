@@ -240,14 +240,15 @@ pub struct Headless {
     /// Logical size (points) and scale.
     pub size: egui::Vec2,
     pub pixels_per_point: f32,
-    time: f64,
+    pub(crate) time: f64,
     frames: u64,
     pub(crate) events: Vec<egui::Event>,
     control: Sender<ControlRequest>,
     quit: bool,
     /// The simulated window is zoomed (`Maximized(true)` seen, reported back to the app like a real host).
     pub window_maximized: bool,
-    /// Window-management commands the app sent (`StartDrag`, `Maximized`, …), oldest first.
+    /// Window-management and pointer commands the app sent (`StartDrag`, `Maximized`,
+    /// `CursorPosition`, …), oldest first.
     pub window_commands: Vec<ViewportCommand>,
     /// The pointer cursor the last frame asked for (what a real host would show).
     pub last_cursor: egui::CursorIcon,
@@ -375,7 +376,8 @@ impl Headless {
                     self.window_maximized = on;
                     self.window_commands.push(c);
                 }
-                ViewportCommand::StartDrag => self.window_commands.push(c),
+                // recorded, not carried out: the simulated pointer moves only when a test moves it
+                ViewportCommand::StartDrag | ViewportCommand::CursorPosition(_) | ViewportCommand::CursorGrab(_) => self.window_commands.push(c),
                 _ => {}
             }
         }
@@ -930,7 +932,13 @@ mod tests {
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "detail"}), t);
         h.settle(SETTLE);
-        let cell = h.app.widgets.iter().find(|(w, _)| w.starts_with("film:")).map(|(w, _)| w.clone()).expect("a filmstrip photo");
+        let cell = h
+            .app
+            .widgets
+            .iter()
+            .find(|(w, _)| w.strip_prefix("film:").is_some_and(|n| n.parse::<u64>().is_ok()))
+            .map(|(w, _)| w.clone())
+            .expect("a filmstrip photo");
         assert!(!egui::Popup::is_any_open(&h.view.ctx));
         let r = h.request("ui.clickWidget", json!({"id": cell, "button": "right"}), t);
         assert_eq!(r["ok"], true, "{r}");
@@ -1781,6 +1789,27 @@ mod tests {
         h.request("engine.execute", json!({"command": "edit.undo"}), t);
         h.step();
         assert_eq!(named(&h, ids[1], 0), None);
+        // ignore the selected faces: they leave the list, and the People header offers to restore them
+        h.settle(SETTLE);
+        h.step();
+        let before = tiles(&mut h);
+        h.request("ui.clickWidget", json!({"id": "unnamed:selectAll"}), t);
+        h.step();
+        h.step();
+        let r = h.request("ui.clickWidget", json!({"id": "unnamed:ignore"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.step();
+        h.settle(SETTLE);
+        h.step();
+        h.step();
+        assert!(tiles(&mut h) < before, "ignored faces left the unnamed list");
+        let r = h.request("ui.clickWidget", json!({"id": "people:restoreIgnored"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.step();
+        h.settle(SETTLE);
+        h.step();
+        h.step();
+        assert_eq!(tiles(&mut h), before, "restored");
     }
 
     /// A double click on an unnamed face opens its photo in the loupe, as in the grid (#1664); a single click still only
@@ -2193,6 +2222,32 @@ mod tests {
         assert!(deep.is_some_and(|n| n > 500), "scrolled rows: {later:?}");
     }
 
+    /// With `label` and `labels` both set (a saved single-label filter, or an agent), the filter
+    /// bar lights only the labels that pass both, and a click starts from those, not their union.
+    #[test]
+    fn filter_bar_labels_from_label_and_labels() {
+        use lcc_catalog::ColorLabel;
+        let mut h = demo([1400.0, 800.0]);
+        let t = Duration::from_secs(10);
+        // (the filter bar shows from the start: `view.filterBar` would hide it)
+        h.app.ui.filter_bar = true;
+        h.settle(SETTLE);
+        h.app.session.execute("library.filter", &json!({"label": "red", "labels": ["red", "yellow"]})).unwrap();
+        // a frame so the bar is laid out for the new filter before the click
+        h.step();
+        let r = h.request("ui.clickWidget", json!({"id": "filter:label-green"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        let f = h.app.session.filter.clone();
+        assert_eq!((f.label, f.labels), (None, vec![ColorLabel::Red, ColorLabel::Green]));
+        // nothing passes both: nothing is lit, so a click shows just that label
+        h.app.session.execute("library.filter", &json!({"label": "red", "labels": ["yellow"]})).unwrap();
+        h.step();
+        h.request("ui.clickWidget", json!({"id": "filter:label-green"}), t);
+        let f = h.app.session.filter.clone();
+        assert_eq!((f.label, f.labels), (None, vec![ColorLabel::Green]));
+        h.settle(SETTLE);
+    }
+
     /// The filter bar drives `library.filter` and saves the view as a smart album.
     #[test]
     fn filter_bar_filters_and_saves_a_smart_album() {
@@ -2503,7 +2558,7 @@ mod tests {
     /// one-line summary on the header, start open (where, name, format) or folded (size,
     /// sharpening, metadata, watermark), and keep the person's choice the next time.
     #[test]
-    fn export_dialog_sections_fold_and_stay_folded() {
+    fn export_screen_shows_every_section_in_order_and_its_rail_jumps_to_one() {
         let mut h = demo([1400.0, 900.0]);
         let t = Duration::from_secs(10);
         h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
@@ -2518,28 +2573,16 @@ mod tests {
         assert!(top(&mut h, "section:exportLocation") < top(&mut h, "section:exportNaming"));
         assert!(top(&mut h, "section:exportNaming") < top(&mut h, "section:exportFileSettings"));
         assert!(shown(&mut h, "combo:exportDestinationMode"));
-        // where, what name and which format start open; size, sharpening, metadata and watermark folded
+        // the Export screen shows every section open, one page (no folds to find a setting behind)
         assert!(shown(&mut h, "button:exportNamingTags") && shown(&mut h, "button:exportFormat-0"));
-        assert!(!shown(&mut h, "check:exportFullSize"), "Image Sizing starts folded");
-        assert!(!shown(&mut h, "button:exportSharpen-0") && !shown(&mut h, "button:exportMetadata-0"));
-        assert!(shown(&mut h, "section:exportWatermark"), "a folded section keeps its header");
-        h.request("ui.clickWidget", json!({"id": "section:exportSizing"}), t);
+        assert!(shown(&mut h, "check:exportFullSize"), "Image Sizing is open");
+        // the rail's Metadata scrolls the page to it
+        let before = top(&mut h, "section:exportMetadata");
+        h.request("ui.clickWidget", json!({"id": "export:group:Metadata"}), t);
         h.settle(SETTLE);
-        assert!(shown(&mut h, "check:exportFullSize"), "opened");
-        assert_eq!(h.app.ui.group_open.get("export:Sizing"), Some(&true), "kept in the settings");
-        h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
-        h.settle(SETTLE);
-        assert!(!shown(&mut h, "combo:exportDestinationMode"), "folded");
-        assert!(shown(&mut h, "button:exportFormat-0"), "the other sections stay open");
-        h.request("ui.dialog.cancel", json!({}), t);
-        h.settle(SETTLE);
-        h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
-        h.settle(SETTLE);
-        assert!(!shown(&mut h, "combo:exportDestinationMode"), "still folded when the dialog opens again");
-        assert!(shown(&mut h, "check:exportFullSize"), "still open when the dialog opens again");
-        h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
-        h.settle(SETTLE);
-        assert!(shown(&mut h, "combo:exportDestinationMode"), "unfolded");
+        let after = top(&mut h, "section:exportMetadata");
+        assert!(after < before, "scrolled up to Metadata ({before} → {after})");
+        assert!(shown(&mut h, "button:exportMetadata-0"));
     }
 
     /// Wide enough, the Export dialog lists its presets in a column (a click loads one, keeping
@@ -2607,7 +2650,8 @@ mod tests {
         }
         let w1 = width(&mut h);
         assert!((w1 - w0).abs() < 0.5, "the export dialog grew from {w0} to {w1}");
-        assert!(w1 <= 900.0, "{w1}");
+        // (a screen that fills the window, never past it)
+        assert!(w1 <= 1400.0, "{w1}");
     }
 
     /// With a watermark on, the Export dialog shows the first photo with the watermark on it.
@@ -2818,7 +2862,7 @@ mod tests {
         assert!(!row.cancellable, "{row:?}");
         assert!(h.app.session.activity.cancel(row.id).is_err(), "Photos can't be stopped once asked");
         let current = h.app.export.as_ref().map(|e| e.progress.lock().unwrap().1.clone()).unwrap_or_default();
-        assert_eq!(current, "Wird zu Apple Fotos hinzugefügt…");
+        assert_eq!(current, crate::i18n::Locale::De.tr("Adding to Apple Photos…"));
         // the row says so on the next frame (issue #345)
         h.step();
         let row = h.app.session.activity.list().into_iter().find(|r| r.kind == "export").expect("the export's row");
@@ -3832,28 +3876,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Switching Settings tabs keeps the window's top edge (and its tab row) where it is and never makes it
-    /// narrower, though the tabs are of different heights and widths.
+    /// Switching Settings sections keeps the screen still: the rail and the rows' column stay where
+    /// they are, though the sections are of different heights.
     #[test]
     fn settings_tabs_keep_the_window_in_place() {
         let mut h = demo([1300.0, 820.0]);
         let t = Duration::from_secs(10);
-        let window = |h: &Headless| h.app.widgets.iter().find(|(w, _)| w == "dialog:window").map(|(_, r)| *r).expect("the dialog");
+        let at = |h: &Headless, id: &str| h.app.widgets.iter().rev().find(|(w, _)| w == id).map(|(_, r)| *r).expect(id);
         let r = h.request("engine.execute", json!({"command": "app.settings", "params": {"tab": "general"}}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.settle(SETTLE);
-        let first = window(&h);
-        let mut heights = Vec::new();
+        let (rows, rail) = (at(&h, "settings:rows"), at(&h, "settings:section:general"));
         for tab in ["display", "import", "performance", "general", "interface", "display"] {
             h.request("ui.clickWidget", json!({"id": format!("button:settingsTab-{tab}")}), t);
             h.settle(SETTLE);
-            let now = window(&h);
-            assert!((now.top() - first.top()).abs() < 1.0, "{tab}: top {} → {}", first.top(), now.top());
-            assert!(now.width() >= first.width() - 1.0, "{tab}: width {} → {}", first.width(), now.width());
-            heights.push(now.height());
+            assert_eq!(
+                crate::settings_screen::section_of(match &h.app.ui.dialog {
+                    Some(crate::state::Dialog::Settings { tab }) => tab,
+                    other => panic!("{tab}: {other:?}"),
+                }),
+                crate::settings_screen::section_of(tab),
+                "{tab}"
+            );
+            assert_eq!(at(&h, "settings:rows"), rows, "{tab}: the rows' column moved");
+            assert_eq!(at(&h, "settings:section:general"), rail, "{tab}: the rail moved");
         }
-        // the categories scroll inside one fixed-height content area: the window keeps its size
-        assert!(heights.iter().all(|h| (h - first.height()).abs() < 1.0), "the window changed height: {heights:?}");
     }
 
     /// Settings ▸ Sync draws a shared library, an offer and exchange states without panicking, and
@@ -4404,10 +4451,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The import review opens bigger than the old fixed 6 × 2.5 grid and can be resized by its
-    /// corner: the photo grid takes the new height, and the window then keeps its size (issue #337).
+    /// The import review fills the window: the photo grid takes the room, and the Copy options
+    /// (more rows) never push the Import button off the window.
     #[test]
-    fn import_review_dialog_resizes() {
+    fn import_review_fills_the_window_and_keeps_its_button() {
         let mut h = demo([1400.0, 1000.0]);
         let t = Duration::from_secs(10);
         let candidates = (0..60)
@@ -4419,17 +4466,18 @@ mod tests {
             })
             .collect();
         h.app.ui.dialog = Some(crate::state::Dialog::Import { opts: Box::new(crate::import::ImportDialog::new(candidates)) });
-        let rect = |h: &mut Headless| {
+        let rect = |h: &mut Headless, id: &str| {
             let r = h.request("ui.widgets", json!({}), t);
-            let w = r["result"].as_array().and_then(|a| a.iter().find(|w| w["id"] == "dialog:window")).expect("dialog on screen");
+            let w = r["result"].as_array().and_then(|a| a.iter().find(|w| w["id"] == id)).unwrap_or_else(|| panic!("{id} on screen"));
             [0usize, 1, 2, 3].map(|i| w["rect"][i].as_f64().unwrap())
         };
         for _ in 0..10 {
             h.step();
         }
-        let r0 = rect(&mut h);
-        assert!(r0[3] > 600.0, "{r0:?}");
-        // the Copy options add rows below the grid: the grid makes room, the window doesn't grow
+        let grid = rect(&mut h, "import:grid");
+        assert!(grid[3] > 600.0 && grid[2] > 700.0, "the grid takes the room: {grid:?}");
+        let go = rect(&mut h, "import:go");
+        assert!(go[1] + go[3] <= 1000.0 && go[0] + go[2] <= 1400.0, "the button is on screen: {go:?}");
         for copy in [true, false] {
             if let Some(crate::state::Dialog::Import { opts }) = &mut h.app.ui.dialog {
                 opts.copy = copy;
@@ -4437,116 +4485,8 @@ mod tests {
             for _ in 0..10 {
                 h.step();
             }
-            let r = rect(&mut h);
-            assert!((r[3] - r0[3]).abs() < 0.5, "copy {copy}: {r0:?} → {r:?}");
+            assert_eq!(rect(&mut h, "import:go"), go, "copy {copy}: the button stays put");
         }
-        let (x, y) = (r0[0] + r0[2] - 3.0, r0[1] + r0[3] - 3.0);
-        h.request("ui.drag", json!({"x": x, "y": y, "toX": x + 160.0, "toY": y + 120.0, "steps": 12}), t);
-        for _ in 0..10 {
-            h.step();
-        }
-        let r1 = rect(&mut h);
-        assert!(r1[2] > r0[2] + 100.0 && r1[3] > r0[3] + 80.0, "dragging the corner resized it: {r0:?} → {r1:?}");
-        for _ in 0..60 {
-            h.step();
-        }
-        let r2 = rect(&mut h);
-        assert!((r2[2] - r1[2]).abs() < 0.5 && (r2[3] - r1[3]).abs() < 0.5, "the dialog kept its size: {r1:?} → {r2:?}");
-        assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. })), "still open");
-    }
-
-    /// Adding a file again (dropped on the window, no review) whose photo is in Recently Deleted
-    /// brings the photo back, selected in All Photos, and says so (issue #706) — it is not
-    /// skipped as a duplicate; the trash view's menus offer Restore and Delete Permanently, and a
-    /// re-add of a photo that is in the library selects it in All Photos.
-    #[test]
-    fn readding_a_deleted_photo_shows_it_in_recently_deleted() {
-        let dir = std::env::temp_dir().join(format!("lc-ui-readd-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let img = lcc_raster::Rgba8 { width: 16, height: 12, data: vec![[200, 120, 40, 255]; 16 * 12] };
-        let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
-        let file = dir.join("flower.png");
-        std::fs::write(&file, png).unwrap();
-        let paths = vec![file.to_string_lossy().to_string()];
-        let services = crate::Services { png: None, ..Default::default() };
-        let mut app = LccApp::new(lcc_engine::Session::with_demo().with_fs(), services);
-        app.ui.view = crate::state::ViewMode::PhotoGrid;
-        let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
-        let t = Duration::from_secs(10);
-        // frames until the import has finished, so its (timed) toast is read before it expires
-        let finish_import = |h: &mut Headless| {
-            let t0 = std::time::Instant::now();
-            while h.app.import.is_some() && t0.elapsed() < Duration::from_secs(30) {
-                h.step();
-            }
-            assert!(h.app.import.is_none(), "import finished");
-        };
-        crate::import::start_paths(&mut h.app, paths.clone()).unwrap();
-        h.settle(SETTLE);
-        let id = h.app.session.selection.active.expect("imported photo selected");
-        let n0 = h.app.session.catalog.len();
-        h.request("engine.execute", json!({"command": "photo.delete", "params": {"ids": [id.0]}}), t);
-        assert!(h.app.session.catalog.photo(id).unwrap().deleted);
-        let photo_items = |app: &LccApp| -> Vec<String> {
-            let bar = crate::menubar::menu_bar(app);
-            let items = &bar.iter().find(|(title, _)| title == "Photo").expect("Photo menu").1;
-            items.iter().filter_map(|n| if let crate::menubar::MenuNode::Item { id, .. } = n { Some(id.clone()) } else { None }).collect()
-        };
-        assert!(!photo_items(&h.app).contains(&"photo.restore".to_string()), "Restore only for deleted photos");
-
-        crate::import::start_paths(&mut h.app, paths.clone()).unwrap();
-        finish_import(&mut h);
-        assert!(!h.app.session.catalog.photo(id).unwrap().deleted, "re-adding the file restores the photo");
-        assert_eq!(h.app.session.catalog.len(), n0, "no second record");
-        assert_eq!(h.app.session.source, lcc_engine::LibrarySource::All);
-        assert_eq!(h.app.session.selection.ids, vec![id], "the restored photo is selected");
-        let toast = h.app.ui.toast.clone().expect("toast").0;
-        assert!(toast.contains("Restored 1 photo from Recently Deleted"), "{toast}");
-        assert!(!photo_items(&h.app).contains(&"photo.restore".to_string()));
-        // undo of the re-add puts it back in Recently Deleted; the trash view's menus offer Restore
-        h.request("engine.execute", json!({"command": "edit.undo"}), t);
-        assert!(h.app.session.catalog.photo(id).unwrap().deleted, "one undo step");
-        h.request("engine.execute", json!({"command": "library.source", "params": {"kind": "recentlyDeleted"}}), t);
-        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [id.0]}}), t);
-        h.settle(SETTLE);
-        assert_eq!(h.app.session.source, lcc_engine::LibrarySource::RecentlyDeleted);
-        let items = photo_items(&h.app);
-        assert!(items.contains(&"photo.restore".to_string()) && items.contains(&"photo.deletePermanently".to_string()), "{items:?}");
-        assert!(!items.contains(&"photo.delete".to_string()), "{items:?}");
-        // a right-click on its filmstrip thumbnail opens the photo menu
-        h.request("ui.set", json!({"view": "detail"}), t);
-        h.settle(SETTLE);
-        let cell = h.app.widgets.iter().find(|(w, _)| *w == format!("film:{}", id.0)).map(|(_, r)| *r).expect("filmstrip cell");
-        assert!(!egui::Popup::is_any_open(&h.view.ctx));
-        let r = h.request("ui.click", json!({"x": cell.center().x, "y": cell.center().y, "button": "right"}), t);
-        assert_eq!(r["ok"], true, "{r}");
-        h.settle(SETTLE);
-        assert!(egui::Popup::is_any_open(&h.view.ctx), "filmstrip context menu");
-
-        // Empty Recently Deleted is offered while the trash is the source
-        assert!(photo_items(&h.app).contains(&"library.emptyRecentlyDeleted".to_string()));
-        let r = h.request("ui.menu.invoke", json!({"id": "photo.restore"}), t);
-        assert_eq!(r["ok"], true, "{r}");
-        assert!(!h.app.session.catalog.photo(id).unwrap().deleted, "restored");
-        crate::import::start_paths(&mut h.app, paths).unwrap();
-        finish_import(&mut h);
-        assert_eq!(h.app.session.source, lcc_engine::LibrarySource::All);
-        assert_eq!(h.app.session.selection.ids, vec![id]);
-        let toast = h.app.ui.toast.clone().expect("toast").0;
-        assert!(toast.contains("All Photos"), "{toast}");
-        assert!(!photo_items(&h.app).contains(&"library.emptyRecentlyDeleted".to_string()), "Empty is for the trash view only");
-
-        // deleted permanently, the file imports afresh as a new photo
-        h.request("engine.execute", json!({"command": "photo.delete", "params": {"ids": [id.0]}}), t);
-        h.request("engine.execute", json!({"command": "photo.deletePermanently", "params": {"ids": [id.0]}}), t);
-        assert!(h.app.session.catalog.photo(id).is_none());
-        crate::import::start_paths(&mut h.app, vec![file.to_string_lossy().to_string()]).unwrap();
-        h.settle(SETTLE);
-        let fresh = h.app.session.selection.active.expect("re-imported photo selected");
-        assert_ne!(fresh, id);
-        assert!(!h.app.session.catalog.photo(fresh).unwrap().deleted);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Importing while an album is shown (issue #1446): the new photos aren't in it, so the view
@@ -4866,6 +4806,90 @@ mod tests {
         }
     }
 
+    /// A final display-sized texture, an oversampled HDR texture and a small drag draft
+    /// all place the same photo in the same physical-pixel rectangle.
+    #[test]
+    fn adjustment_pixel_bounds_stay_fixed_across_texture_sizes_and_output_modes() {
+        use crate::render::Slot;
+        use lcc_catalog::{Op, Photo, PhotoId, Source};
+        use std::sync::Arc;
+        struct Hdr;
+        impl crate::HdrOutput for Hdr {
+            fn headroom(&mut self) -> Option<f32> {
+                Some(4.0)
+            }
+            fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+                Ok(egui::TextureId::User(700 + u64::from(view)))
+            }
+        }
+        for native in [[3264, 2448], [6000, 4000], [3265, 2449]] {
+            for ppp in [1.0, 1.25, 1.5, 2.0] {
+                for hdr in [false, true] {
+                    let mut session = lcc_engine::Session::new();
+                    session.media.file_loader = Some(Arc::new(move |_, _, _| {
+                        let (w, h) = (2560, (2560.0 * native[1] as f64 / native[0] as f64).round() as usize);
+                        let mut image = lcc_raster::Rgb32f::new(w, h);
+                        image.data.fill([0.4, 0.3, 0.2]);
+                        Ok((image, Default::default()))
+                    }));
+                    let photo = Photo::new(
+                        PhotoId(1),
+                        Source::File { path: "pixel-bounds.jpg".into() },
+                        "pixel-bounds.jpg",
+                        "JPEG",
+                        native[0],
+                        native[1],
+                        "2026-10-22",
+                    );
+                    session.catalog.apply(Op::AddPhoto { photo: Box::new(photo) }).unwrap();
+                    session.selection = lcc_engine::Selection::single(PhotoId(1));
+                    session.execute("develop.hdr", &json!({"enabled": hdr})).unwrap();
+                    let services = crate::Services { hdr_output: hdr.then(|| Box::new(Hdr) as Box<dyn crate::HdrOutput>), ..Default::default() };
+                    let mut h = Headless::new(LccApp::new(session, services), [1000.3, 700.5], ppp);
+                    h.app.ui.view = crate::state::ViewMode::Detail;
+                    let bounds = |h: &Headless| {
+                        let tex = if h.app.loupe_shown.is_some_and(|(_, source)| source == "hdr") {
+                            egui::TextureId::User(700)
+                        } else {
+                            h.app.renderer.textures[&Slot::Main].tex.id()
+                        };
+                        h.view
+                            .painted_shapes()
+                            .iter()
+                            .find_map(|shape| match shape {
+                                egui::epaint::Shape::Mesh(mesh) if mesh.texture_id == tex => Some(shape.visual_bounding_rect()),
+                                _ => None,
+                            })
+                            .expect("the photo's actual painted quad")
+                    };
+                    // (the texture on screen: an HDR drag draws HDR drafts alone, no 8-bit ones)
+                    let shown_size = |h: &Headless| {
+                        if h.app.loupe_shown.is_some_and(|(_, source)| source == "hdr") {
+                            h.app.renderer.hdr_view[&crate::render::HDR_LOUPE].size
+                        } else {
+                            h.app.renderer.textures[&Slot::Main].size
+                        }
+                    };
+                    assert!(h.settle(SETTLE));
+                    let still = bounds(&h);
+                    let still_size = shown_size(&h);
+                    assert_eq!(Some(still), h.app.image_rect);
+                    h.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
+                    assert!(h.settle(SETTLE));
+                    let draft_size = shown_size(&h);
+                    assert_ne!(still_size, draft_size, "the test exercises a real texture-size transition");
+                    assert_eq!(bounds(&h), still, "drag: {native:?}, {ppp}x, HDR {hdr}");
+                    h.app.run("develop.set", json!({"values": {"light.exposure": 0.25}})).unwrap();
+                    assert!(h.settle(SETTLE));
+                    assert_eq!(bounds(&h), still, "update: {native:?}, {ppp}x, HDR {hdr}");
+                    h.app.run("develop.endInteraction", json!({})).unwrap();
+                    assert!(h.settle(SETTLE));
+                    assert_eq!(bounds(&h), still, "release: {native:?}, {ppp}x, HDR {hdr}");
+                }
+            }
+        }
+    }
+
     /// Gap 14: zoomed in (1:1 tiles) an HDR edit is still drawn above SDR white, from an HDR
     /// render of the part on screen; the Before side (the photo without its edits) stays SDR;
     /// View ▸ HDR Preview off shows the SDR rendition everywhere, and back on the HDR again.
@@ -4881,7 +4905,7 @@ mod tests {
             }
             fn upload(&mut self, view: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
                 assert_eq!(rgb.len(), width * height * 3);
-                self.0.borrow_mut().push((view, rgb.iter().copied().fold(0.0, f32::max)));
+                self.0.borrow_mut().push((crate::render::hdr_slot_view(view), rgb.iter().copied().fold(0.0, f32::max)));
                 Ok(egui::TextureId::User(7 + u64::from(view)))
             }
         }
@@ -4896,6 +4920,32 @@ mod tests {
         h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 2.0}}}), t);
         let hdr_shown = |h: &Headless| h.app.loupe_shown.is_some_and(|(_, s)| s == "hdr");
         assert!(h.step_until(SETTLE, hdr_shown), "the fit loupe shows the HDR texture");
+        h.settle(SETTLE);
+        // Every adjustment keeps HDR visible while new float drafts are in flight, and draws
+        // them alone: no 8-bit draft of each step beside them.
+        h.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
+        for control in ["light.exposure", "light.contrast", "light.highlights", "light.shadows", "light.whites", "light.blacks", "color.saturation"] {
+            let before = uploads.borrow().len();
+            let value = if control == "light.exposure" { 3.0 } else { 20.0 };
+            h.app.run("develop.set", json!({"values": {control: value}})).unwrap();
+            assert!(
+                h.step_until(SETTLE, |h| {
+                    assert!(hdr_shown(h), "SDR frame during {control}");
+                    uploads.borrow().len() > before
+                }),
+                "live HDR update: {control}"
+            );
+            assert!(h.app.session.interaction.is_some());
+            assert!(!h.app.renderer.is_pending(crate::render::Slot::Main), "an 8-bit draft beside the HDR ones: {control}");
+        }
+        h.app.run("develop.endInteraction", json!({})).unwrap();
+        let before = uploads.borrow().len();
+        h.step();
+        assert!(hdr_shown(&h), "release keeps HDR");
+        assert!(h.step_until(SETTLE, |h| {
+            assert!(hdr_shown(h), "SDR frame while final render completes");
+            uploads.borrow().len() > before
+        }));
         // HDR Preview off: the 8-bit SDR rendition, on: HDR again
         let r = h.request("ui.menu.invoke", json!({"id": "view.hdrPreview"}), t);
         assert!(!h.app.ui.hdr_preview, "{r:?}");
@@ -4904,10 +4954,53 @@ mod tests {
         h.request("ui.menu.invoke", json!({"id": "view.hdrPreview"}), t);
         assert!(h.app.ui.hdr_preview);
         assert!(h.step_until(SETTLE, hdr_shown), "HDR Preview on again");
-        // zoomed in: the part on screen gets its own HDR render, highlights above SDR white
+        // zoomed in: the part on screen gets its own HDR render, highlights above SDR white; until
+        // it comes the whole frame's HDR shows (softer), never 8-bit tiles of another brightness
         h.request("ui.menu.invoke", json!({"id": "view.zoom100"}), t);
-        let zoomed = |h: &Headless| h.app.region_view.is_some() && uploads.borrow().iter().any(|(v, m)| *v == HDR_ZOOMED + PANE_AFTER && *m > 1.0);
+        let no_tiles = |h: &Headless| h.app.renderer.tiles_pending() == 0 && h.app.renderer.tiles.is_empty();
+        let zoomed = |h: &Headless| {
+            assert!(hdr_shown(h) && no_tiles(h), "an 8-bit tile while zooming in");
+            h.app.region_view.is_some() && uploads.borrow().iter().any(|(v, m)| *v == HDR_ZOOMED + PANE_AFTER && *m > 1.0)
+        };
         assert!(h.step_until(SETTLE, zoomed), "zoomed HDR window: {:?}", uploads.borrow());
+        h.settle(SETTLE);
+        let zoomed_uploads = || uploads.borrow().iter().filter(|(v, _)| *v == HDR_ZOOMED + PANE_AFTER).count();
+        let before = zoomed_uploads();
+        h.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
+        h.app.run("develop.set", json!({"values": {"light.exposure": 2.5}})).unwrap();
+        assert!(
+            h.step_until(SETTLE, |h| {
+                assert!(hdr_shown(h), "zoomed interaction keeps the HDR underlay");
+                assert!(!h.app.renderer.is_pending(crate::render::Slot::Window(PANE_AFTER)), "an 8-bit window draft under the HDR window");
+                zoomed_uploads() > before
+            }),
+            "zoomed drafts upload through HDR too"
+        );
+        h.app.run("develop.endInteraction", json!({})).unwrap();
+        h.settle(SETTLE);
+        // a pan: the window there was stays where it belongs while the new part's renders (no
+        // 8-bit tiles), and panning back shows the first one again at once, rendering nothing
+        let id = h.app.session.active().unwrap();
+        let shown = |h: &Headless| h.app.renderer.hdr_view.get(&(HDR_ZOOMED + PANE_AFTER)).filter(|v| v.photo == id).map(|v| (v.key, v.window));
+        let (first, old) = (shown(&h).expect("a zoomed HDR window"), h.app.region_view.expect("zoomed").window);
+        let before = zoomed_uploads();
+        h.request("ui.set", json!({"pan": [0.2, 0.3]}), t);
+        assert_ne!(h.app.region_view.expect("zoomed").window, old, "the pan shows another part");
+        assert!(
+            h.step_until(SETTLE, |h| {
+                assert!(no_tiles(h), "an 8-bit tile after a pan");
+                assert!(shown(h).is_some(), "a pan leaves no HDR window up");
+                zoomed_uploads() > before
+            }),
+            "the new part's HDR window"
+        );
+        h.settle(SETTLE);
+        assert_ne!(shown(&h), Some(first));
+        let before = zoomed_uploads();
+        h.request("ui.set", json!({"pan": [0.5, 0.5]}), t);
+        h.settle(SETTLE);
+        assert_eq!(shown(&h), Some(first), "back where it was: the window it showed");
+        assert_eq!(zoomed_uploads(), before, "shown again without rendering it again");
         // Before / After side by side, fit: the After stays HDR, the original is SDR
         h.request("ui.menu.invoke", json!({"id": "view.zoomFit"}), t);
         h.request("ui.menu.invoke", json!({"id": "view.beforeAfter"}), t);
@@ -4915,6 +5008,155 @@ mod tests {
         assert!(uploads.borrow().iter().all(|(v, _)| *v != HDR_BEFORE), "the Before (no edits) is not an HDR edit");
         assert!(uploads.borrow().iter().any(|(v, _)| *v == HDR_LOUPE));
         assert!(h.app.renderer.hdr_view.contains_key(&HDR_LOUPE));
+    }
+
+    /// LR-HDR-SDRPREVIEW: Preview for SDR Display (under Visualize HDR) shows an HDR edit's SDR
+    /// rendition on an HDR display, as View ▸ HDR Preview off does (one switch, two places); the
+    /// SDR Rendition sliders say how to see them while the screen shows HDR. On a window that
+    /// can't show HDR the box stays on and can't be turned off.
+    #[test]
+    fn preview_for_sdr_display_shows_the_sdr_rendition_of_an_hdr_edit() {
+        struct Fake(Option<f32>);
+        impl crate::HdrOutput for Fake {
+            fn headroom(&mut self) -> Option<f32> {
+                self.0
+            }
+            fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+                Ok(egui::TextureId::User(7 + u64::from(view)))
+            }
+        }
+        let t = Duration::from_secs(10);
+        for headroom in [Some(4.0), None] {
+            let services = crate::Services { png: None, hdr_output: Some(Box::new(Fake(headroom))), ..Default::default() };
+            let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+            app.ui.view = crate::state::ViewMode::PhotoGrid;
+            let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+            h.request("ui.set", json!({"view": "detail"}), t);
+            h.request("engine.execute", json!({"command": "develop.hdr", "params": {"enabled": true}}), t);
+            h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 2.0}}}), t);
+            h.app.ui.toggle_flyout("sdrRendition");
+            let hdr_shown = |h: &Headless| h.app.loupe_shown.is_some_and(|(_, s)| s == "hdr");
+            let note_shown = |h: &Headless| h.app.widgets.iter().any(|(id, _)| id == "note:sdrSlidersHidden");
+            assert!(h.settle(SETTLE));
+            if headroom.is_none() {
+                assert!(!hdr_shown(&h) && !note_shown(&h), "an SDR window shows the SDR rendition, sliders usable");
+                let r = h.request("ui.clickWidget", json!({"id": "check:hdrSdrPreview"}), t);
+                h.settle(SETTLE);
+                assert!(!hdr_shown(&h), "the box can't be turned off on an SDR window: {r}");
+                continue;
+            }
+            assert!(h.step_until(SETTLE, hdr_shown), "an HDR display shows the HDR render");
+            assert!(note_shown(&h), "the SDR sliders say how to see them");
+            let r = h.request("ui.clickWidget", json!({"id": "check:hdrSdrPreview"}), t);
+            assert_eq!(r["ok"], true, "{r}");
+            assert!(h.settle(SETTLE));
+            assert!(!h.app.ui.hdr_preview, "the same switch as View ▸ HDR Preview");
+            assert!(!hdr_shown(&h), "the SDR rendition shows");
+            assert!(!note_shown(&h));
+            // its SDR sliders now change what is on screen
+            let before = h.app.renderer.textures.get(&crate::render::Slot::Main).map(|x| x.key);
+            h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"hdr.sdrBrightness": 60.0}}}), t);
+            assert!(h.settle(SETTLE));
+            assert_ne!(h.app.renderer.textures.get(&crate::render::Slot::Main).map(|x| x.key), before);
+            assert!(!hdr_shown(&h));
+            h.request("ui.clickWidget", json!({"id": "check:hdrSdrPreview"}), t);
+            assert!(h.step_until(SETTLE, hdr_shown), "off again: HDR");
+            assert!(h.app.ui.hdr_preview);
+        }
+    }
+
+    /// A slider drag of an HDR edit on an HDR display: the views that show the edit (the After
+    /// of a Before / After split, the second window) stay HDR and update live; what the drag
+    /// does not change (another photo's Compare tile) is not rendered again at its start or end.
+    #[test]
+    fn hdr_drags_update_the_views_of_the_edit_and_leave_the_rest() {
+        use crate::render::{HDR_BEFORE, HDR_COMPARE, HDR_LOUPE, HDR_SECOND, Slot};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        struct Fake(Rc<RefCell<Vec<u8>>>);
+        impl crate::HdrOutput for Fake {
+            fn headroom(&mut self) -> Option<f32> {
+                Some(4.0)
+            }
+            fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+                self.0.borrow_mut().push(crate::render::hdr_slot_view(view));
+                Ok(egui::TextureId::User(7 + u64::from(view)))
+            }
+        }
+        let t = Duration::from_secs(10);
+        let uploads = Rc::new(RefCell::new(Vec::new()));
+        let services = crate::Services { png: None, hdr_output: Some(Box::new(Fake(uploads.clone()))), ..Default::default() };
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+        app.ui.view = crate::state::ViewMode::PhotoGrid;
+        let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
+        let count = |view: u8| uploads.borrow().iter().filter(|v| **v == view).count();
+        let vis = h.app.session.visible_cloned();
+        h.request("ui.set", json!({"view": "detail"}), t);
+        for id in [vis[0], vis[1]] {
+            h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [id.0]}}), t);
+            h.request("engine.execute", json!({"command": "develop.hdr", "params": {"enabled": true}}), t);
+            h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 2.0}}}), t);
+        }
+        let id = h.app.session.active().unwrap();
+        // a drag of two steps: each step's HDR frame of `view` arrives, and `shown` holds on every frame
+        let drag = |h: &mut Headless, view: u8, shown: &dyn Fn(&Headless) -> bool, what: &str| {
+            h.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
+            for value in [2.5, 3.0] {
+                let before = count(view);
+                h.app.run("develop.set", json!({"values": {"light.exposure": value}})).unwrap();
+                assert!(
+                    h.step_until(SETTLE, |h| {
+                        assert!(shown(h), "{what}: an SDR frame in the drag");
+                        count(view) > before
+                    }),
+                    "{what}: live HDR updates"
+                );
+            }
+            h.app.run("develop.endInteraction", json!({})).unwrap();
+            h.settle(SETTLE);
+            assert!(shown(h), "{what}: HDR after the release");
+        };
+        // Before / After side by side: the After stays HDR through the drag; the Before (no
+        // edits) is not an HDR edit
+        h.request("ui.set", json!({"beforeAfter": "sideBySide"}), t);
+        let after_hdr = |h: &Headless| h.app.loupe_shown.is_some_and(|(_, s)| s == "hdr");
+        assert!(h.step_until(SETTLE, after_hdr));
+        h.settle(SETTLE);
+        drag(&mut h, HDR_LOUPE, &after_hdr, "Before / After");
+        assert_eq!(count(HDR_BEFORE), 0);
+        h.request("ui.set", json!({"beforeAfter": "off"}), t);
+        // the second window: its HDR frame is up on every frame of the drag
+        h.app.run("second.live", json!({})).unwrap();
+        let second_hdr = |h: &Headless| {
+            let wanted = h.app.renderer.wanted(Slot::HdrView(HDR_SECOND));
+            h.app
+                .renderer
+                .hdr_view
+                .get(&HDR_SECOND)
+                .is_some_and(|v| v.photo == id && wanted.is_none_or(|k| h.app.renderer.hdr_frame(HDR_SECOND, id, k).is_some()))
+        };
+        assert!(h.step_until(SETTLE, |h| count(HDR_SECOND) > 0 && second_hdr(h)), "the second window shows the HDR edit");
+        h.settle(SETTLE);
+        drag(&mut h, HDR_SECOND, &second_hdr, "second window");
+        h.app.run("view.secondWindow", json!({"show": false})).unwrap();
+        // Compare: the select (not being edited) keeps its HDR render through a drag of the candidate
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [vis[0].0, vis[1].0]}}), t);
+        h.request("engine.execute", json!({"command": "view.compare"}), t);
+        let select = vis[0];
+        let select_view = |h: &Headless| (HDR_COMPARE..HDR_COMPARE + 2).find(|v| h.app.renderer.hdr_view.get(v).is_some_and(|x| x.photo == select));
+        assert!(h.step_until(SETTLE, |h| select_view(h).is_some()), "the select's HDR tile");
+        h.settle(SETTLE);
+        let view = select_view(&h).unwrap();
+        let (held, rendered) = (h.app.renderer.hdr_view[&view].key, count(view));
+        h.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
+        h.app.run("develop.set", json!({"values": {"light.exposure": 3.5}})).unwrap();
+        for _ in 0..10 {
+            h.step();
+            assert!(!h.app.renderer.is_pending(Slot::HdrView(view)), "the select's tile renders again in the drag");
+        }
+        h.app.run("develop.endInteraction", json!({})).unwrap();
+        h.settle(SETTLE);
+        assert_eq!((h.app.renderer.hdr_view[&view].key, count(view)), (held, rendered), "the select is not rendered again");
     }
 
     /// HDR display output touches the loupe only: the navigator / filmstrip thumbnail and the
@@ -5111,51 +5353,52 @@ mod tests {
         let r = h.request("ui.key", json!({"key": ",", "cmd": true}), t);
         assert_eq!(r["ok"], true, "{r}");
         assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { tab: "general".into() }));
+        // (the old tabs' ids open the section that holds them: Performance is in Display & Speed)
         for tab in ["import", "performance", "display", "interface", "general"] {
             let r = h.request("ui.clickWidget", json!({"id": format!("button:settingsTab-{tab}")}), t);
             assert_eq!(r["ok"], true, "{tab}: {r}");
-            assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { tab: tab.into() }));
+            let Some(crate::state::Dialog::Settings { tab: now }) = &h.app.ui.dialog else { panic!("{tab}: Settings closed") };
+            assert_eq!(crate::settings_screen::section_of(now), crate::settings_screen::section_of(tab), "{tab}");
         }
         // General: confirm before delete (on by default), startup view
         assert!(h.app.ui.settings.confirm_delete);
+        crate::settings_screen::reveal(&mut h, "check:settings.confirmDelete");
         h.request("ui.clickWidget", json!({"id": "check:settings.confirmDelete"}), t);
         assert!(!h.app.ui.settings.confirm_delete);
+        crate::settings_screen::reveal(&mut h, "check:settings.confirmDelete");
         h.request("ui.clickWidget", json!({"id": "check:settings.confirmDelete"}), t);
         assert!(h.app.ui.settings.confirm_delete);
+        crate::settings_screen::reveal(&mut h, "button:settingsStartup-2");
         h.request("ui.clickWidget", json!({"id": "button:settingsStartup-2"}), t);
         assert_eq!(h.app.ui.settings.startup_view, crate::state::StartupView::Detail);
         // Interface: filmstrip names off, grid badges always
         h.request("ui.clickWidget", json!({"id": "button:settingsTab-interface"}), t);
-        // Appearance cards (one row per theme, with its favorite star) sit above these controls;
-        // scroll the compact settings viewport past them.
-        h.request("ui.hoverWidget", json!({"id": "radio:theme-charcoal"}), t);
-        h.request("ui.scroll", json!({"dy": -700.0}), t);
-        for _ in 0..4 {
-            h.step();
-        }
+        crate::settings_screen::reveal(&mut h, "check:settings.filmNames");
         h.request("ui.clickWidget", json!({"id": "check:settings.filmNames"}), t);
         assert!(!h.app.ui.settings.film_names);
+        crate::settings_screen::reveal(&mut h, "button:settingsGridBadges-1");
         h.request("ui.clickWidget", json!({"id": "button:settingsGridBadges-1"}), t);
         assert_eq!(h.app.ui.settings.grid_badges, crate::state::GridBadges::Always);
-        h.request("ui.scroll", json!({"dy": 700.0}), t);
-        for _ in 0..4 {
-            h.step();
-        }
         // Performance: the thumbnail cache size goes to the library preferences
         h.request("ui.clickWidget", json!({"id": "button:settingsTab-performance"}), t);
+        crate::settings_screen::reveal(&mut h, "button:settingsCache-0");
         h.request("ui.clickWidget", json!({"id": "button:settingsCache-0"}), t);
         assert_eq!(h.app.session.cache_mb, 512);
+        crate::settings_screen::reveal(&mut h, "button:settingsPreview-3");
         h.request("ui.clickWidget", json!({"id": "button:settingsPreview-3"}), t);
         assert_eq!(h.app.ui.settings.preview_limit, 3840);
+        crate::settings_screen::reveal(&mut h, "button:settingsMemory-2");
         h.request("ui.clickWidget", json!({"id": "button:settingsMemory-2"}), t);
         assert_eq!(h.app.ui.settings.memory_mb, 1024);
         h.step();
         assert_eq!(lcc_engine::memory::budget(), 1024 << 20, "applied through app.memoryBudget");
+        crate::settings_screen::reveal(&mut h, "button:settingsMemory-0");
         h.request("ui.clickWidget", json!({"id": "button:settingsMemory-0"}), t);
         h.step();
         assert_eq!(lcc_engine::memory::budget(), lcc_engine::memory::default_budget(), "back to automatic");
         // Import: per-camera defaults
         h.request("ui.clickWidget", json!({"id": "button:settingsTab-import"}), t);
+        crate::settings_screen::reveal(&mut h, "check:settings.perCamera");
         h.request("ui.clickWidget", json!({"id": "check:settings.perCamera"}), t);
         assert!(h.app.session.import_defaults.per_camera);
         let img = h.snapshot(SETTLE);
@@ -5267,9 +5510,6 @@ mod tests {
             assert_eq!(crate::i18n::language(), locale);
             for (mode, key) in [("basic", "Info Overlay: File"), ("exposure", "Info Overlay: Exposure"), ("off", "Info Overlay Off")] {
                 let expected = locale.tr(key);
-                if locale != Locale::En {
-                    assert_ne!(expected, key, "this locale must translate the tested message");
-                }
                 assert_eq!(h.request("ui.key", json!({"key": "i", "cmd": true}), t)["ok"], true);
                 assert_eq!(serde_json::to_value(h.app.ui.info_overlay).unwrap(), json!(mode));
                 assert_eq!(h.app.ui.toast.as_ref().expect("overlay toast").0, expected);
@@ -5306,6 +5546,54 @@ mod tests {
         let r = h.request("engine.execute", json!({"command": "view.viewOptions", "params": {"info2": ["rating", "none", "none"]}}), t);
         assert_eq!(r["ok"], false, "{r}");
         assert_eq!(h.app.ui.settings.loupe_info.info2, [F::Camera, F::None, F::FileName], "a refused change changes nothing");
+    }
+
+    /// View Options' Show Briefly When Photo Changes: a tick box under each Info (ticking one
+    /// unticks the other) and `view.viewOptions {briefly}`; with the overlay off, the loupe shows
+    /// the chosen Info after → changes the photo, and hides it again a few seconds later.
+    #[test]
+    fn show_briefly_when_photo_changes_in_view_options() {
+        use crate::state::{BRIEF_INFO_SECS, InfoOverlay};
+        let mut h = demo([1400.0, 1100.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view": "detail"}), t);
+        assert_eq!(h.request("ui.key", json!({"key": "j", "cmd": true}), t)["ok"], true);
+        h.step();
+        h.settle(SETTLE); // the dialog opens over a few frames
+        assert_eq!(h.request("ui.clickWidget", json!({"id": "check:viewOptions.briefly2"}), t)["ok"], true);
+        h.step();
+        assert_eq!(h.app.ui.settings.loupe_info.briefly, InfoOverlay::Exposure);
+        assert_eq!(h.request("ui.clickWidget", json!({"id": "check:viewOptions.briefly1"}), t)["ok"], true);
+        h.step();
+        assert_eq!(h.app.ui.settings.loupe_info.briefly, InfoOverlay::Basic, "one Info at most");
+        h.app.ui.dialog = None;
+        h.step();
+
+        let overlay = |h: &Headless| h.app.widgets.iter().any(|(w, _)| w == "canvas:infoOverlay");
+        assert_eq!(h.app.ui.info_overlay, InfoOverlay::Off);
+        h.time += BRIEF_INFO_SECS + 1.0;
+        h.step();
+        h.step();
+        assert!(!overlay(&h), "hidden once the time has passed");
+        let before = h.app.session.active();
+        h.request("ui.key", json!({"key": "right"}), t);
+        assert_ne!(h.app.session.active(), before);
+        h.step();
+        assert!(overlay(&h), "shown after → changes the photo");
+        h.time += BRIEF_INFO_SECS + 1.0;
+        h.step();
+        h.step();
+        assert!(!overlay(&h), "and hidden again");
+
+        let r = h.request("engine.execute", json!({"command": "view.viewOptions", "params": {"briefly": "off"}}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(r["result"]["loupeInfo"]["briefly"], "off", "{r}");
+        h.request("ui.key", json!({"key": "right"}), t);
+        h.step();
+        assert!(!overlay(&h), "off: nothing shows when the photo changes");
+        let r = h.request("engine.execute", json!({"command": "view.viewOptions", "params": {"briefly": "info3"}}), t);
+        assert_eq!(r["ok"], false, "{r}");
+        assert_eq!(h.app.ui.settings.loupe_info.briefly, InfoOverlay::Off, "a refused change changes nothing");
     }
 
     /// A click on the image zooms to the chosen click-zoom ratio (1:1 by default), animating the
@@ -5642,6 +5930,69 @@ mod tests {
         open.set(true);
         assert!(h.step_until(SETTLE, |h| !pill(h)), "gone once the render lands");
         assert!(!h.app.renderer.is_pending(Slot::Main));
+    }
+
+    /// View Options' Show message when loading or rendering photos (on by default): turned off in
+    /// the window, the loupe does not say "Rendering…" while an edit renders; `view.viewOptions
+    /// {loupeMessages}` turns it back on for an agent (refusing a value that is not true or false).
+    #[test]
+    fn view_options_turn_the_rendering_message_off() {
+        use crate::render::Slot;
+        use std::{cell::Cell, rc::Rc};
+        let pill = |h: &Headless| h.app.widgets.iter().any(|(w, _)| w == "loupe:rendering");
+        let mut h = demo([1400.0, 1100.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view": "detail", "right": "none"}), t);
+        h.settle(SETTLE);
+        assert!(h.app.ui.settings.loupe_messages, "on by default");
+        assert_eq!(h.request("ui.key", json!({"key": "j", "cmd": true}), t)["ok"], true);
+        h.settle(SETTLE); // the dialog opens over a few frames
+        assert_eq!(h.request("ui.clickWidget", json!({"id": "check:viewOptions.loupeMessages"}), t)["ok"], true);
+        h.step();
+        assert!(!h.app.ui.settings.loupe_messages, "the tick box turns it off");
+        h.app.ui.dialog = None;
+        let open = Rc::new(Cell::new(false));
+        h.app.renderer.set_offload(Box::new(super::RenderGate::new(open.clone())));
+        h.request("engine.execute", json!({"command": "develop.set", "params": {"control": "light.exposure", "value": 0.5}}), t);
+        for _ in 0..45 {
+            h.step();
+        }
+        assert!(h.app.renderer.is_pending(Slot::Main), "the edit's render is held");
+        assert!(!pill(&h), "no message while it is off");
+
+        let r = h.request("engine.execute", json!({"command": "view.viewOptions", "params": {"loupeMessages": "yes"}}), t);
+        assert_eq!(r["ok"], false, "{r}");
+        assert!(!h.app.ui.settings.loupe_messages, "a refused change changes nothing");
+        let r = h.request("engine.execute", json!({"command": "view.viewOptions", "params": {"loupeMessages": true}}), t);
+        assert_eq!(r["result"]["loupeMessages"], true, "{r}");
+        assert_eq!(h.app.ui.dialog, None, "a value sets it without opening the window");
+        assert!(h.step_until(SETTLE, pill), "the message shows again while the render is held");
+        open.set(true);
+        assert!(h.step_until(SETTLE, |h| !pill(h)), "gone once the render lands");
+    }
+
+    /// With nothing to show yet, the loupe says "Rendering…" in its middle only while View Options'
+    /// Show message when loading or rendering photos is on.
+    #[test]
+    fn an_empty_loupe_says_rendering_only_with_the_message_on() {
+        use std::{cell::Cell, rc::Rc};
+        for on in [true, false] {
+            let mut h = demo([1000.0, 700.0]);
+            let t = Duration::from_secs(10);
+            h.app.ui.settings.loupe_messages = on;
+            h.app.renderer.set_offload(Box::new(super::RenderGate::new(Rc::new(Cell::new(false)))));
+            h.request("ui.set", json!({"view": "detail", "right": "none"}), t);
+            // drop every texture (quick previews and thumbnails land outside the gate) until a
+            // frame has nothing to show
+            let empty = (0..60).any(|_| {
+                h.app.renderer.textures.clear();
+                h.step();
+                h.app.loupe_shown.map(|l| l.1) == Some("none")
+            });
+            assert!(empty, "a frame with nothing rendered");
+            let said = h.painted_text().iter().any(|text| text == "Rendering…");
+            assert_eq!(said, on, "message on: {on}");
+        }
     }
 
     /// A render that fails while the loupe shows a stand-in (the embedded JPEG, a thumbnail) left

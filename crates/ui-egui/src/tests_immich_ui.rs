@@ -76,6 +76,7 @@ fn key_file_prompt_creates_and_unlocks_the_file() {
     assert!(has(&h, "credUnlockBox"), "the passphrase prompt shows");
     assert!(has(&h, "field:credPassphrase2"), "a new file asks twice");
     h.app.immich.type_passphrase("correct horse battery");
+    crate::settings_screen::reveal(&mut h, "button:credUnlock");
     click(&mut h, "button:credUnlock");
     let start = std::time::Instant::now();
     while h.app.session.execute("credentials.status", &json!({})).unwrap()["active"] != "encrypted file" {
@@ -155,13 +156,27 @@ fn immich_card_is_compact() {
     assert!(has(&h, "label:immichPermsOk-0"), "one line: nothing missing");
     assert!(!has(&h, "label:immichPermsAll-0"), "the full list starts collapsed");
     assert!(!has(&h, "label:immichMissing-0"));
+    crate::settings_screen::reveal(&mut h, "button:immichPerms-0");
     click(&mut h, "button:immichPerms-0");
     assert!(has(&h, "label:immichPermsAll-0"), "Show permissions opens the list");
     click(&mut h, "button:immichPerms-0");
     assert!(!has(&h, "label:immichPermsAll-0"));
+    crate::settings_screen::reveal(&mut h, "button:immichSyncPanel-0");
     click(&mut h, "button:immichSyncPanel-0");
     assert!(has(&h, "label:immichSyncStatus-0"));
-    let text = h.painted_text().join("\n");
+    // (further down the Sync section: scrolled to, as a person would)
+    let mut text = h.painted_text().join("\n");
+    for _ in 0..12 {
+        if text.contains("Albums ↔ albums") {
+            break;
+        }
+        h.request("ui.hoverWidget", json!({"id": "settings:rows", "fx": 0.98, "fy": 0.5}), T);
+        h.request("ui.scroll", json!({"dy": -200.0}), T);
+        for _ in 0..8 {
+            h.step();
+        }
+        text = h.painted_text().join("\n");
+    }
     assert!(text.contains("Albums ↔ albums"), "the album rule row");
     if let Some(p) = lcc_brand::env_os("TEST_SHOTS") {
         h.app.services.png = Some(Box::new(|img: &lcc_raster::Rgba8| {
@@ -195,7 +210,8 @@ fn plain_http_server_url_shows_an_unencrypted_warning() {
         h.app.immich.url = url.to_string();
         h.step();
         h.step();
-        h.painted_text().join("\n").contains("not encrypted")
+        // the warning sits under the field, which may be below the panel's fold: look for its widget
+        has(h, "label:immichUrlInsecure")
     };
     assert!(warned(&mut h, "http://nas:2283"));
     assert!(!warned(&mut h, "https://nas:2283"));

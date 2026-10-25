@@ -1,0 +1,217 @@
+# Calibrating a camera against Lightroom
+
+> **Last updated:** 2026-10-25
+
+The app renders most raws close to Lightroom, but not the same: its camera colour is estimated (from the camera's
+own JPEG, spectral data or DNG matrices), not matched. `lightcraft-classic-cli calibrate-lightroom` closes that gap one camera model at
+a time. You run it on **your own raws** and **Lightroom's exports of the same photos**. It fits the camera's colour
+model and one look per Lightroom profile you exported, and writes **one small file of numbers** that you send to the
+project. Once it is added, every user of that camera gets the matched colour, and catalogues imported from Lightroom
+pick the matching look for each photo's profile.
+
+`lightcraft-classic-cli` is the command-line tool shipped with every release (next to the app).
+
+## Running the command-line tool
+
+The desktop app doesn't take commands: the fit runs in **`lightcraft-classic-cli`**, the command-line tool every release ships
+next to it. The examples use release 26.43.7; use the version you downloaded. Each one ends with `--help`, which lists
+every subcommand: replace it with `calibrate-lightroom …` from the steps below. Folder names with spaces need quotes
+(`"My Photos"`).
+
+### Windows
+
+Open **PowerShell** (Start menu ▸ type *PowerShell*).
+
+- **Installer (`lightcraft-classic-26.43.7-windows-x64.msi`)**: the tool is installed next to the app, by default in
+  `C:\Program Files\Chromaforge`:
+
+  ```powershell
+  & "C:\Program Files\Chromaforge\lightcraft-classic-cli.exe" --help
+  ```
+
+  (If you chose another folder at install, use that one.)
+- **Portable (`lightcraft-classic-26.43.7-windows-x64-portable.zip`)**: unzip it (right-click ▸ *Extract All…*), then in
+  PowerShell go to that folder and run the tool from it:
+
+  ```powershell
+  cd "$HOME\Downloads\lightcraft-classic-26.43.7-windows-x64-portable"
+  .\lightcraft-classic-cli.exe --help
+  ```
+
+On ARM PCs the files say `arm64` instead of `x64`.
+
+### macOS
+
+The app's disk image holds only the app: download **`lightcraft-classic-cli-26.43.7-macos-universal.zip`** from the same
+release too (signed and notarized, for Apple silicon and Intel). Double-click it in Finder to unzip, then open
+**Terminal** (Applications ▸ Utilities) and run it from that folder:
+
+```sh
+cd ~/Downloads
+./lightcraft-classic-cli --help
+```
+
+To run it from anywhere, move it onto your PATH once: `sudo mv ~/Downloads/lightcraft-classic-cli /usr/local/bin/`.
+
+### Linux
+
+Open a terminal.
+
+- **Debian/Ubuntu (`.deb`) or Fedora/openSUSE (`.rpm`)**: the package installs the tool on your PATH:
+
+  ```sh
+  lightcraft-classic-cli --help
+  ```
+
+- **Tarball (`lightcraft-classic-26.43.7-linux-x86_64.tar.gz`)**: unpack it and run the tool from its `bin` folder:
+
+  ```sh
+  tar xf lightcraft-classic-26.43.7-linux-x86_64.tar.gz
+  ./lightcraft-classic-26.43.7-linux-x86_64/bin/lightcraft-classic-cli --help
+  ```
+
+- **AppImage**: starting the AppImage starts the app; the tool is inside it. Unpack it once and run the tool from the
+  unpacked folder:
+
+  ```sh
+  chmod +x lightcraft-classic-26.43.7-linux-x86_64.AppImage
+  ./lightcraft-classic-26.43.7-linux-x86_64.AppImage --appimage-extract
+  ./squashfs-root/usr/bin/lightcraft-classic-cli --help
+  ```
+
+- **Flatpak**: run the tool inside the app's sandbox, giving it your home folder (where the raws and exports are):
+
+  ```sh
+  flatpak run --filesystem=home --command=lightcraft-classic-cli com.emmertex.chromaforge --help
+  ```
+
+Every example below writes `lightcraft-classic-cli`: put the path or prefix you used here in front of it.
+
+## What you need
+
+- 20 or more raws from **one camera model**, as varied as you can: daylight, shade, **tungsten / indoor light**,
+  saturated colours (foliage, sky, skin, flowers, signs). Both warm and cool light matter: the fit places two white
+  points, one for each.
+- Lightroom Classic (or Lightroom) with those raws in a catalogue.
+
+## Step by step
+
+1. **Write the baseline preset:**
+
+   ```sh
+   lightcraft-classic-cli calibrate-lightroom preset -o Baseline.xmp
+   ```
+
+   It sets every Basic and Presence slider to 0, sharpening and noise reduction (colour too) to 0, turns lens
+   profile, chromatic aberration and vignetting corrections off, removes crops and keeps White Balance *As Shot*. It
+   picks no profile. Import it in Lightroom's Develop module (Presets ▸ Import Presets…).
+
+2. **Make virtual copies** of the photos (Photo ▸ Create Virtual Copy) so your own edits stay untouched, and apply
+   the baseline preset to the copies.
+
+3. **Choose a profile** on the copies (*Adobe Standard* is required; *Adobe Color*, *Camera Standard* and others are
+   optional extras, one export each) and **export** with:
+   - File format **TIFF**, **16 bits**, colour space **ProPhoto RGB**, no compression or ZIP;
+   - image sizing off (full size), output sharpening off;
+   - metadata **All** (the tool reads camera model, capture time and the profile name from it);
+   - into **one folder per profile**, named after it, e.g. `exports/Adobe Standard/`, `exports/Adobe Color/`. Folders
+     are searched with their subfolders, so you can pass just `exports` (each file's profile comes from its metadata,
+     else from the folder it is in).
+
+   Repeat step 3 for each profile you want matched.
+
+4. **Check the set** without fitting:
+
+   ```sh
+   lightcraft-classic-cli calibrate-lightroom fit --raws ~/Pictures/raws --exports exports --dry-run
+   ```
+
+   It prints how many raw ↔ export pairs it found, each file it skipped and why (a different camera, a crop, a
+   non-zero slider, no matching raw), the white-balance range covered and the looks found. A narrow range means you
+   should add tungsten-lit or daylight photos.
+
+5. **Fit:**
+
+   ```sh
+   lightcraft-classic-cli calibrate-lightroom fit --raws ~/Pictures/raws --exports exports -o out --contributor "Your Name"
+   ```
+
+   Progress goes to the terminal; a fit takes a few minutes. It writes:
+   - `out/<Make>_<Model>.json`: **the file to send**;
+   - `out/<Make>_<Model>.<look>.dcp`: one camera profile per look, **for your own testing only**. Import it in the
+     app (command `camera.importDcp`) to see the result on your photos. Don't send or publish these.
+
+   The tool lists exactly what the JSON holds and the held-out colour error (ΔE00 on photos the fit did not see)
+   with the app's current colour and with the calibration. If the calibration doesn't beat the current colour, it
+   says what failed (often: add photos under another light).
+
+6. **Send the JSON file** where `fit` tells you to: the project's calibration thread on Discord (the link is printed),
+   or an issue on the project's repository. `--contributor`
+   is optional; leave it out to stay anonymous.
+
+## Privacy: what the file holds
+
+Only aggregate numbers: camera make and model, two colour and two forward matrices, optional hue/saturation maps,
+per look an exposure offset, tone curve and optional look table, and the evidence (number of photos and samples,
+photos per white-balance range, hue coverage, held-out ΔE00). The optional contributor name and the tool version.
+
+It holds **no image content, file names, dates, serial numbers, locations or lens data**. The file is checked against
+an allow-list of fields when written and again when added to the repository: a file with any other field is refused.
+Anything that contains your images (the `.dcp` files' test renders, a local report) stays on your computer.
+
+## Why this is allowed (data rules)
+
+Maintainer decision 2026-10-25: a black-box fit to Lightroom's **output images** of a contributor's own photos may
+ship, as aggregate statistics under MIT OR Apache-2.0. Adobe's own profile files (DCP, LCP), matrices read from
+Adobe-converted DNGs and Adobe-rendered pixels never ship.
+
+## For developers: adding a contribution
+
+```sh
+lightcraft-classic-cli calibrate-lightroom add path/to/<Make>_<Model>.json [--repo .] [--contributor "Name"]
+```
+
+`add` parses and validates the file (format version, allow-listed fields, matrix and table bounds), optionally sets
+the contributor, writes the canonical form to `crates/camdb/data/calibrations/<Make>_<Model>.json` and adds (or
+replaces) its row in `assets/ATTRIBUTION.md`. Commit both, with the release notes. A file that fails validation is
+refused with the reason and nothing is written.
+
+Before committing, try a contribution in a debug build without adding it: point
+`LIGHTCRAFT_CLASSIC_CAMERA_CALIBRATIONS` at a folder holding the JSON and open that camera's raws. `lightcraft-classic-cli calibrate-lightroom
+list` prints the calibrations built into a binary, their looks (`cal:<id>`) and their held-out ΔE00.
+
+### Checking edited photos: `verify`
+
+`lightcraft-classic-cli calibrate-lightroom verify --raws DIR… --exports DIR…` answers "will my edited photos look the same
+after the move?". Export your *edited* photos from Lightroom as 16-bit TIFFs (any profile, crop or slider settings,
+**Include: All Metadata** so the export carries its develop settings). Point `verify` at the raws and at those
+exports. For each pair (matched by camera model and capture time, else by file name) it does three things:
+
+1. Imports the raw as the app would: it reads the raw's XMP sidecar, or, when the export carries its own `crs:`
+   settings, uses those instead, since they are exactly what was exported.
+2. Renders it in the colour space the export was written in (sRGB, Adobe RGB, Display P3, ProPhoto…), so both are
+   clipped to the same gamut.
+3. Measures the render against the export with `compare` (CIEDE2000).
+
+It prints one line per photo, then a table by **group of controls** the edits used: light, tone curve, presence,
+colour mixer, colour grading, white balance, profile, effects, lens, crop, masks, black & white, or default. A group
+whose error stands out is the part of the import to look at. `--report DIR` writes `verify.json` and a ΔE00 map per
+photo; `--json` prints the report; `--max N` checks the first N pairs; `--size N` sets the long edge compared. The
+exports are only read, never changed or sent anywhere.
+
+### Measuring a render against another editor: `compare`
+
+`lightcraft-classic-cli compare REFERENCE TEST` measures how far one render of a photo is from another, from any editor or
+camera (JPEG, TIFF, PNG, … read through their embedded colour profiles). It lines the two up (scale and shift, so a
+small lens-correction or crop difference is fine), then prints CIEDE2000 mean, median, p95 and p99 overall, by tone
+band (by the reference's L*) and by hue sector, with the test's mean lightness, chroma and hue bias. `--diff MAP.png`
+writes a false-colour ΔE00 map, `--json` the full report, `--size N` sets the long edge compared (default 512) and
+`--no-align` compares pixel for pixel. Use it to check a calibration on photos it did not see, or the app's render of
+an edited photo against the edited export from the editor you are moving from:
+
+```
+lightcraft-classic-cli render IMG_0001.CR3 -o ours.tif
+lightcraft-classic-cli compare lightroom/IMG_0001.tif ours.tif --diff map.png
+```
+
+Sources: own design; DNG specification 1.7 chapter 6 (profile model); CIEDE2000 (Sharma, Wu, Dalal 2005).

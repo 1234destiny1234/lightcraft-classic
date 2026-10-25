@@ -160,17 +160,23 @@ fn versions_ui(app: &mut LccApp, ctx: &egui::Context) {
     let (mut go, mut open) = (false, true);
     egui::Window::new(crate::i18n::tr("Edited Version Saved Again"))
         .id(egui::Id::new("immich-resave"))
-        .open(&mut open)
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
+            if crate::dialog_frame::card_header(ui, crate::i18n::tr("Edited Version Saved Again"), Some("immich-resave:close")) {
+                open = false;
+            }
             ui.label(crate::i18n::tr(
                 "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.",
             ));
             ui.radio_value(&mut ask.replace, false, crate::i18n::tr("Keep both"));
             ui.radio_value(&mut ask.replace, true, crate::i18n::tr("Replace (move the previous upload to Immich's trash)"));
             ui.checkbox(&mut ask.remember, crate::i18n::tr("Remember my choice"));
-            go = ui.button(crate::i18n::tr("Upload")).clicked();
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                go = crate::button::Button::new("Upload").kind(crate::button::Kind::Primary).widget("button:immichResaveUpload").show(ui).clicked();
+            });
         });
     let choice = if ask.replace { "replace" } else { "keepBoth" };
     if go {
@@ -220,7 +226,9 @@ pub fn pump(app: &mut LccApp, ctx: &egui::Context) {
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
     }
     // Develop on a link-only photo: fetch its original (once per photo per session)
-    let developing = app.ui.view == crate::state::ViewMode::Detail && app.ui.right.is_edit_tool();
+    // (the Modern layout's Develop has no Edit panel: being in Develop is enough there)
+    let developing = app.ui.view == crate::state::ViewMode::Detail
+        && (app.ui.right.is_edit_tool() || (crate::modern::on(app) && app.ui.module != crate::module::ModuleId::Library));
     if developing
         && let Some(id) = app.session.active()
         && app.session.catalog.photo(id).is_some_and(|p| p.preview_only.as_deref() == Some(lcc_engine::remote::LINK_ONLY))
@@ -393,7 +401,8 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     if let Some(w) = lcc_immich::client::plain_http_warning(&app.immich.url) {
         ui.horizontal_wrapped(|ui| {
             control_indent(ui);
-            ui.label(RichText::new(crate::i18n::tr(w)).size(11.0).color(t.caution));
+            let l = ui.label(RichText::new(crate::i18n::tr(w)).size(11.0).color(t.caution));
+            register(ui.ctx(), "label:immichUrlInsecure", l.rect);
         });
     }
     row(ui, t, "API key", |ui| {
@@ -721,7 +730,8 @@ fn account_card(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &V
         if let Some(e) = link["error"].as_str() {
             ui.label(RichText::new(e).color(t.caution));
         }
-        ui.horizontal(|ui| {
+        // (wraps: on a narrow window the buttons take two rows instead of running off the edge)
+        ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             if text_button(ui, &format!("immichLink-{i}"), crate::i18n::tr("Link Now"), false).clicked() {
                 let _ = app.run("immich.link", json!({"account": id}));
@@ -1599,7 +1609,7 @@ pub fn smart_search_box(app: &mut LccApp, ui: &mut egui::Ui) {
                     }
                 }
                 app.immich.smart_note = Some(trf!("{} photos", photos.len()));
-                app.session.filter.only = if photos.is_empty() { vec![lcc_catalog::PhotoId(u64::MAX)] } else { photos };
+                app.session.show_only(photos);
             }
             Err(e) => app.immich.smart_note = Some(e),
         }

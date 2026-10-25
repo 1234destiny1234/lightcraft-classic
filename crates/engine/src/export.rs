@@ -530,11 +530,12 @@ pub(crate) fn watermark_logo(path: &str) -> Option<std::sync::Arc<Rgba8>> {
 }
 
 /// A graphic file (a PNG with transparency, typically) as 8-bit sRGB with its alpha: the
-/// watermark logo, the loupe's layout image. The error says why it couldn't be read or decoded.
+/// watermark logo, the loupe's layout image. Applies EXIF orientation before either consumer sizes it.
+/// The error says why it couldn't be read or decoded.
 pub fn read_graphic(path: &str) -> Result<Rgba8, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("can't read {path}: {e}"))?;
     let decoded = lcc_codecs::decode(&bytes, Default::default()).map_err(|e| format!("can't decode {path}: {e}"))?;
-    Ok(decoded.to_srgb8())
+    Ok(decoded.to_srgb8().into_oriented(lcc_geom::Orientation::from_exif(decoded.orientation)))
 }
 
 /// The graphic watermark: scaled (premultiplied, so transparent edges stay clean) to
@@ -547,20 +548,27 @@ fn logo_coverage(width: usize, height: usize, wm: &Watermark, mut blend_px: impl
     if width == 0 || height == 0 || logo.width == 0 || logo.height == 0 {
         return;
     }
-    let lw = ((wm.image_width.clamp(0.01, 1.0) * width as f32).round() as usize).clamp(1, width);
-    let lh = ((lw as f32 * logo.height as f32 / logo.width as f32).round() as usize).clamp(1, height);
+    let turns = wm.quarter_turns();
+    // Reserve the inset on anchored axes before fitting the turned box. Centered axes
+    // ignore insets, just as placement below does. One scale preserves the graphic's shape.
+    let short = width.min(height) as f32;
+    let (ix, iy) = (wm.inset_x.clamp(0.0, 0.4) * short, wm.inset_y.clamp(0.0, 0.4) * short);
+    use Anchor::*;
+    let available_w = width as f64 - if matches!(wm.anchor, Top | Center | Bottom) { 0.0 } else { ix as f64 };
+    let available_h = height as f64 - if matches!(wm.anchor, Left | Center | Right) { 0.0 } else { iy as f64 };
+    let (max_w, max_h) = if turns % 2 == 1 { (available_h, available_w) } else { (available_w, available_h) };
+    let scale =
+        (wm.image_width.clamp(0.01, 1.0) as f64 * width as f64 / logo.width as f64).min(max_w / logo.width as f64).min(max_h / logo.height as f64);
+    let lw = (logo.width as f64 * scale).round().max(1.0) as usize;
+    let lh = (logo.height as f64 * scale).round().max(1.0) as usize;
     let pre: lcc_raster::Image<[f32; 4]> = lcc_raster::Image::from_fn(logo.width, logo.height, |x, y| {
         let p = logo.get(x, y);
         let a = p[3] as f32 / 255.0;
         [p[0] as f32 * a, p[1] as f32 * a, p[2] as f32 * a, a]
     });
     let scaled = lcc_raster::resample::resize(&pre, lw, lh, lcc_raster::resample::Filter::Mitchell);
-    let short = width.min(height) as f32;
-    let (ix, iy) = (wm.inset_x.clamp(0.0, 0.4) * short, wm.inset_y.clamp(0.0, 0.4) * short);
-    let turns = wm.quarter_turns();
     let (bw, bh) = if turns % 2 == 1 { (lh, lw) } else { (lw, lh) };
     let (w, h, lwf, lhf) = (width as f32, height as f32, bw as f32, bh as f32);
-    use Anchor::*;
     let ox = match wm.anchor {
         TopLeft | Left | BottomLeft => ix,
         Top | Center | Bottom => (w - lwf) / 2.0,
@@ -693,8 +701,8 @@ pub struct ExportOptions {
     /// format's default (TIFF 16, everything else 8). See [`ExportOptions::effective_depth`].
     pub bit_depth: Option<u8>,
     /// HDR output for photos edited in HDR: JPEG as an ISO 21496-1 gain map JPEG (the SDR
-    /// rendition plus a gain map, so the file looks right everywhere; quality as set, `limit_kb`
-    /// not applied), AVIF as 10-bit Rec. 2020 PQ, PNG as 16-bit Rec. 2020 PQ (`cICP`; viewers
+    /// rendition plus a gain map, so the file looks right everywhere; `limit_kb` includes both
+    /// images and their metadata), AVIF as 10-bit Rec. 2020 PQ, PNG as 16-bit Rec. 2020 PQ (`cICP`; viewers
     /// without cICP support show it as sRGB, washed out), JPEG XL as 16-bit Rec. 2020 PQ, 32-bit float
     /// TIFF with the highlights above SDR white kept. Other formats, and photos without an HDR
     /// edit, are SDR.
@@ -1356,7 +1364,7 @@ impl ExportOptions {
         let base = if self.naming.trim().is_empty() { "{name}" } else { self.naming.as_str() };
         let n = seq + self.start_number.max(1) as usize - 1;
         let name = crate::rename::expand_tokens(base, p, n, 3).replace("{custom}", self.custom_text.trim());
-        let mut name: String = name.chars().map(|c| if matches!(c, '/' | '\\' | ':' | '\0') { '_' } else { c }).collect();
+        let mut name = portable_stem(&name);
         let (stem, ext) = p.file_name.rsplit_once('.').unwrap_or((&p.file_name, ""));
         if name.trim().is_empty() {
             // every token came out empty (no title, no capture time…): keep the original name
@@ -1369,6 +1377,23 @@ impl ExportOptions {
             format!("{name}.{}", self.format.extension())
         }
     }
+}
+
+/// A file name stem every file system takes (issue #2140): path separators, the characters Windows
+/// forbids (`: * ? " < > |`) and control characters become `_`, trailing dots and spaces go (Windows
+/// drops them), and a device name Windows reserves (`CON`, `NUL`, `COM1`…, also before a dot) gets
+/// a `_` so it names a file.
+pub(crate) fn portable_stem(name: &str) -> String {
+    let mut s: String =
+        name.chars().map(|c| if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control() { '_' } else { c }).collect();
+    s.truncate(s.trim_end_matches(['.', ' ']).len());
+    let device = s.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+    let numbered =
+        device.len() == 4 && (device.starts_with("COM") || device.starts_with("LPT")) && device.ends_with(|c: char| ('1'..='9').contains(&c));
+    if matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL") || numbered {
+        s.insert(device.len(), '_');
+    }
+    s
 }
 
 /// Unsharp mask on an 8-bit image (separable box-blur approximation of a small Gaussian).
@@ -1476,29 +1501,7 @@ pub fn encode_with_metadata(img: &Rgba8, o: &ExportOptions, meta: Option<&Metada
         ExportFormat::Jpeg => {
             // 4:4:4 normally; 4:2:0 when targeting a file size (much smaller at equal visual quality).
             let sub = if o.limit_kb.is_some() { ChromaSubsampling::S420 } else { ChromaSubsampling::S444 };
-            let jpeg = |q: u8| encode::encode_jpeg(&e, q, sub, &meta);
-            match o.limit_kb {
-                Some(kb) => {
-                    let limit = kb as usize * 1024;
-                    // Binary search for the highest quality that fits.
-                    let (mut lo, mut hi) = (1u8, o.quality);
-                    let mut best = None;
-                    while lo <= hi {
-                        let mid = lo + (hi - lo) / 2;
-                        let b = jpeg(mid).map_err(|e| e.to_string())?;
-                        if b.len() <= limit {
-                            best = Some(b);
-                            lo = mid + 1;
-                        } else if mid == 1 {
-                            break;
-                        } else {
-                            hi = mid - 1;
-                        }
-                    }
-                    return best.ok_or_else(|| format!("cannot fit within {kb} KB"));
-                }
-                None => jpeg(o.quality),
-            }
+            return encode_jpeg_with_limit(o, |q| encode::encode_jpeg(&e, q, sub, &meta));
         }
         ExportFormat::Png => encode::encode_png(&e, &meta),
         ExportFormat::Tiff => encode::encode_tiff(&e, o.tiff_compression, &meta),
@@ -1510,6 +1513,27 @@ pub fn encode_with_metadata(img: &Rgba8, o: &ExportOptions, meta: Option<&Metada
         ExportFormat::RenderedDng => return Err("Render to DNG needs a float render".into()),
     };
     r.map_err(|e| e.to_string())
+}
+
+/// Apply the same file-size policy to ordinary JPEGs and complete HDR gain map JPEGs.
+fn encode_jpeg_with_limit(o: &ExportOptions, jpeg: impl Fn(u8) -> lcc_codecs::Result<Vec<u8>>) -> Result<Vec<u8>, String> {
+    let Some(kb) = o.limit_kb else { return jpeg(o.quality).map_err(|e| e.to_string()) };
+    let limit = u64::from(kb) * 1024;
+    let (mut lo, mut hi) = (1u8, o.quality.min(100));
+    let mut best = None;
+    while lo <= hi {
+        let mid = lo + (hi - lo) / 2;
+        let b = jpeg(mid).map_err(|e| e.to_string())?;
+        if b.len() as u64 <= limit {
+            best = Some(b);
+            lo = mid + 1;
+        } else if mid == 1 {
+            break;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    best.ok_or_else(|| format!("cannot fit within {kb} KB"))
 }
 
 /// Output sharpening and the watermark on an 8-bit render in `o.effective_space()`.
@@ -1559,7 +1583,7 @@ pub fn encode_gain_map_jpeg(sdr: &Rgba8, hdr: &DeepImage, o: &ExportOptions, met
     let xmp = meta.map(|m| lcc_meta::write_xmp(m, None));
     let em = EncodeMeta { icc: Some(&profile), exif: exif.as_deref(), xmp: xmp.as_deref(), ppi: Some(o.ppi) };
     let sub = if o.limit_kb.is_some() { ChromaSubsampling::S420 } else { ChromaSubsampling::S444 };
-    gainmap::encode_jpeg(&EncodeImage::rgba8(&base), &map, &gm, o.quality, sub, &em).map_err(|e| e.to_string())
+    encode_jpeg_with_limit(o, |q| gainmap::encode_jpeg(&EncodeImage::rgba8(&base), &map, &gm, q, sub, &em))
 }
 
 /// The codecs' name of an output space (for its ICC profile).
@@ -1994,10 +2018,30 @@ impl PreparedExport {
                 };
                 let Some(dng) = dng else {
                     // the file is copied byte for byte: refuse rather than leak a location it embeds
-                    if remove_location && lcc_meta::embeds_location(&bytes) {
-                        // DNG only for what the DNG export below takes
-                        let instead = if lcc_raw::probe(&bytes).is_some() { "JPEG, TIFF or DNG" } else { "JPEG or TIFF" };
-                        return Err(format!("{label}: can't remove the location from an original file that embeds GPS; export as {instead} instead"));
+                    if remove_location {
+                        // fail closed: a PSD whose metadata can't be read might hide a location
+                        let metadata = lcc_meta::try_extract(&bytes)
+                            .map_err(|e| format!("{label}: can't verify location metadata in this original file: {e}"))?;
+                        if !bytes.starts_with(b"8BPS") {
+                            let embedded = lcc_meta::embedded(&bytes);
+                            if let Some(xmp) = embedded.xmp.as_deref() {
+                                lcc_meta::parse_xmp(xmp).map_err(|e| {
+                                    format!("{label}: can't verify location metadata in this original file: malformed embedded XMP: {e}")
+                                })?;
+                            }
+                        }
+                        let embeds_place_name =
+                            [metadata.sublocation.as_deref(), metadata.city.as_deref(), metadata.state.as_deref(), metadata.country.as_deref()]
+                                .into_iter()
+                                .flatten()
+                                .any(|value| !value.trim().is_empty());
+                        if metadata.gps.is_some() || embeds_place_name || lcc_meta::embeds_location(&bytes) {
+                            // DNG only for what the DNG export below takes
+                            let instead = if lcc_raw::probe(&bytes).is_some() { "JPEG, TIFF or DNG" } else { "JPEG or TIFF" };
+                            return Err(format!(
+                                "{label}: can't remove the location from an original file that embeds GPS or place names; export as {instead} instead"
+                            ));
+                        }
                     }
                     return Ok(Exported {
                         file_name,
@@ -2620,6 +2664,137 @@ mod tests {
     }
 
     #[test]
+    fn hdr_jpeg_size_limit_respected() {
+        let img = Rgba8::from_fn(256, 192, |x, y| {
+            let n = (x as u32).wrapping_mul(73856093) ^ (y as u32).wrapping_mul(19349663);
+            [n as u8, (n >> 8) as u8, (n >> 16) as u8, 255]
+        });
+        let hdr = DeepImage {
+            width: img.width,
+            height: img.height,
+            space: OutputSpace::Srgb,
+            samples: DeepSamples::F32(img.data.iter().flat_map(|p| p[..3].iter().map(|v| lcc_color::transfer::decode_srgb8(*v) * 4.0)).collect()),
+        };
+        let opts = ExportOptions { hdr: true, quality: 100, limit_kb: Some(u32::MAX), ..Default::default() };
+        let full = encode_gain_map_jpeg(&img, &hdr, &opts, None).unwrap();
+        let kb = (full.len() / 2048) as u32;
+        let limited = encode_gain_map_jpeg(&img, &hdr, &ExportOptions { limit_kb: Some(kb), ..opts.clone() }, None).unwrap();
+        assert!(limited.len() <= kb as usize * 1024, "{} bytes exceeds {kb} KB", limited.len());
+        let decoded = lcc_codecs::gainmap::read_jpeg(&limited).unwrap();
+        assert!(decoded.meta.alternate_headroom > 1.0, "the gain map must survive size limiting");
+        let impossible = encode_gain_map_jpeg(&img, &hdr, &ExportOptions { limit_kb: Some(1), ..opts }, None);
+        assert!(impossible.is_err_and(|e| e.contains("cannot fit within 1 KB")));
+    }
+
+    #[test]
+    fn graphic_watermark_honours_exif_orientation() {
+        let dir = std::env::temp_dir().join(format!("lc-wm-orientation-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let logo = Rgba8::from_fn(40, 20, |x, _| if x < 20 { [255, 0, 0, 255] } else { [0, 0, 255, 255] });
+        for orientation in [2, 6] {
+            let meta = Metadata { orientation: Some(lcc_geom::Orientation::from_exif(orientation)), ..Default::default() };
+            let exif = lcc_meta::write_exif(&meta);
+            let bytes = lcc_codecs::encode_jpeg(
+                &EncodeImage::rgba8(&logo),
+                100,
+                ChromaSubsampling::S444,
+                &EncodeMeta { exif: Some(&exif), ..Default::default() },
+            )
+            .unwrap();
+            let path = dir.join(format!("oriented-{orientation}.jpg"));
+            std::fs::write(&path, bytes).unwrap();
+            let wm = Watermark {
+                image: path.to_string_lossy().into(),
+                image_width: if orientation == 6 { 0.25 } else { 0.5 },
+                opacity: 1.0,
+                inset_x: 0.0,
+                inset_y: 0.0,
+                ..Default::default()
+            };
+            let mut img = Rgba8::from_fn(80, 80, |_, _| [0, 0, 0, 255]);
+            draw_watermark(&mut img, &wm);
+            if orientation == 6 {
+                assert!(img.get(70, 45)[0] > 240 && img.get(70, 75)[2] > 240, "EXIF 6: red above blue");
+            } else {
+                assert!(img.get(45, 70)[2] > 240 && img.get(75, 70)[0] > 240, "EXIF 2: blue left of red");
+            }
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn graphic_watermark_keeps_aspect_when_fitted_and_rotated() {
+        let dir = std::env::temp_dir().join(format!("lc-wm-aspect-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tall.png");
+        let logo = Rgba8::from_fn(40, 160, |_, _| [255, 0, 0, 255]);
+        std::fs::write(&path, lcc_codecs::encode_png(&EncodeImage::rgba8(&logo), &EncodeMeta::default()).unwrap()).unwrap();
+        for (rotation, expected) in [(0, (20, 80)), (90, (120, 30)), (180, (20, 80)), (270, (120, 30))] {
+            let wm = Watermark {
+                image: path.to_string_lossy().into(),
+                image_width: 0.5,
+                opacity: 1.0,
+                inset_x: 0.0,
+                inset_y: 0.0,
+                rotation,
+                ..Default::default()
+            };
+            let mut img = Rgba8::from_fn(120, 80, |_, _| [0, 0, 0, 255]);
+            draw_watermark(&mut img, &wm);
+            let lit: Vec<_> = img.data.iter().enumerate().filter(|(_, p)| p[0] > 200).map(|(i, _)| (i % 120, i / 120)).collect();
+            let bounds = (
+                lit.iter().map(|p| p.0).max().unwrap() - lit.iter().map(|p| p.0).min().unwrap() + 1,
+                lit.iter().map(|p| p.1).max().unwrap() - lit.iter().map(|p| p.1).min().unwrap() + 1,
+            );
+            assert_eq!(bounds, expected, "{rotation} degrees: fitting must preserve the logo's aspect ratio");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn graphic_watermark_fit_preserves_anchor_insets() {
+        let dir = std::env::temp_dir().join(format!("lc-wm-insets-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tall.png");
+        let logo = Rgba8::from_fn(40, 160, |_, _| [255, 0, 0, 255]);
+        std::fs::write(&path, lcc_codecs::encode_png(&EncodeImage::rgba8(&logo), &EncodeMeta::default()).unwrap()).unwrap();
+        use Anchor::*;
+        for (anchor, rotation, expected) in [
+            (BottomRight, 90, (0, 44, 111, 71)),
+            (TopLeft, 270, (8, 8, 119, 35)),
+            (Right, 90, (0, 26, 111, 53)),
+            (BottomRight, 0, (94, 0, 111, 71)),
+            (TopLeft, 180, (8, 8, 25, 79)),
+            (Bottom, 0, (51, 0, 68, 71)),
+            // Centered axes ignore their inset rather than shrinking the image unnecessarily.
+            (Center, 90, (0, 25, 119, 54)),
+            (Top, 90, (0, 8, 119, 37)),
+        ] {
+            let wm = Watermark {
+                image: path.to_string_lossy().into(),
+                image_width: 0.5,
+                opacity: 1.0,
+                inset_x: 0.1,
+                inset_y: 0.1,
+                rotation,
+                anchor,
+                ..Default::default()
+            };
+            let mut img = Rgba8::from_fn(120, 80, |_, _| [0, 0, 0, 255]);
+            draw_watermark(&mut img, &wm);
+            let lit: Vec<_> = img.data.iter().enumerate().filter(|(_, p)| p[0] > 200).map(|(i, _)| (i % 120, i / 120)).collect();
+            let bounds = (
+                lit.iter().map(|p| p.0).min().unwrap(),
+                lit.iter().map(|p| p.1).min().unwrap(),
+                lit.iter().map(|p| p.0).max().unwrap(),
+                lit.iter().map(|p| p.1).max().unwrap(),
+            );
+            assert_eq!(bounds, expected, "{anchor:?}, {rotation} degrees");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn sharpen_increases_edge_contrast() {
         let mut img = Rgba8::new(8, 8);
         for (i, p) in img.data.iter_mut().enumerate() {
@@ -3019,6 +3194,28 @@ mod tests {
         assert_eq!(orig.file_name_for(&named("DSC_1.NEF"), 2), "DSC_1-002.NEF");
         assert_eq!(orig.file_name_for(&named("noext"), 1), "noext-001");
         assert_eq!(ExportOptions { format: ExportFormat::Dng, ..Default::default() }.file_name_for(&named("a.cr2"), 1), "a.dng");
+    }
+
+    /// Titles become file names Windows can create: no forbidden or control characters, no trailing
+    /// dot, no reserved device name (issue #2140).
+    #[test]
+    fn export_names_are_valid_on_windows() {
+        let mut p = named("IMG_1.jpg");
+        let o = ExportOptions { naming: "{title}".into(), ..Default::default() };
+        for (title, want) in [
+            ("What?", "What_.jpg"),
+            ("\"Best\" <of> a|b*c", "_Best_ _of_ a_b_c.jpg"),
+            ("tab\there", "tab_here.jpg"),
+            ("ends with dots...", "ends with dots.jpg"),
+            ("CON", "CON_.jpg"),
+            ("nul.tar", "nul_.tar.jpg"),
+            ("com7", "com7_.jpg"),
+            ("COM0", "COM0.jpg"),
+            ("Console", "Console.jpg"),
+        ] {
+            p.meta.title = title.into();
+            assert_eq!(o.file_name_for(&p, 1), want, "{title:?}");
+        }
     }
 
     fn named(file_name: &str) -> lcc_catalog::Photo {

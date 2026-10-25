@@ -5,8 +5,9 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::headless::Headless;
-use crate::panels::edit::{ParametricCurve, StackedCurve};
+use crate::panels::edit::StackedCurve;
 use crate::{LccApp, Services};
+use lcc_pipeline::ParametricCurve;
 
 const T: Duration = Duration::from_secs(20);
 
@@ -486,10 +487,34 @@ fn dragging_the_curve_moves_the_region_slider() {
     // the graph really is redrawn below where the line was
     let graph = curve_graph_rect(&mut h);
     let painted = painted_param_curve(&h, graph)(0.625);
-    assert!(painted < c.lights / 100.0 + 0.625, "the painted line followed the drag down: {painted}");
+    let before_level = ParametricCurve::new(&c).at(0.625);
+    assert!(painted < before_level - 0.02, "the painted line followed the drag down: {painted} vs before {before_level}");
     // and Undo takes the whole gesture back to where it started
     exec(&mut h, "edit.undo", json!({}));
     assert_eq!(develop(&h).curve, c, "undo restores the value the drag started from");
+}
+
+/// A horizontal drag on the curve (zero vertical motion) changes no region amount, even when
+/// neighbouring regions contribute heavily to the curve at the grabbed position (AlexChambers report:
+/// Darks=60, Lights=0 grabbed at x=0.51 used to jump Lights to 45 with zero vertical motion).
+#[test]
+fn a_horizontal_drag_with_zero_vertical_motion_changes_nothing() {
+    let mut h = curve_open("parametric");
+    exec(&mut h, "develop.set", json!({"control": "curve.darks", "value": 60}));
+    h.step();
+    let before = develop(&h).curve;
+    assert_eq!(before.darks, 60.0);
+    assert_eq!(before.lights, 0.0);
+    let r = curve_graph_rect(&mut h);
+    let [x, y] = on_curve(r, &before, 0.51);
+    // Drag purely horizontally from x=0.51: dx = 20 px, dy = 0
+    let d = h.request("ui.drag", json!({"x": x, "y": y, "toX": x + 20.0, "toY": y, "steps": 6}), T);
+    assert_eq!(d["ok"], true, "{d}");
+    h.step();
+    let after = develop(&h).curve;
+    assert_eq!(after.lights, 0.0, "horizontal motion preserves Lights=0: {}", after.lights);
+    assert_eq!(after.darks, 60.0, "Darks is preserved: {}", after.darks);
+    assert_eq!(after, before, "horizontal drag changes nothing: {after:?}");
 }
 
 /// Dragging up bends the region the other way, so the gesture is not just "downwards works".

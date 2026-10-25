@@ -12,7 +12,41 @@ transactional SQLite snapshot. The app owns subsequent edits.
 
 File → Open Library… given a Lightroom catalog folder (or an `.lrdata` / `.lrcat-data` folder, or the `.lrcat`)
 doesn't make a library of the app there: it offers this import instead, with the catalog found
-(`crates/engine/src/lightroom_folder.rs`, issue #891). `<cli> --library` refuses those places too.
+(`crates/engine/src/lightroom_folder.rs`, issue #891), and then asks where the catalog goes as described next
+(unless the question is turned off, below).
+`<cli> --library` refuses those places too.
+
+**Where the catalog goes.** Before the import starts, the desktop app asks where the catalog goes (issue #2672),
+unless Settings says to always merge (*Turning the question off*, below):
+
+- **Merge into the open library "<name>" (N photos)**: the catalog's photos, collections and edits join the ones
+  already in the library open now (the library's name is its folder's name).
+- **Create a new library**: named after the catalog file (`Travel.lrcat` → "Travel", or "Travel 2" when a
+  "Travel" folder is already there) and placed next to the open library (in its parent folder); both can be
+  changed (Choose… picks the folder). The app creates and opens it as File → New Library… does (the folder
+  must be new or empty; it is refused while another import runs), then imports the catalog into it. The library
+  left behind stays in File → Open Recent Library.
+- **Cancel** does nothing.
+
+The window opens on *Merge* when the open library has no photos (there is nothing to merge with) and on *Create a
+new library* when it has some.
+
+**Turning the question off.** Settings → General → Library → *When importing a Lightroom catalog*: *Ask where to
+import it* (the default) or *Always merge into the open library* (how imports always worked before). The window's
+*Don't ask again (always merge into the open library)* checkbox, offered with *Merge*, picks the second; the window
+says where to turn the question back on. The choice is an app setting (`ui.json`, `settings.lightroomImport`:
+`"ask"` or `"alwaysMerge"`); a settings file without it asks.
+
+A session with no library on disk (in memory, e.g. after Continue Without Saving) has nothing to put a new library
+next to: the catalog merges into it without asking, as before.
+
+**Scripts and agents.** The app command `file.importLightroom {path?, into?, name?, location?}` (control channel,
+`<cli> mcp --connect`) chooses without the window: `into: "open"` merges, `into: "new"` creates the library
+`name` (default: the catalog's name) in the folder `location` (default: the open library's parent folder; a full
+path), opens it and imports. Without `into` it shows the window (and returns `{asking: true, path, into}`, `into`
+being the choice the window opens with) or merges when the setting says so. A catalog path that doesn't exist is
+refused before a new library is made. The engine command `library.importLightroom` always imports into the library
+open now.
 
 Equivalent commands:
 
@@ -21,8 +55,8 @@ Equivalent commands:
 <cli> run --library "<app> Library" library.importLightroom path="Lightroom Catalog.lrcat"
 ```
 
-Import adds records to the currently open library; it does not create a separate
-folder named after the Lightroom catalog. The desktop result stays open until dismissed and
+The import itself (`library.importLightroom`, `<cli> run`) adds records to the currently open
+library; only the desktop window above can make a new library for it first. The desktop result stays open until dismissed and
 shows the destination library, the number of records added, missing originals and warnings.
 **Show in Library** opens All Photos, clears filters and selects an imported record. Errors stay
 readable in the same result window. If another dialog is open, the result waits until that dialog closes. The result
@@ -82,9 +116,11 @@ unsupported schemas are ignored. A needed
 WITHOUT ROWID or virtual table produces an explicit error, handled as a warning when optional.
 
 Develop settings reuse the existing XMP/preset mapper. Supported sliders, curves and supported
-mask structures remain editable, but this is approximate rendering: camera profiles, Adobe AI
+mask structures remain editable, but this is approximate rendering: Adobe AI
 models, some masking/retouch fields and process-version algorithms are not reproduced. Unmapped
-fields are reported. Lightroom's `ProcessVersion` is not mapped: newly imported photos are on
+fields are reported. The profile the person picked (the `Look` table's `Name` when there is one, else `CameraProfile`) selects the camera's Lightroom-matched calibrated look of that
+name (`profile.camera = "cal:<slug>"`, see [xmp-interop.md](xmp-interop.md)); a camera without one
+keeps its default colour, and a photo already on an imported `.dcp` keeps it. Lightroom's `ProcessVersion` is not mapped: newly imported photos are on
 the app's latest rendering process, and photos already in the library keep theirs
 ([process-versions.md](process-versions.md)). When a recovery archive is saved, it retains source settings/history/snapshots
 and original smart-collection rules. Smart collections become smart albums when every rule has an exact equivalent: rating, pick
@@ -156,7 +192,7 @@ Original and root folder paths are resolved with the catalog as the document
 (`crates/engine/src/doc_path.rs`). Originals on this computer and on network drives and shares are looked at
 wherever the catalog is: a mapped drive or mounted share is an ordinary path, and a UNC path (`\server\share\…`,
 `file://server/…`) is followed on Windows even when the catalog is on another drive or share. (Upstream follows a
-share only when the catalog itself is on it; the fork does not, see the README.) A device path, or an original whose
+share only when the catalog itself is on it; Chromaforge does not, see the README.) A device path, or an original whose
 folder or file name in the catalog is an absolute path, is not looked at: the import lists it as missing with a
 warning and leaves the photo and its virtual copies out of the library. A path that is not a path on this computer
 (a Windows drive or UNC path read on macOS or Linux) is not looked at either and stays catalogued as missing.

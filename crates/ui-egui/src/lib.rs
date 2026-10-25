@@ -11,6 +11,7 @@ pub mod album_picker;
 pub mod book;
 pub mod brush_live;
 pub mod button;
+pub mod camera_roll;
 pub mod canvas_keys;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod catalog_ui;
@@ -25,12 +26,14 @@ pub mod credits;
 pub mod date_picker;
 pub mod dialog_frame;
 pub mod docking;
+mod drop_overlay;
 mod edit_in;
 mod enhance_pump;
 pub mod enhance_ui;
 pub mod export_task;
 mod focus_scan;
 pub mod folder_poll;
+mod frame_rate;
 pub mod headless;
 pub mod help_overlay;
 pub mod i18n;
@@ -38,7 +41,9 @@ mod i18n_fork;
 pub mod icons;
 pub mod import;
 pub mod import_report;
+mod import_screen;
 pub mod libtools;
+pub mod lightroom_destination;
 pub mod lightroom_import;
 pub mod links;
 pub mod map;
@@ -47,17 +52,26 @@ pub mod menubar;
 pub mod menus;
 pub mod merge;
 mod model_setup;
+pub mod modern;
+mod modern_dock;
+mod modern_input;
+mod modern_library;
+mod modern_menu;
+pub mod modern_sheets;
 pub mod module;
 pub mod panels;
 pub mod pick;
 pub mod plate;
 pub mod print_ui;
 pub mod print_view;
+pub mod progress;
+pub mod rating;
 pub mod recheck;
 pub mod region;
 pub mod reload;
 pub mod render;
 pub mod render_dng_task;
+pub mod settings_screen;
 /// The module shell's frame steps (fork-owned).
 mod shell;
 pub mod shortcuts;
@@ -85,6 +99,8 @@ mod tests_access;
 #[cfg(test)]
 mod tests_activity;
 #[cfg(test)]
+mod tests_adjustment_quality;
+#[cfg(test)]
 mod tests_album_picker;
 #[cfg(test)]
 mod tests_album_remove;
@@ -102,6 +118,10 @@ mod tests_button;
 mod tests_camera_colour;
 #[cfg(test)]
 mod tests_canvas_keys;
+#[cfg(test)]
+mod tests_canvas_pan;
+#[cfg(test)]
+mod tests_capture_time;
 #[cfg(test)]
 mod tests_catalog_ui;
 #[cfg(test)]
@@ -133,6 +153,10 @@ mod tests_dialog_fit;
 #[cfg(test)]
 mod tests_dialog_frame;
 #[cfg(test)]
+mod tests_dialog_settings;
+#[cfg(test)]
+mod tests_dialog_tab;
+#[cfg(test)]
 mod tests_dialogs;
 #[cfg(test)]
 mod tests_drop_import;
@@ -161,6 +185,8 @@ mod tests_grid;
 #[cfg(test)]
 mod tests_guided_guides;
 #[cfg(test)]
+mod tests_hdr_zoom_cache;
+#[cfg(test)]
 mod tests_histogram_drag;
 #[cfg(test)]
 mod tests_histogram_modes;
@@ -169,7 +195,11 @@ mod tests_i18n_coverage;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_immich_ui;
 #[cfg(test)]
+mod tests_import_metadata_preset;
+#[cfg(test)]
 mod tests_import_report;
+#[cfg(test)]
+mod tests_import_screen;
 #[cfg(test)]
 mod tests_info_dialogs;
 #[cfg(test)]
@@ -187,6 +217,8 @@ mod tests_keywording;
 #[cfg(test)]
 mod tests_labels;
 #[cfg(test)]
+mod tests_launch_library;
+#[cfg(test)]
 mod tests_layout_image;
 #[cfg(test)]
 mod tests_lens_db;
@@ -196,6 +228,8 @@ mod tests_library_grid;
 mod tests_library_problem;
 #[cfg(test)]
 mod tests_libtools;
+#[cfg(test)]
+mod tests_lightroom_destination;
 #[cfg(test)]
 mod tests_mask_effects;
 #[cfg(test)]
@@ -219,6 +253,8 @@ mod tests_panels;
 #[cfg(test)]
 mod tests_preset_favorites;
 #[cfg(test)]
+mod tests_preset_folders;
+#[cfg(test)]
 mod tests_preset_import;
 #[cfg(test)]
 mod tests_preview_limit;
@@ -229,7 +265,11 @@ mod tests_profile_menu;
 #[cfg(test)]
 mod tests_profiles_layout;
 #[cfg(test)]
+mod tests_progress;
+#[cfg(test)]
 mod tests_quit_unsaved;
+#[cfg(test)]
+mod tests_rating;
 #[cfg(test)]
 mod tests_recheck;
 #[cfg(test)]
@@ -287,6 +327,9 @@ pub use control::{ControlRequest, ControlResponse};
 pub use state::UiState;
 
 const TOAST_SECONDS: f64 = 1.4;
+
+/// How long after a mask slider last moved its overlay stays hidden (ms).
+const MASK_ADJUST_HIDE_MS: u64 = 250;
 /// The `path` of a display profile read from the screen rather than chosen as a file.
 pub const SCREEN_PROFILE: &str = "screen";
 
@@ -302,7 +345,14 @@ pub type PickFolder = Box<dyn FnMut() -> Option<String>>;
 /// Reveal a file in the system file manager (Finder / Explorer / the folder on Linux).
 pub type RevealFn = Box<dyn FnMut(&str) -> Result<(), String>>;
 /// Open a URL in the user's browser.
+/// Starts listing (or copying) the device's camera roll; the channel answers with the photos'
+/// paths, or why there are none (permission denied, …). `Err` when it could not start (Android).
+pub type CameraRollFn = Box<dyn FnMut() -> Result<std::sync::mpsc::Receiver<Result<Vec<String>, String>>, String>>;
 pub type OpenUrlFn = Box<dyn FnMut(&str) -> Result<(), String>>;
+/// Hands exported files to the device (Android: copies them into Pictures/<app> through
+/// MediaStore and, with `share`, opens the share sheet). The channel answers with the saved
+/// files' URIs, or why they could not be saved. `Err` when it could not start.
+pub type SaveToGalleryFn = Box<dyn FnMut(&[String], bool) -> Result<std::sync::mpsc::Receiver<Result<Vec<String>, String>>, String>>;
 /// Open a file in an application (`app` = "" for the system's default one).
 pub type OpenWithFn = Box<dyn FnMut(&str, &str) -> Result<(), String>>;
 /// Open several files with one start of an application (`app` as for [`OpenWithFn`]).
@@ -332,9 +382,27 @@ pub trait HdrOutput {
     /// `None` (an SDR display, HDR switched off in the OS, or unknown). Asked every frame.
     fn headroom(&mut self) -> Option<f32>;
     /// Upload a linear-light render (3 floats per pixel, row-major, SDR white = 1, sRGB
-    /// primaries) as view `view`'s HDR texture ([`render::HDR_LOUPE`]…), replacing that view's
-    /// previous one (each view keeps its own).
-    fn upload(&mut self, view: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
+    /// primaries) as the HDR texture of `slot`, replacing that slot's previous one (each slot
+    /// keeps its own): a view's ([`render::HDR_LOUPE`]…), or one of a zoomed view's recent
+    /// windows, kept to show again.
+    fn upload(&mut self, slot: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
+    /// [`Self::upload`] of a render already encoded as `Rgba16Float` texels for `headroom` (by
+    /// [`lcc_engine::hdr_texture::encode_rgba16f`], on a render worker). `None`: this output
+    /// doesn't take them (it uploads with another headroom), and [`Self::upload`] is used.
+    fn upload_texels(&mut self, slot: u8, width: usize, height: usize, texels: &[u16], headroom: f32) -> Option<Result<egui::TextureId, String>> {
+        let _ = (slot, width, height, texels, headroom);
+        None
+    }
+    /// Free `slot`'s texture: nothing shows it any more (a zoomed view's window that left its
+    /// recent ones). The slot's next [`Self::upload`] makes a new one.
+    fn release(&mut self, slot: u8) {
+        let _ = slot;
+    }
+    /// How much memory the GPU these textures live on offers, in bytes (`None`: unknown). Decides
+    /// whether a zoomed view may keep its recent HDR windows ([`render::hdr_cache_fit`]).
+    fn gpu_memory(&mut self) -> Option<u64> {
+        None
+    }
     /// Whether the window surface is extended linear sRGB (macOS EDR / Windows scRGB): when
     /// true, the renderer should skip monitor profile conversion (P2-3).
     fn extended(&self) -> bool {
@@ -397,6 +465,10 @@ pub struct Services {
     pub pick_slideshow_templates: Option<PickFiles>,
     /// Save dialog for an exported slideshow template (`.json`).
     pub save_slideshow_template: Option<SaveFile>,
+    /// Open dialog for print template files (`.lcprint`; File ▸ Print… ▸ Templates ▸ Import…).
+    pub pick_print_templates: Option<PickFiles>,
+    /// Save dialog for an exported print template (`.lcprint`).
+    pub save_print_template: Option<SaveFile>,
     pub write: Option<WriteFn>,
     /// Thread-safe writer: with it, UI-started exports run in the background (desktop only).
     pub write_shared: Option<SharedWrite>,
@@ -415,6 +487,10 @@ pub struct Services {
     pub open_url: Option<OpenUrlFn>,
     /// Android: "All files access" (`app.allFilesAccess`, Settings ▸ Folders).
     pub storage_access: Option<StorageAccess>,
+    /// Android: the camera roll (DCIM/Camera through MediaStore; `file.addCameraRoll`).
+    pub camera_roll: Option<CameraRollFn>,
+    /// Android: exported files into Pictures/<app>, optionally shared (the touch Export sheet).
+    pub save_to_gallery: Option<SaveToGalleryFn>,
     /// Open a file in an external editor (Edit in External Editor; desktop only).
     pub open_with: Option<OpenWithFn>,
     /// Open several files with one start of the editor (Open Original; desktop only): an editor
@@ -516,10 +592,17 @@ pub struct LccApp {
     headless_screenshotting: bool,
     /// Synthetic input events (from the control channel) injected one step per frame.
     pub synthetic: Vec<egui::Event>,
+    /// Files the control channel (`ui.dropFiles`) holds over the window: every frame reports them
+    /// as hovered, as the OS does while a drag is over the window.
+    drop_hover: Vec<String>,
+    /// Files the control channel dropped: delivered as `dropped_files` on the next frame.
+    drop_pending: Vec<String>,
     /// The text the UI last put on the clipboard (`ui.inspect` → `copied`).
     pub copied: Option<String>,
     /// Native file dialogs up for commands (`pick`): each command runs again when its closes.
     pub(crate) pending_picks: Vec<pick::Pending>,
+    /// The camera roll being listed for `file.addCameraRoll` (`camera_roll::poll`).
+    pub(crate) pending_camera_roll: Option<std::sync::mpsc::Receiver<Result<Vec<String>, String>>>,
     /// Modifiers announced for synthetic input (held from a button down to its release).
     synthetic_mods: egui::Modifiers,
     /// Clear `synthetic_mods` on the next frame.
@@ -567,6 +650,8 @@ pub struct LccApp {
     pub(crate) size_hold: region::SizeHold,
     /// The size of a slider drag's whole-frame drafts (full size where they keep up, issue #330).
     pub(crate) drag_scale: region::DragScale,
+    /// High quality adjustment previews: whether a drag keeps full quality or falls back to drafts.
+    pub(crate) hq_drag: region::HqDrag,
     /// (photo, look, window frame size) a window was refused for: it reads more than one render holds.
     pub(crate) window_refused: Option<(lcc_catalog::PhotoId, u64, usize)>,
     /// (photo, look) whose 1:1 preview was last asked to be read from disk (see `detail`).
@@ -599,6 +684,8 @@ pub struct LccApp {
     pub catalog_ui: catalog_ui::CatalogUi,
     /// A completed import result waiting for another modal dialog to close.
     pub(crate) lightroom_result: Option<state::Dialog>,
+    /// The import review of a finished scan, waiting for another dialog to close.
+    pub(crate) review_pending: Option<state::Dialog>,
     /// The library generation the window title and the recent list were last updated for.
     pub shown_library: Option<u64>,
     /// A background export in progress.
@@ -610,6 +697,8 @@ pub struct LccApp {
     pub tasks: tasks::Tasks,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
+    /// The Modern layout's Settings and Export screens (`modern_sheets`).
+    pub modern_sheets: modern_sheets::ModernSheets,
     /// The last slideshow export's end has been told (a toast).
     pub slideshow_export_reported: bool,
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
@@ -656,6 +745,12 @@ pub struct LccApp {
     pub peer_sync: panels::peer_sync::PeerSyncUi,
     /// The Print module's settings and job state.
     pub print: print_ui::PrintUi,
+    /// Alt/Option held as the window first appears offers the recent libraries once (issue
+    /// #1290); the desktop host arms it when nothing chose the library already.
+    pub alt_asks_for_library: bool,
+    /// Whether each recent library can be opened, answered by a worker (issue #1290): the launch
+    /// list and File ▸ Open Recent Library never look at a folder on the UI thread.
+    pub recent_checks: panels::library_problem::RecentChecks,
     /// The activity stack shows every task, not just the first few ("+N more" was clicked).
     pub activity_expanded: bool,
     /// The Map module's view state (P3.3).
@@ -668,6 +763,20 @@ pub struct LccApp {
 }
 
 impl LccApp {
+    /// Whether the selected mask has settings (an effect to judge), see [`panels::detail::mask_has_settings`].
+    fn active_mask_has_settings(&self) -> bool {
+        let Some(id) = self.session.active_mask else { return false };
+        self.session
+            .active()
+            .and_then(|p| self.session.develop_of(p))
+            .is_some_and(|d| d.masks.iter().any(|m| m.id == id && panels::detail::mask_has_settings(m)))
+    }
+
+    /// How panel sliders are laid out: always pills in the Modern layout, else as Settings say.
+    pub(crate) fn slider_layout(&self) -> theme::SliderLayout {
+        if self.ui.modern.enabled { theme::SliderLayout::Pill } else { self.ui.settings.slider_layout }
+    }
+
     pub fn new(mut session: Session, services: Services) -> Self {
         if cfg!(test) {
             // unit tests never open the file manager or start other programs
@@ -706,8 +815,11 @@ impl LccApp {
             shadow: None,
             headless_screenshotting: false,
             synthetic: vec![],
+            drop_hover: vec![],
+            drop_pending: vec![],
             copied: None,
             pending_picks: vec![],
+            pending_camera_roll: None,
             synthetic_mods: egui::Modifiers::NONE,
             synthetic_mods_release: false,
             styled: false,
@@ -731,6 +843,7 @@ impl LccApp {
             region_before_view: None,
             size_hold: Default::default(),
             drag_scale: Default::default(),
+            hq_drag: Default::default(),
             window_refused: None,
             full_preview_loaded: None,
             merge: merge::MergeState::default(),
@@ -747,12 +860,14 @@ impl LccApp {
             lightroom_last: None,
             catalog_ui: Default::default(),
             lightroom_result: None,
+            review_pending: None,
             shown_library: None,
             export: None,
             render_dng: None,
             last_render_dng: None,
             tasks: Default::default(),
             last_export_result: None,
+            modern_sheets: Default::default(),
             slideshow_export_reported: true,
             hover_preview: None,
             clipping_preview: false,
@@ -769,6 +884,8 @@ impl LccApp {
             screen_profile: None,
             screen_profile_read: None,
             library_problem: None,
+            alt_asks_for_library: false,
+            recent_checks: Default::default(),
             activity_expanded: false,
             model_setup: Default::default(),
         }
@@ -852,27 +969,33 @@ impl LccApp {
                     .map(|d| d.crop.aspect.map_or(serde_json::json!("free"), |(w, h)| serde_json::json!([w as f64 / 100.0, h as f64 / 100.0])))
             };
         }
+        if r.is_ok() && id == "library.toggleFilters" {
+            // the search field shows the text filter: empty while the filters are off, back with them
+            self.ui.search = self.session.filter.text.clone();
+        }
         if r.is_ok() && id == "library.clearFilter" {
             // the search field shows the text filter: cleared from anywhere (the loupe's pill, the
             // menu), it must not keep a search that no longer applies (issue #1648)
             self.ui.search.clear();
         }
         if r.is_ok() && id == "mask.adjust" {
-            // Judge local adjustments on the photo, without the selection overlay obscuring them.
-            // Keep it hidden after release; O / the overlay eye can show it again.
-            self.ui.mask_overlay = false;
+            // Judge local adjustments on the photo: while a slider is at work nothing covers it, not even
+            // an overlay switched on with O (it comes back when the slider rests); one that showed by
+            // itself goes, as the mask now has settings (upstream PR 2920's overlay rule).
+            self.ui.mask_adjusting_until = Some(std::time::Instant::now() + std::time::Duration::from_millis(MASK_ADJUST_HIDE_MS));
+            self.ui.mask_overlay = self.ui.mask_overlay_pinned;
         }
         if r.is_ok() && matches!(id, "mask.add" | "mask.addComponent" | "mask.duplicate" | "mask.select") {
-            // A new or newly picked mask shows its overlay again, as in Lightroom: hidden by a slider
-            // drag above, it stayed hidden while the Overlay menu still named a mode (issue #1800).
-            self.ui.mask_overlay = true;
+            // A new or picked mask shows its overlay by itself only while it has no settings: one with
+            // settings is judged by its effect (O, the eye or hovering its row shows the overlay).
+            self.ui.mask_overlay = self.ui.mask_overlay_pinned || !self.active_mask_has_settings();
         }
         if r.is_ok() {
             // These commands finish synchronously, so their completion would otherwise
             // be invisible once the activity stack is gone. Never show success on error.
             let completed = match id {
                 "library.compact" => Some(format!("✓ {}", i18n::tr("Optimize Library"))),
-                "library.clearPreviews" => Some(format!("✓ {}", i18n::tr("Clear Preview Cache"))),
+                "library.clearPreviews" => Some(format!("✓ {}", i18n::tr("Discard Preview Cache"))),
                 "develop.autoSync" => Some(format!("{}: {}", i18n::tr("Auto Sync"), i18n::tr(if self.session.auto_sync { "On" } else { "Off" }))),
                 _ => None,
             };
@@ -883,7 +1006,11 @@ impl LccApp {
             }
         }
         if r.is_ok() && id == "photo.label" {
-            let label = params.get("label").and_then(Value::as_str).and_then(lcc_catalog::ColorLabel::parse);
+            let label = if let Some(applied) = r.as_ref().ok().and_then(|v| v.get("label")).and_then(Value::as_str) {
+                if applied == "none" { None } else { lcc_catalog::ColorLabel::parse(applied) }
+            } else {
+                params.get("label").and_then(Value::as_str).filter(|s| *s != "none").and_then(lcc_catalog::ColorLabel::parse)
+            };
             let text = match label {
                 Some(label) => {
                     let name =
@@ -1029,6 +1156,18 @@ impl LccApp {
         self.toast_for(ctx, text, TOAST_SECONDS);
     }
 
+    /// Auto straighten (the crop panel's Auto, a double-click with the Straighten tool), saying so
+    /// when it finds nothing to level by instead of leaving the photo as it is without a word.
+    pub fn auto_straighten(&mut self, ctx: &egui::Context) {
+        match self.run("crop.autoStraighten", serde_json::json!({})) {
+            Ok(r) if r.get("changed").and_then(Value::as_bool) == Some(false) => {
+                self.toast(ctx, crate::i18n::tr("No horizon or vertical lines to level by"));
+            }
+            Ok(_) => {}
+            Err(e) => self.toast(ctx, e),
+        }
+    }
+
     /// A toast that stays `secs` seconds (messages that say where to look or what to do next).
     pub fn toast_for(&mut self, ctx: &egui::Context, text: impl Into<String>, secs: f64) {
         let t = ctx.input(|i| i.time);
@@ -1057,8 +1196,8 @@ impl LccApp {
             ctx.request_repaint();
         }
         if let Some(mask) = polled.refine {
-            // a new selection from a click or a description: show it, as `run` does for new masks
-            self.ui.mask_overlay = true;
+            // a new selection from a click or a description: shown by the same rule as a new mask
+            self.ui.mask_overlay = self.ui.mask_overlay_pinned || !self.active_mask_has_settings();
             self.ui.detail_due = Some((now + 0.3, mask));
         }
         if let Some(e) = polled.messages.into_iter().last() {
@@ -1212,7 +1351,8 @@ impl LccApp {
     /// themes, the system's appearance in Auto) is not the one it shows. A no-op otherwise.
     pub fn sync_theme(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
+        theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         let wanted = self.ui.settings.theme(self.system_theme(ctx));
         if theme::current(ctx) != Some(wanted) {
@@ -1295,16 +1435,35 @@ impl LccApp {
         stopped && idle
     }
 
+    /// Whether the GPU of the HDR output has room for zoomed views' recent HDR windows on this
+    /// screen (`None`: no HDR output, nothing to keep).
+    pub(crate) fn hdr_cache_fit(&mut self, ctx: &egui::Context) -> Option<render::HdrCacheFit> {
+        let have = self.services.hdr_output.as_mut()?.gpu_memory();
+        let content = ctx.content_rect().size();
+        let points = content.max(ctx.input(|i| i.viewport().monitor_size).unwrap_or(content));
+        let ppp = ctx.pixels_per_point();
+        Some(render::hdr_cache_fit([points.x * ppp, points.y * ppp], have))
+    }
+
     /// Per-frame logic before layout (control channel, renders, shortcuts, drops).
     pub fn logic(&mut self, ctx: &egui::Context) {
         i18n::set_language(self.ui.language);
         widgets::sync_section_folds(ctx, &mut self.ui.section_open);
         let t0 = now_ms();
-        panels::library_problem::logic(self);
+        panels::library_problem::logic(self, ctx);
         // the display can switch between SDR and HDR (OS setting, another monitor) at any time
         if let Some(h) = self.services.hdr_output.as_mut() {
             self.hdr_headroom = h.headroom();
             self.hdr_display_sdr = self.hdr_headroom.is_none();
+        }
+        // zoomed HDR views keep their recent windows only where the GPU has room for them, and
+        // the textures of windows nothing shows or keeps any more are freed at once
+        let cache = self.ui.settings.hdr_zoom_cache && self.hdr_cache_fit(ctx).is_none_or(|f| f.fits());
+        self.renderer.set_hdr_cache(cache);
+        if let Some(h) = self.services.hdr_output.as_mut() {
+            for slot in self.renderer.hdr_unused_slots() {
+                h.release(slot);
+            }
         }
         self.logic_inner(ctx);
         self.perf.logic_ms = now_ms() - t0;
@@ -1312,7 +1471,8 @@ impl LccApp {
 
     fn logic_inner(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
+        theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         if !self.styled {
             theme::install_fonts_with_chinese(ctx, self.chinese_font.as_ref());
@@ -1480,37 +1640,58 @@ impl LccApp {
             shortcuts::handle(self, ctx);
         }
         #[cfg(not(target_arch = "wasm32"))]
+        self.handle_dropped_files(ctx);
+    }
+
+    /// Files dropped on the window: face models open their licence dialog, presets import as
+    /// presets, photos and folders go to the import review (or straight in, Settings ▸ Import).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        let dropped: Vec<String> =
+            ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_string_lossy().to_string()).filter(|p| !p.is_empty()).collect());
+        if dropped.is_empty() {
+            return;
+        }
+        // a dialog is on screen: the review would replace it, losing what it holds
+        if self.ui.dialog.is_some() {
+            self.toast(ctx, crate::i18n::tr("Close the open dialog, then drop the files again"));
+            return;
+        }
+        let drop = drop_overlay::classify(dropped);
+        if let Some(model) = drop.models.first()
+            && let Err(e) = panels::faces::open_dialog(self, model)
         {
-            let dropped: Vec<String> =
-                ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_string_lossy().to_string()).filter(|p| !p.is_empty()).collect());
-            // preset files import as presets, everything else as photos
-            // a dropped face model opens its licence dialog; presets and photos as before
-            let (models, dropped): (Vec<String>, Vec<String>) = dropped.into_iter().partition(|p| is_model_file(p));
-            if let Some(model) = models.first()
-                && let Err(e) = panels::faces::open_dialog(self, model)
-            {
-                self.toast(ctx, e);
-            }
-            let (presets, photos) = split_presets(dropped);
-            if !presets.is_empty() {
-                let _ = self.run("file.importPresets", serde_json::json!({"paths": presets}));
-            }
-            // a folder goes through File ▸ Import from Folder…'s scan and review; photo files are
-            // added on a worker thread
-            if !photos.is_empty() {
-                import::drop_paths(self, ctx, photos);
+            self.toast(ctx, e);
+        }
+        if !drop.presets.is_empty() {
+            // presets live in a library: with none open they would go with the session it replaces
+            if panels::library_problem::holds_drops(self) {
+                self.toast(ctx, crate::i18n::tr("Open a library first, then drop the presets again"));
+            } else {
+                let _ = self.run("file.importPresets", serde_json::json!({"paths": drop.presets}));
             }
         }
+        if drop.photos.is_empty() {
+            return;
+        }
+        // no library open yet (the launch list, a library that failed to open): they wait for one
+        let Some(photos) = panels::library_problem::hold_dropped(self, ctx, drop.photos) else { return };
+        // the import review (File ▸ Import from Folder…'s scan, then the review), or straight in
+        // on a worker thread (Settings ▸ Import)
+        import::drop_paths(self, ctx, photos);
     }
 
     /// Apply settings that act outside the UI state: GPU rendering and window full screen.
     fn apply_settings(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
+        theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         if self.gpu_applied != Some(self.ui.settings.gpu) {
             self.gpu_applied = Some(self.ui.settings.gpu);
-            let _ = self.session.execute("app.gpu", &serde_json::json!({"enabled": self.ui.settings.gpu}));
+            // not the `app.gpu` command: its answer (`available`, `adapter`) waits for the device, and
+            // compiling the kernels takes seconds on DX12
+            lcc_engine::gpu::set_enabled(self.ui.settings.gpu);
             // GPU device + kernels off the UI thread, once the window is up and only when GPU
             // rendering is on: a broken driver must not keep the window from appearing (issue #136)
             if self.ui.settings.gpu {
@@ -1606,12 +1787,29 @@ impl LccApp {
         self.screen_profile = icc;
     }
 
-    /// Inject synthetic events (pointer events one per frame; key sequences up to the release).
+    /// Inject synthetic events (pointer events one per frame; key sequences up to the release),
+    /// and (Modern layout) turn Back into `modern.back` and swipes into scrolling.
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        modern::before_input(self, raw);
+        self.synthetic_input(raw);
+        modern::after_input(self, raw);
+    }
+
+    fn synthetic_input(&mut self, raw: &mut egui::RawInput) {
         // the frame after a synthetic release / key: modifiers back up
         if std::mem::take(&mut self.synthetic_mods_release) && self.synthetic_mods != egui::Modifiers::NONE {
             self.synthetic_mods = egui::Modifiers::NONE;
             raw.events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        }
+        let file = |p: &String| (!p.is_empty()).then(|| std::path::PathBuf::from(p));
+        if !self.drop_pending.is_empty() {
+            raw.dropped_files = std::mem::take(&mut self.drop_pending)
+                .into_iter()
+                .map(|p| std::sync::Arc::new(InjectedDrop(p.into())) as egui::DroppedFileHandle)
+                .collect();
+        }
+        if !self.drop_hover.is_empty() {
+            raw.hovered_files = self.drop_hover.iter().map(|p| egui::HoveredFile { path: file(p), ..Default::default() }).collect();
         }
         if self.synthetic.is_empty() {
             shell::defer_tabs(self, raw);
@@ -1656,9 +1854,16 @@ impl LccApp {
     /// Frame timings once layout is done (`t0`: when layout started).
     fn end_frame(&mut self, ctx: &egui::Context, t0: f64) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
+        theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         self.text_focus = self.tasks.repaint.as_ref().is_some_and(|c| c.egui_wants_keyboard_input());
+        if self.ui.frame_rate {
+            frame_rate::show(ctx, self);
+        } else {
+            frame_rate::forget(ctx);
+        }
+        panels::edit::wheel_pointer_frame_end(ctx);
         ctx.output(|o| {
             for c in &o.commands {
                 if let egui::OutputCommand::CopyText(text) = c {
@@ -1682,6 +1887,12 @@ impl LccApp {
         if let Some(l) = self.session.library.as_ref().filter(|l| l.on_disk) {
             let path = l.dir.to_string_lossy().into_owned();
             panels::settings::remember_library(&mut self.ui.settings.recent_libraries, &path);
+            // it is open: whatever an earlier check said about it is over
+            self.recent_checks.opened(&path);
+            // when, for the launch window (issue #1290); only the listed libraries keep a time
+            let settings = &mut self.ui.settings;
+            settings.recent_opened.insert(path, (self.session.clock)());
+            settings.recent_opened.retain(|p, _| settings.recent_libraries.contains(p));
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
     }
@@ -1691,6 +1902,18 @@ impl LccApp {
         match panels::settings::open_library_name(self) {
             Some(name) => format!("{} — {name}", lcc_brand::DISPLAY_NAME),
             None => lcc_brand::DISPLAY_NAME.to_string(),
+        }
+    }
+
+    /// The browser page's title: "<file name>[ •] — <app>" for the active photo (• while
+    /// `unsaved`: changes not yet written to storage), else the window title. The web build has no
+    /// window for `ViewportCommand::Title`; a host embedding it reads this title to tell which
+    /// document a drop opened and whether it is saved (issue #2397).
+    pub fn page_title(&self, unsaved: bool) -> String {
+        let dot = if unsaved { " •" } else { "" };
+        match self.session.active().and_then(|id| self.session.catalog.photo(id)) {
+            Some(p) => format!("{}{dot} — {}", p.file_name, lcc_brand::DISPLAY_NAME),
+            None => format!("{}{dot}", self.window_title()),
         }
     }
 
@@ -1727,13 +1950,15 @@ impl LccApp {
             catalog_ui::show(self, &ctx);
             panels::library_problem::show(self, &ctx);
             panels::toast(self, &ctx);
+            drop_overlay::show(self, &ctx);
             self.widgets = widgets::take_registry(&ctx);
             self.end_frame(&ctx, t0);
             return;
         }
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
-        let m = shell::edges(self, ui, &ctx);
+        let touch = modern::on(self);
+        let m = if touch { modern::edges(self, ui, &ctx) } else { shell::edges(self, ui, &ctx) };
         let t = theme::Tokens::get(&ctx);
         let bg = if matches!(self.ui.view, state::ViewMode::Detail | state::ViewMode::Compare | state::ViewMode::Survey | state::ViewMode::Reference)
         {
@@ -1741,7 +1966,9 @@ impl LccApp {
         } else {
             t.grid_bg
         };
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(bg)).show(ui, |ui| m.center(ui, self));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(bg))
+            .show(ui, |ui| if touch { modern::center(self, ui, m) } else { m.center(ui, self) });
         module::lights_out(self, &ctx);
         help_overlay::show(self, &ctx);
         panels::second::show(self, &ctx);
@@ -1753,6 +1980,7 @@ impl LccApp {
         #[cfg(not(target_arch = "wasm32"))]
         panels::plugins::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
+        camera_roll::prompt(self, &ctx);
         export_task::poll(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         panels::plugins::poll(self, &ctx);
@@ -1761,11 +1989,13 @@ impl LccApp {
         panels::activity::show(self, &ctx);
         export_task::poll_photos(self, &ctx);
         pick::poll(self, &ctx);
+        camera_roll::poll(self, &ctx);
         panels::grid::drag_feedback(self, &ctx);
         panels::left::album_drag_feedback(self, &ctx);
         panels::left::section_drag_feedback(self, &ctx);
         panels::keyword_list::drag_feedback(self, &ctx);
         panels::toast(self, &ctx);
+        drop_overlay::show(self, &ctx);
         self.widgets = widgets::take_registry(&ctx);
         self.text_focus = ctx.egui_wants_keyboard_input();
         self.end_frame(&ctx, t0);
@@ -1834,6 +2064,26 @@ fn sam_download_ended(download: &lcc_engine::segment::DownloadStatus) -> Option<
         Some(e) => Some((crate::i18n::tr_format!("The SAM 3 download failed: {e}", e = e), true)),
         None if download.finished => Some((crate::i18n::tr("The SAM 3 model is installed: Object and Describe masks are ready.").to_string(), true)),
         None => None,
+    }
+}
+
+/// A file `ui.dropFiles` delivers as dropped, as a real OS drop arrives in `raw.dropped_files`.
+#[derive(Debug)]
+struct InjectedDrop(std::path::PathBuf);
+
+impl egui::DroppedFile for InjectedDrop {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn bytes_async(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, String>> + '_>> {
+        Box::pin(async { Err("the web build has no files to read".to_string()) })
     }
 }
 
@@ -1935,6 +2185,8 @@ pub struct Caches {
     /// The catalog's part of the folder tree (before the disk folders are added), by catalog revision.
     folder_base: Option<(u64, std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
     people: Option<(u64, lcc_catalog::Filter, std::sync::Arc<Vec<lcc_catalog::Person>>)>,
+    /// The ignored faces (`faces.ignore`) as `(photo, index)`, at a catalog revision.
+    ignored_faces: Option<(u64, std::sync::Arc<Vec<(u64, usize)>>)>,
     suggestions: Option<(u64, std::sync::Arc<Vec<String>>)>,
     /// What the Add keyword box offers for the text typed in it, by library revision, the
     /// selection's keywords and that text.
@@ -2067,7 +2319,7 @@ impl Caches {
     /// The library's keyword tree.
     pub fn keyword_tree(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::KeywordNode>> {
         let kept = self.keyword_tree.take().filter(|(r, _)| still_right(cat, *r, READS_META)).map(|(_, t)| t);
-        let t = kept.unwrap_or_else(|| std::sync::Arc::new(cat.keyword_tree()));
+        let t = kept.unwrap_or_else(|| cat.keyword_tree_shared());
         self.keyword_tree = Some((cat.revision, t.clone()));
         t
     }
@@ -2165,6 +2417,24 @@ impl Caches {
                 let t = std::sync::Arc::new(cat.people_in(&key));
                 self.people = Some((cat.revision, key, t.clone()));
                 t
+            }
+        }
+    }
+    /// The in-library faces the user ignored, as `(photo, index)` (People offers to restore them).
+    pub fn ignored_faces(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<(u64, usize)>> {
+        match &self.ignored_faces {
+            Some((r, v)) if *r == cat.revision => v.clone(),
+            _ => {
+                let v: Vec<(u64, usize)> = cat
+                    .photos()
+                    .filter(|p| p.in_library())
+                    .flat_map(|p| {
+                        p.meta.regions.iter().enumerate().filter(|(_, r)| r.kind == lcc_meta::RegionKind::IgnoredFace).map(move |(i, _)| (p.id.0, i))
+                    })
+                    .collect();
+                let v = std::sync::Arc::new(v);
+                self.ignored_faces = Some((cat.revision, v.clone()));
+                v
             }
         }
     }
@@ -2464,3 +2734,13 @@ mod tests_model_setup;
 
 #[cfg(test)]
 mod tests_docking_acceptance;
+#[cfg(test)]
+mod tests_modern;
+#[cfg(test)]
+mod tests_modern_gestures;
+#[cfg(test)]
+mod tests_modern_library;
+#[cfg(test)]
+mod tests_modern_sheets;
+#[cfg(test)]
+mod tests_pill_slider;

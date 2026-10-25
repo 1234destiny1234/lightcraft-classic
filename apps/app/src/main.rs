@@ -3,8 +3,10 @@
 //! Usage: `<binary> [--library DIR | --memory] [--no-demo] [--control <port>] [files or folders…]`
 //!
 //! The library (catalog, presets, thumbnail cache) lives in `--library DIR`, else
-//! `$<PREFIX>_LIBRARY`, else the library last opened with Settings → Open Library…, else
-//! `~/Pictures/<library default>` (`lcc_brand::LIBRARY_DEFAULT`); a new library starts with the
+//! `$<PREFIX>_LIBRARY`, else — with Settings ▸ General ▸ At launch set to *Ask me*, or Alt/Option
+//! held as the window appears — the one chosen in a list of the recent libraries, else the library
+//! last opened with Settings → Open Library…, else `~/Pictures/<library default>`
+//! (`lcc_brand::LIBRARY_DEFAULT`; [`lcc_ui_egui::panels::library_problem::launch_plan`]); a new library starts with the
 //! procedural demo photos unless `--no-demo` or files are given. Files and folders on the command
 //! line are imported (duplicates are skipped). `--memory` runs an in-memory session that writes
 //! nothing (demo photos unless files are given; used by the README showcase scripts). A library
@@ -49,7 +51,7 @@ mod window_gpu;
 use dialog_filter::FileDialogExt as _;
 use lcc_engine::Session;
 use lcc_engine::control_auth;
-use lcc_ui_egui::panels::library_problem::LibraryProblem;
+use lcc_ui_egui::panels::library_problem::{Launch, LibraryProblem};
 use lcc_ui_egui::{LccApp, Services, UiState};
 
 /// Reverse-DNS app id: Wayland app id, `.desktop` file and hicolor icon name.
@@ -111,6 +113,12 @@ impl eframe::App for App {
         if !self.0.shutdown(EXIT_WAIT) {
             log::warn!("quit: background work was still running after {EXIT_WAIT:?}");
         }
+        // macOS only: the process ends below without running destructors, and only the lock's
+        // `Drop` removes `catalog.lock.owner` (the OS frees the lock, not the note), so let go of
+        // the library's lock here, saved or not (we leave either way). Elsewhere eframe drops the
+        // app after this and the session's last writes (face data) still go out under the lock.
+        #[cfg(target_os = "macos")]
+        self.0.session.release_library_lock();
         // macOS (#1331): end the process here, before eframe tears the window down, as Quit from
         // the menu bar already does (PR #444). AccessKit's macOS adapter subclasses the window's
         // content view and restores its class on teardown; AppKit's Touch Bar support observes
@@ -412,7 +420,7 @@ struct PrefsWriter {
 
 impl PrefsWriter {
     fn save(&mut self, app: &LccApp) -> Result<(), String> {
-        self.save_ui(&app.ui, app.library_problem.is_some())
+        self.save_ui(&app.ui, app.library_problem.as_ref().is_some_and(LibraryProblem::saves_nothing))
     }
 
     /// Write `ui` if it changed since the last write; `temporary` (the library couldn't be
@@ -610,6 +618,8 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         open_all_with: Some(Box::new(editors::open_all_with)),
         check_editor: Some(Box::new(editors::check)),
         storage_access: None,
+        camera_roll: None,
+        save_to_gallery: None,
         open_url: Some(Box::new(|url: &str| {
             // https links, plus the local page Preview in Browser generates (nothing else)
             lcc_ui_egui::links::check_browser_url(url)?;
@@ -775,6 +785,24 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .save_file()
                 .map(|p| p.to_string_lossy().to_string())
         })),
+        pick_print_templates: Some(Box::new(|| {
+            file_dialog()
+                .set_title(lcc_ui_egui::i18n::tr("Import Print Templates"))
+                .add_filter_nocase(lcc_ui_egui::i18n::tr("Print Templates"), &[lcc_engine::print::template::FILE_EXT])
+                .pick_files()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect()
+        })),
+        save_print_template: Some(Box::new(|name: &str| {
+            file_dialog()
+                .set_title(lcc_ui_egui::i18n::tr("Export Print Template"))
+                .add_filter_nocase(lcc_ui_egui::i18n::tr("Print Templates"), &[lcc_engine::print::template::FILE_EXT])
+                .set_file_name(name)
+                .save_file()
+                .map(|p| p.to_string_lossy().to_string())
+        })),
         // atomic (temp file + sync + rename): a failed write never leaves a truncated file
         write_shared: Some(std::sync::Arc::new(lcc_engine::export::write_file)),
         write: Some(Box::new(lcc_engine::export::write_file)),
@@ -802,9 +830,13 @@ fn unopened_session() -> Session {
 }
 
 /// The library session with the folders face models (`<config>/models`) and slideshow templates
-/// (`<config>/slideshow-templates`) are kept in.
-fn open_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_demo: bool) -> (Session, Option<LibraryProblem>) {
-    let (mut s, problem) = open_library_session(in_memory, dir, seed_demo);
+/// (`<config>/slideshow-templates`) are kept in. With [`Launch::Ask`] no library is opened yet:
+/// the window lists the recent ones.
+fn open_session(in_memory: bool, launch: &Launch, seed_demo: bool) -> (Session, Option<LibraryProblem>) {
+    let (mut s, problem) = match launch {
+        Launch::Ask => (Session::new().with_fs().with_default_denoise_models().with_system_clock(), None),
+        Launch::Open { dir, .. } => open_library_session(in_memory, dir.clone(), seed_demo),
+    };
     s.face_models_dir = lcc_engine::config::default_face_models_dir();
     s.lens_db = lcc_engine::lens_download::LensSettings::load(lcc_engine::config::config_dir());
     s.slide_templates_dir = lcc_engine::config::config_dir().map(|d| d.join(lcc_engine::slide_template::DIR_NAME));
@@ -863,7 +895,9 @@ USAGE: {bin} [OPTIONS] [FILES/FOLDERS…]   (files and folders are imported)
        {bin} [OPTIONS] {scheme}://sync?path=FOLDER   (open Synchronize Folder for a library folder)
 
 OPTIONS:
-  --library DIR    open (or create) this library (default: ~/Pictures/{lib}; env {P}_LIBRARY)
+  --library DIR    open (or create) this library (env {P}_LIBRARY; default: the last library opened, or
+                   a list of the recent ones with Settings > General > At launch: Ask me or Alt/Option held,
+                   else ~/Pictures/{lib})
   --no-demo        don't seed a new library with the procedural demo photos
   --memory         throwaway in-memory session (alias --demo); nothing is saved
   --control PORT   serve the JSON-lines control channel on 127.0.0.1:PORT (env {P}_CONTROL_PORT;
@@ -1060,13 +1094,15 @@ fn main() -> eframe::Result {
     if let Some(ui) = &prefs {
         lcc_ui_egui::i18n::set_language(ui.language);
     }
-    // --library (or <PREFIX>_LIBRARY), else the startup catalog, else the library last opened from
-    // Settings, else the default location if a catalog of this app is there; otherwise (a first
-    // start) the welcome dialog asks. Another app's library (e.g. the upstream app's, named by
-    // settings copied from it) is never opened as this app's own.
+    // --library (or <PREFIX>_LIBRARY), else the list of recent libraries if Settings say Ask me,
+    // else the startup catalog, else the library last opened from Settings, else the default
+    // location if a catalog of this app is there; otherwise (a first start) the welcome dialog
+    // asks. Another app's library (e.g. the upstream app's, named by settings copied from it) is
+    // never opened as this app's own.
     let mut prefs = prefs;
     let explicit = library_dir.or_else(|| lcc_brand::env_os("LIBRARY").filter(|p| !p.is_empty()).map(Into::into));
-    let (library_dir, welcome) = if in_memory {
+    let plan = lcc_ui_egui::panels::library_problem::launch_plan(in_memory, explicit.clone(), None, prefs.as_ref().map(|u| &u.settings), None);
+    let (library_dir, welcome) = if in_memory || plan == Launch::Ask {
         (explicit, None)
     } else {
         let from_prefs = prefs.as_ref().map(|u| u.settings.library_path.clone()).filter(|p| !p.is_empty() && !lcc_brand::env_is_set("LIBRARY"));
@@ -1084,6 +1120,10 @@ fn main() -> eframe::Result {
             }
         }
     };
+    let launch = match plan {
+        Launch::Ask => Launch::Ask,
+        Launch::Open { alt_asks, .. } => Launch::Open { dir: library_dir.clone(), alt_asks: alt_asks && welcome.is_none() },
+    };
     // GPU compute: off if the preference says so, or if the last launch died creating the device
     // (issue #136) — before anything can create it
     let gpu_crash = gpu_crash_check(in_memory).or_else(|| gpu_lost_check_at(gpu_lost_marker_path().as_deref(), in_memory));
@@ -1092,6 +1132,9 @@ fn main() -> eframe::Result {
     }
     let gpu_on = prefs.as_ref().is_none_or(|u| u.settings.gpu) && gpu_crash.is_none();
     lcc_engine::gpu::set_enabled(gpu_on);
+    if let Some(u) = &prefs {
+        lcc_engine::gpu::backend::set_compute_preference(u.settings.gpu_backend.name());
+    }
     // the window's renderer: probed (Windows) and with a fallback chain, so a driver that can't
     // build egui's pipeline never kills the start-up
     let compose_window = prefs.as_ref().is_some_and(|ui| ui.settings.compose_window) && std::env::var_os("WGPU_BACKEND").is_none();
@@ -1148,10 +1191,10 @@ fn main() -> eframe::Result {
                 came_up_app.store(true, std::sync::atomic::Ordering::Relaxed);
                 // an older catalog is upgraded on a worker thread once the window shows, with progress
                 let upgrade = library_dir.clone().filter(|d| !in_memory && lcc_engine::library::needs_migration(d));
-                let (mut session, problem) = if upgrade.is_some() || welcome.is_some() {
+                let (mut session, mut problem) = if upgrade.is_some() || welcome.is_some() {
                     (unopened_session(), None)
                 } else {
-                    open_session(in_memory, library_dir, seed_demo && files.is_empty())
+                    open_session(in_memory, &launch, seed_demo && files.is_empty())
                 };
                 // AI masks: the SAM 3 checkpoint (facebook/sam3) in <config>/models/sam3, or <PREFIX>_SAM3_DIR
                 // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
@@ -1171,6 +1214,11 @@ fn main() -> eframe::Result {
                     app.ui = ui;
                 }
                 catalog_hooks::remember_recent(&mut app, in_memory);
+                // the recent libraries to choose from (issue #1290), checked on a worker once shown
+                if launch == Launch::Ask {
+                    problem = Some(LibraryProblem::choose_later(&app.ui.settings));
+                }
+                app.alt_asks_for_library = matches!(launch, Launch::Open { alt_asks: true, .. });
                 lcc_ui_egui::i18n::set_language(app.ui.language);
                 app.integrated_titlebar = cfg!(target_os = "macos");
                 app.notices.extend(prefs_warning);
@@ -1378,10 +1426,38 @@ mod tests {
     /// adds to Apple Photos on a worker (headless sessions wait instead).
     #[test]
     fn the_desktop_session_adds_to_apple_photos_in_the_background() {
-        let (s, problem) = open_session(true, None, false);
+        let (s, problem) = open_session(true, &Launch::Open { dir: None, alt_asks: false }, false);
         assert!(problem.is_none());
         assert!(s.apple_photos_background);
         assert!(!lcc_engine::Session::new().apple_photos_background);
+    }
+
+    /// Issue #1290: with Settings ▸ At launch ▸ Ask me nothing is opened (nor seeded with demo
+    /// photos) before the user chooses, and the settings are still saved while the list shows (a
+    /// removed entry is kept), unlike the failed-library window's temporary session.
+    #[test]
+    fn asking_at_launch_opens_nothing_and_still_saves_the_settings() {
+        let (s, problem) = open_session(false, &Launch::Ask, true);
+        assert!(problem.is_none() && s.library.is_none() && s.catalog.is_empty());
+        assert!(s.apple_photos_background, "the same desktop session as an opened one");
+
+        let d = dir("writer-ask");
+        let path = d.join("ui.json");
+        let mut app = LccApp::new(s, Services::default());
+        app.ui.settings.recent_libraries = vec!["/gone/a".into(), "/gone/b".into()];
+        app.library_problem = Some(LibraryProblem::choose_later(&app.ui.settings));
+        let mut w = PrefsWriter { path: Some(path.clone()), ..Default::default() };
+        app.ui.settings.recent_libraries.remove(0);
+        w.save(&app).unwrap();
+        let saved: UiState = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved.settings.recent_libraries, ["/gone/b"]);
+        // the failed-library window still writes nothing
+        app.library_problem = Some(LibraryProblem::new("/gone/b", "not there"));
+        app.ui.settings.recent_libraries.clear();
+        w.save(&app).unwrap();
+        let saved: UiState = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved.settings.recent_libraries, ["/gone/b"]);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// Issue #103: a damaged ui.json (which holds the library location) is kept aside and
@@ -1835,6 +1911,41 @@ mod tests {
         assert!(out.status.success(), "{stdout}");
         assert!(stdout.contains("calling on_exit"), "the child didn't run the test: {stdout}");
         assert_eq!(stdout.contains("on_exit returned"), !cfg!(target_os = "macos"), "{stdout}");
+    }
+
+    /// Quitting leaves no `catalog.lock.owner` behind, though the process ends without running
+    /// destructors (macOS): `on_exit` releases the library's lock itself. The child opens a library
+    /// and calls `on_exit` (on macOS that ends it); the parent looks at the folder afterwards. Other
+    /// systems drop the app after `on_exit`, which removes the note anyway.
+    #[test]
+    fn on_exit_removes_the_lock_owner_note() {
+        if let Some(dir) = std::env::var_os(lcc_brand::env_var("TEST_LOCK_DIR")) {
+            let mut session = lcc_engine::Session::new();
+            session.open_library(&dir, false).unwrap();
+            let mut app = App(
+                LccApp::new(session, Services::default()),
+                PrefsWriter::default(),
+                #[cfg(target_os = "macos")]
+                None,
+            );
+            eframe::App::on_exit(&mut app, None);
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("lc-app-lock-owner-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "tests::on_exit_removes_the_lock_owner_note", "--nocapture"])
+            .env(lcc_brand::env_var("TEST_LOCK_DIR"), &dir)
+            .env(lcc_brand::env_var("NO_PREFS"), "1")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{stdout}");
+        assert!(dir.join("catalog.snap").exists(), "the child didn't open and save the library: {stdout}");
+        assert!(!dir.join("catalog.lock.owner").exists(), "the owner note was left behind");
+        assert!(lcc_engine::Session::new().open_library(&dir, false).is_ok(), "the library is still locked");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

@@ -33,13 +33,23 @@ fn commit_keywords(s: &mut Session, label: &str, op: lcc_catalog::Op, follow: im
     if let Some(k) = s.filter.keyword.clone() {
         s.filter.keyword = follow(&k);
     }
-    let mut kept: Vec<String> = Vec::new();
-    for k in std::mem::take(&mut s.filter.keywords).iter().filter_map(|k| follow(k)) {
-        if !kept.iter().any(|x| x.eq_ignore_ascii_case(&k)) {
-            kept.push(k);
+    let keep_followed = |keywords: &mut Vec<String>| {
+        let mut kept: Vec<String> = Vec::new();
+        for k in std::mem::take(keywords).iter().filter_map(|k| follow(k)) {
+            if !kept.iter().any(|x| x.eq_ignore_ascii_case(&k)) {
+                kept.push(k);
+            }
         }
+        *keywords = kept;
+    };
+    keep_followed(&mut s.filter.keywords);
+    // a filter put aside by Enable Filters follows the keyword too
+    if let Some(f) = s.shelved_filter.as_mut() {
+        if let Some(k) = f.keyword.clone() {
+            f.keyword = follow(&k);
+        }
+        keep_followed(&mut f.keywords);
     }
-    s.filter.keywords = kept;
     Ok(json!({"changed": photos, "listed": listed}))
 }
 
@@ -187,6 +197,16 @@ pub fn keyword_sets_json(s: &Session) -> Value {
     })
 }
 
+/// Make the set `step` places after the current one current, in the Keyword Set menu's order
+/// (Recent Keywords, then the saved sets), wrapping around from the last to the first and back.
+fn step_set(s: &mut Session, step: isize) -> Result<Value> {
+    let at = s.keyword_set.as_deref().and_then(|n| s.keyword_sets.iter().position(|x| same_set(&x.name, n))).map_or(0, |i| i + 1);
+    let next = (at as isize + step).rem_euclid(s.keyword_sets.len() as isize + 1) as usize;
+    s.keyword_set = next.checked_sub(1).and_then(|i| s.keyword_sets.get(i)).map(|x| x.name.clone());
+    s.save_prefs()?;
+    Ok(keyword_sets_json(s))
+}
+
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(query "keyword.sets", "Keyword Sets", [], None, "{} → {sets: [{name, keywords}], current, keywords: the nine ⌥1–⌥9 apply}", always, |s, _| Ok(keyword_sets_json(s))),
@@ -200,6 +220,24 @@ pub fn specs() -> Vec<CommandSpec> {
             s.save_prefs()?;
             Ok(keyword_sets_json(s))
         }),
+        cmd!(
+            "keyword.nextSet",
+            "Next Keyword Set",
+            [],
+            Some("Alt+0"),
+            "{}: the set after the current one (after the last, Recent Keywords)",
+            always,
+            |s, _| step_set(s, 1)
+        ),
+        cmd!(
+            "keyword.previousSet",
+            "Previous Keyword Set",
+            [],
+            Some("Alt+Shift+0"),
+            "{}: the set before the current one (before Recent Keywords, the last)",
+            always,
+            |s, _| step_set(s, -1)
+        ),
         cmd!(
             "keyword.saveSet",
             "Save Keyword Set",
@@ -512,7 +550,10 @@ pub fn specs() -> Vec<CommandSpec> {
                 let mut r = json!({"keywords": file.written.len(), "captureOneRefuses": refuses, "unwritable": file.unwritable});
                 match str_param(p, "path").map(str::trim).filter(|x| !x.is_empty()) {
                     Some(path) => {
-                        std::fs::write(path, &file.text).map_err(|e| crate::EngineError::Other(format!("{path}: {e}")))?;
+                        s.check_write_target(path).map_err(|e| bad("keyword.export", e))?;
+                        // A folder that isn't there is an error, not created.
+                        lcc_catalog::safe_file::write_atomic(std::path::Path::new(path), file.text.as_bytes())
+                            .map_err(|e| crate::EngineError::Other(format!("{path}: {e}")))?;
                         r["path"] = json!(path);
                     }
                     None => r["text"] = json!(file.text),

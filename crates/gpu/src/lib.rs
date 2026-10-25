@@ -471,13 +471,14 @@ pub fn grade_frame(img: &Arc<Rgb32f>, settings: &DevelopSettings, quality: lcc_p
 
 /// Whether the GPU renders requests of this kind at all (a given render can still fall back to
 /// the CPU): the kernel writes 8-bit output or, for HDR renders ([`OutputDepth::F32Hdr`]: HDR
-/// views, HDR exports, gain maps), linear float; 16-bit and SDR float exports and soft proofs render
-/// on the CPU, and so does Visualize HDR, which needs both renditions at once.
+/// views, HDR exports, gain maps), linear float; 16-bit and SDR float exports render on the CPU, and
+/// so do soft proofs against an output-device profile (`device_proof`: its 3D table is CPU-side),
+/// soft proofs of HDR renders, and Visualize HDR, which needs both renditions at once.
 ///
 /// [`OutputDepth::F32Hdr`]: lcc_pipeline::OutputDepth::F32Hdr [`try_render`] follows it,
 /// and the loupe sizes its slider-drag drafts by it (issue #330), so the two can't drift apart.
-pub fn handles(depth: lcc_pipeline::OutputDepth, proofed: bool, overlay: lcc_pipeline::Overlay) -> bool {
-    matches!(depth, lcc_pipeline::OutputDepth::U8 | lcc_pipeline::OutputDepth::F32Hdr) && !proofed && overlay != lcc_pipeline::Overlay::HdrRange
+pub fn handles(depth: lcc_pipeline::OutputDepth, device_proof: bool, overlay: lcc_pipeline::Overlay) -> bool {
+    matches!(depth, lcc_pipeline::OutputDepth::U8 | lcc_pipeline::OutputDepth::F32Hdr) && !device_proof && overlay != lcc_pipeline::Overlay::HdrRange
 }
 
 /// [`render`], reporting why this render made no GPU image: [`Fallback::NotTried`] when the GPU
@@ -496,8 +497,11 @@ pub fn try_render(
         // sections switched off with their eye render as if at their defaults (issue #316)
         let effective = s.effective();
         let s: &DevelopSettings = &effective;
+        let device_proof = req.proof.is_some_and(|p| lcc_pipeline::proof_profile(p.profile).is_some());
+        // (an HDR render's soft proof is the CPU's: `finish::finish_deep`)
+        let deep_proof = req.proof.is_some() && req.depth == lcc_pipeline::OutputDepth::F32Hdr;
         // pixel-filter plug-ins run in the CPU pipeline
-        if !enabled() || !handles(req.depth, req.proof.is_some(), req.overlay) || lcc_pipeline::plugin_filters::any_active(s) {
+        if !enabled() || !handles(req.depth, device_proof, req.overlay) || deep_proof || lcc_pipeline::plugin_filters::any_active(s) {
             return Err(Fallback::NotTried);
         }
         let s = &*lcc_pipeline::settings_for(s, req);

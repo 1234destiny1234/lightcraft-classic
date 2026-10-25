@@ -357,6 +357,67 @@ pub fn rows_between(rows: &[GridRow], top: f32, bottom: f32) -> &[GridRow] {
     rest.get(..n).unwrap_or(&[])
 }
 
+/// The photo the grid keeps in place on screen while its layout reflows: the active photo when
+/// it is on screen, otherwise the one in the middle of the view. Picked again only when the user
+/// scrolls or the active photo changes, never by a reflow, so a run of small resizes does not
+/// drift from photo to photo.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GridAnchor {
+    /// Which layout it was last seen in (changes when the layout is rebuilt).
+    pub lay: (usize, usize, u32),
+    pub photo: PhotoId,
+    /// Its index in the photo list last seen (a hint; looked up again when it no longer matches).
+    pub idx: usize,
+    /// The photo's top minus the view's top, in points.
+    pub dy: f32,
+    pub seen_top: f32,
+    pub active: Option<PhotoId>,
+}
+
+impl GridAnchor {
+    fn index_in(&self, ids: &[PhotoId]) -> Option<usize> {
+        if ids.get(self.idx) == Some(&self.photo) { Some(self.idx) } else { ids.iter().position(|p| *p == self.photo) }
+    }
+
+    /// The scroll offset that keeps the anchor where it was, when the layout changed since.
+    pub fn reflow_offset(&self, lay_id: (usize, usize, u32), ids: &[PhotoId], lay: &GridLayout) -> Option<f32> {
+        // a grid scrolled to the very top stays there (new photos arriving above show)
+        if self.lay == lay_id || self.seen_top <= 0.5 {
+            return None;
+        }
+        let cell = lay.cells.get(self.index_in(ids)?)?;
+        let y = cell.top() - self.dy;
+        y.is_finite().then_some(y.max(0.0))
+    }
+
+    /// The anchor after this frame (`viewport`: the grid's visible part, in layout coordinates).
+    pub fn follow(
+        last: Option<GridAnchor>,
+        lay_id: (usize, usize, u32),
+        ids: &[PhotoId],
+        lay: &GridLayout,
+        viewport: Rect,
+        active: Option<PhotoId>,
+    ) -> Option<GridAnchor> {
+        let top = viewport.top();
+        if let Some(a) = last {
+            let reflowed = a.lay != lay_id;
+            let user_moved = !reflowed && (a.seen_top != top || a.active != active);
+            if !user_moved && let Some(idx) = a.index_in(ids) {
+                return Some(GridAnchor { lay: lay_id, idx, seen_top: top, ..a });
+            }
+        }
+        let on_screen = |i: usize| lay.cells.get(i).is_some_and(|c| c.intersects(viewport));
+        let idx = active.and_then(|p| ids.iter().position(|x| *x == p)).filter(|i| on_screen(*i)).or_else(|| {
+            let mid = viewport.center().y;
+            let row = rows_between(&lay.rows, mid, mid).first().or_else(|| rows_between(&lay.rows, top, viewport.bottom()).first())?;
+            Some(row.start + (row.end.saturating_sub(row.start)) / 2)
+        })?;
+        let (photo, cell) = (*ids.get(idx)?, lay.cells.get(idx)?);
+        Some(GridAnchor { lay: lay_id, photo, idx, dy: cell.top() - top, seen_top: top, active })
+    }
+}
+
 fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let (generation, ids) = app.session.visible_shared();
@@ -485,7 +546,27 @@ fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
     register(ui.ctx(), "gridArea", scroll_rect);
     crate::widgets::register(ui.ctx(), "grid:scroll", scroll_rect);
     let wheel = wheel_step(ui, egui::Id::new("grid-wheel"), scroll_rect, scroll_rect.height(), false, app.ui.settings.wheel_scroll_speed);
-    egui::ScrollArea::vertical().id_salt("grid-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+    // keep a photo where it is on screen when the layout reflows (a side panel or the window
+    // resized, the thumbnail size or the filter changed): the pixel offset alone would land elsewhere
+    let anchor_id = egui::Id::new("grid-anchor");
+    let lay_id = (Arc::as_ptr(&lay) as usize, ids.len(), lay.height.to_bits());
+    let last: Option<GridAnchor> = ui.ctx().data(|d| d.get_temp(anchor_id));
+    let mut area_ui = egui::ScrollArea::vertical().id_salt("grid-scroll").auto_shrink([false, false]);
+    if scroll_to.is_none()
+        && let Some(y) = last.as_ref().and_then(|a| a.reflow_offset(lay_id, &ids, &lay))
+    {
+        area_ui = area_ui.vertical_scroll_offset(y);
+    }
+    area_ui.show_viewport(ui, |ui, viewport| {
+        let next = GridAnchor::follow(last, lay_id, &ids, &lay, viewport, active);
+        ui.ctx().data_mut(|d| match next {
+            Some(a) => {
+                d.insert_temp(anchor_id, a);
+            }
+            None => {
+                d.remove::<GridAnchor>(anchor_id);
+            }
+        });
         if wheel != egui::Vec2::ZERO {
             ui.scroll_with_delta_animation(wheel, egui::style::ScrollAnimation::none());
         }
@@ -907,16 +988,18 @@ fn cell(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool,
         }
     } else {
         let ph = img_rect.shrink(if square { 20.0 } else { 0.0 });
-        p.rect_filled(ph, 0.0, Color32::from_gray(38));
+        p.rect_filled(ph, 0.0, t.skeleton);
         // not drawn yet (or unreadable): the selection is still visible
         if active {
             p.rect_stroke(ph, 0.0, Stroke::new(2.0, Color32::WHITE), StrokeKind::Outside);
         } else if selected {
-            p.rect_stroke(ph, 0.0, Stroke::new(2.0, Color32::from_gray(170)), StrokeKind::Outside);
+            // a light theme's skeleton is itself mid-grey: the ring takes the dim text colour
+            let ring = if t.skeleton.r() > 0x80 { t.text_dim } else { Color32::from_gray(170) };
+            p.rect_stroke(ph, 0.0, Stroke::new(2.0, ring), StrokeKind::Outside);
         }
         if app.renderer.failure(Slot::Thumb(id)).is_some() {
             // unreadable / missing file
-            p.text(ph.center(), Align2::CENTER_CENTER, "!", t.semibold(18.0), t.text_dim);
+            p.text(ph.center(), Align2::CENTER_CENTER, "!", t.semibold(18.0), t.text);
         }
     }
     crate::video_ui::grid_badge(ui, img_rect, &photo);
@@ -970,10 +1053,7 @@ fn cell(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool,
             p.rect_filled(bar, 0.0, Color32::from_black_alpha(120));
         }
         let mut x = bar.left() + 6.0;
-        for i in 0..photo.rating {
-            paint(p, Rect::from_min_size(pos2(x + i as f32 * 13.0, bar.center().y - 6.0), vec2(12.0, 12.0)), Icon::StarFilled, t.star);
-        }
-        x += photo.rating as f32 * 13.0 + 4.0;
+        x += crate::rating::paint_rating(p, pos2(x, bar.center().y), photo.rating, crate::rating::RatingSize::Medium, t.star) + 4.0;
         match photo.flag {
             Flag::Pick => paint(p, Rect::from_min_size(pos2(x, bar.center().y - 7.0), vec2(14.0, 14.0)), Icon::FlagPickFilled, t.pick),
             Flag::Reject => paint(p, Rect::from_min_size(pos2(x, bar.center().y - 7.0), vec2(14.0, 14.0)), Icon::FlagReject, t.reject),
@@ -1645,6 +1725,50 @@ fn quick_collection_item(app: &mut LccApp, ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_photo_keeps_its_place_through_a_run_of_small_resizes() {
+        let ids: Vec<PhotoId> = (1..=600).map(PhotoId).collect();
+        let aspects: Vec<f32> = (0..600).map(|i| [1.5, 0.67, 1.0, 1.78][i % 4]).collect();
+        let view_h = 800.0;
+        let mut w = 900.0;
+        let lay = layout(&aspects, &[(0, 600)], w, 160.0, false);
+        let active = ids.get(250).copied();
+        let top0 = lay.cells.get(250).unwrap().top() - 300.0;
+        let mut anchor = GridAnchor::follow(None, (0, 600, 0), &ids, &lay, Rect::from_min_size(pos2(0.0, top0), vec2(w, view_h)), active);
+        let start_dy = anchor.as_ref().unwrap().dy;
+        for step in 1..=20 {
+            w *= 1.05;
+            let lay = layout(&aspects, &[(0, 600)], w, 160.0, false);
+            let id = (step, 600, 0);
+            let top = anchor.as_ref().unwrap().reflow_offset(id, &ids, &lay).unwrap();
+            let view = Rect::from_min_size(pos2(0.0, top), vec2(w, view_h));
+            anchor = GridAnchor::follow(anchor, id, &ids, &lay, view, active);
+            let a = anchor.as_ref().unwrap();
+            assert_eq!(a.photo, PhotoId(251), "step {step}: the selected photo stays the anchor");
+            let on_screen = lay.cells.get(250).unwrap().top() - top;
+            assert!((on_screen - start_dy).abs() < 0.5, "step {step}: moved from {start_dy} to {on_screen}");
+        }
+    }
+
+    #[test]
+    fn a_filter_keeps_the_anchor_photo_in_place_and_survives_it_leaving() {
+        let ids: Vec<PhotoId> = (1..=400).map(PhotoId).collect();
+        let lay = layout(&[1.5; 400], &[(0, 400)], 1000.0, 160.0, false);
+        let view = Rect::from_min_size(pos2(0.0, lay.cells.get(200).unwrap().top() - 100.0), vec2(1000.0, 600.0));
+        let a = GridAnchor::follow(None, (0, 400, 0), &ids, &lay, view, None).unwrap();
+        // every other photo filtered out
+        let kept: Vec<PhotoId> = ids.iter().copied().filter(|p| p.0 % 2 == a.photo.0 % 2).collect();
+        let lay2 = layout(&vec![1.5; kept.len()], &[(0, kept.len())], 1000.0, 160.0, false);
+        let y = a.reflow_offset((1, kept.len(), 0), &kept, &lay2).unwrap();
+        let i = kept.iter().position(|p| *p == a.photo).unwrap();
+        assert!((lay2.cells.get(i).unwrap().top() - y - a.dy).abs() < 0.5);
+        // anchor filtered out: no jump, and a new one is picked
+        let none: Vec<PhotoId> = ids.iter().copied().filter(|p| *p != a.photo).collect();
+        assert!(a.reflow_offset((2, none.len(), 0), &none, &lay).is_none());
+        assert!(GridAnchor::follow(Some(a), (2, none.len(), 0), &none, &lay, view, None).is_some());
+        assert!(GridAnchor::follow(None, (3, 0, 0), &[], &layout(&[], &[], 1000.0, 160.0, false), view, None).is_none());
+    }
 
     #[test]
     fn the_same_photo_in_another_source_scrolls_into_view() {

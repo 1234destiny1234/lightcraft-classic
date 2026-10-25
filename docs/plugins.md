@@ -270,6 +270,28 @@ with the photo (`setAnalysis`). It runs in the background as an activity row (ki
 `pluginAnalyze`, cancellable) and returns at once; `wait: true` runs it to the end and returns the
 result. Every later `pc_filter` call gets it as `_analysis`, so crop and
 zoom don't move the measurement. Modules without the export give an "unsupported" error.
+A manifest may set `"analyzeArea": "crop"` (default `"frame"`; other values mean the frame) to be
+measured on the photo as its develop geometry frames it instead: orientation, crop, straighten,
+flips, lens profile and perspective, what the Source stage sees (a negative converter measuring
+inside the user's crop, say). The measurement still doesn't move with later crops; measuring again
+picks up a new one. Hosts without the field measure the frame. `plugin.list` shows it as
+`analyzeArea`.
+
+**Menu groups (ABI v1.1 proposal).** A choice parameter may carry `"groups"`, one name per option
+(`""` = not in a group): `{"type": "choice", "options": ["Generic", "Portra 400", "Superia 400"],
+"groups": ["", "Kodak", "Fujifilm"]}`. Develop ▸ Plug-in Filters shows each group as a collapsible
+section of the dropdown, in order of first appearance, the one holding the current choice open;
+options without a group stay at the top level, in place. A list of another length, or with a name
+that isn't 1-64 printable characters, is ignored (a flat menu), as hosts without the field do.
+`plugin.list` gives each grouped parameter's `groups`. The dropdown is widget
+`pluginFilterChoice:<uid>:<param>`.
+**Base tone (ABI v1.1 proposal).** A raw is toned after the Source stage: by its camera's own
+curve when the file has one, else by the default raw curve. A Source filter whose output is
+already a finished picture (a negative conversion with its own tone curve) may set
+`"baseTone": "neutral"` (default `"camera"`; other values mean the camera's): the photo is then
+shown as it is, as a JPEG would be, so the filter's tones aren't toned a second time. Contrast,
+Whites and Blacks still apply. Hosts without the field use their base tone. `plugin.list` shows it as
+`baseTone`.
 
 **Pixel scale.** A Source filter that reads neighbours (manifest `overlap` > 0: an unsharp mask,
 grain, a blur) would look different at each render size, its kernel spanning more of the photo in

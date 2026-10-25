@@ -12,11 +12,18 @@
 //! Play requires) and `apksigner`. The bundle is built from the same parts by `bundletool`
 //! (downloaded once, pinned by sha256) and signed with `jarsigner`.
 //!
+//! Two distributions differ only in the manifest ([`Store`]): the APKs are the GitHub build (`--store github`,
+//! the default), which may ask for "All files access" (`MANAGE_EXTERNAL_STORAGE`) to read picked folders in place;
+//! the bundle is always the Play build, which has neither that permission nor `requestLegacyExternalStorage` (Play
+//! allows All files access only for file managers, backup and similar apps). `--store play` makes the APKs the Play
+//! build too, to try it by sideloading.
+//!
 //! Signing: `ANDROID_KEYSTORE` (a keystore file), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`
 //! (default `upload`) and `ANDROID_KEY_PASSWORD` (default: the keystore's). Without them a debug
 //! key in `<target>/android/debug.keystore` signs the build (installable for testing; the Play
 //! Store refuses it), with a warning.
 
+use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -29,16 +36,64 @@ const TARGET_SDK: u32 = 36;
 const BUNDLETOOL_VERSION: &str = "1.18.1";
 const BUNDLETOOL_SHA256: &str = "675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c";
 
+/// Which distribution a manifest is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Store {
+    /// GitHub releases (sideloaded): may ask for All files access, so picked folders are read in place.
+    Github,
+    /// Google Play: no All files access; folders are copied, the camera roll goes through MediaStore.
+    Play,
+}
+
+impl Store {
+    fn parse(s: &str) -> Option<Store> {
+        match s {
+            "github" => Some(Store::Github),
+            "play" => Some(Store::Play),
+            _ => None,
+        }
+    }
+
+    /// The manifest template's per-distribution placeholders.
+    fn manifest_vars(self, vars: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+        let mut v = vars.clone();
+        let (perm, legacy) = match self {
+            Store::Github => {
+                (r#"<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />"#, r#"android:requestLegacyExternalStorage="true""#)
+            }
+            Store::Play => ("", ""),
+        };
+        v.insert("all_files_permission".into(), perm.into());
+        v.insert("legacy_storage".into(), legacy.into());
+        v
+    }
+}
+
 struct Options {
     abis: Vec<Abi>,
     aab: bool,
+    /// the distribution the APKs are for (the bundle is always [`Store::Play`])
+    store: Store,
     /// one APK per ABI instead of one holding them all
     split: bool,
     skip_build: bool,
+    /// `--version-code`: replaces the code derived from the version (a Play re-upload of the same version)
+    version_code: Option<u32>,
+}
+
+/// The largest version code Google Play accepts.
+const MAX_VERSION_CODE: u32 = 2_100_000_000;
+
+fn parse_version_code(v: &str) -> Result<u32, String> {
+    let n: u32 = v.trim().parse().map_err(|_| format!("--version-code: `{v}` is not a positive whole number"))?;
+    if n == 0 || n > MAX_VERSION_CODE {
+        return Err(format!("--version-code: {n} is out of range (1 to {MAX_VERSION_CODE})"));
+    }
+    Ok(n)
 }
 
 fn parse(args: &[&str]) -> Result<Options, String> {
-    let mut o = Options { abis: Vec::new(), aab: false, split: false, skip_build: false };
+    let mut o = Options { abis: Vec::new(), aab: false, store: Store::Github, split: false, skip_build: false, version_code: None };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match *a {
@@ -50,8 +105,16 @@ fn parse(args: &[&str]) -> Result<Options, String> {
                 }
             }
             "--aab" => o.aab = true,
+            "--store" => {
+                let v = it.next().ok_or("--store needs github or play")?;
+                o.store = Store::parse(v).ok_or_else(|| format!("--store: unknown `{v}` (github or play)"))?;
+            }
             "--split" => o.split = true,
             "--skip-build" => o.skip_build = true,
+            "--version-code" => {
+                let v = it.next().ok_or("--version-code needs a number")?;
+                o.version_code = Some(parse_version_code(v)?);
+            }
             other => return Err(format!("android package: unknown option `{other}`")),
         }
     }
@@ -123,7 +186,8 @@ fn path_with_java(java_home: Option<std::ffi::OsString>, path: Option<std::ffi::
 }
 
 /// `versionCode`: grows with every release, a prerelease below its release
-/// (`1.2.3-rc4` → 1_02_03_04, `1.2.3` → 1_02_03_99).
+/// (`1.2.3-rc4` → 1_02_03_04, `1.2.3` → 1_02_03_50). Prereleases use 01–49; 51–99 are left free for
+/// re-uploads of the same release to Google Play (`--version-code`), since every upload consumes its code.
 pub fn version_code(version: &str) -> Result<u32, String> {
     let (main, pre) = version.split_once('-').map_or((version, None), |(m, p)| (m, Some(p)));
     let nums: Vec<u32> =
@@ -133,10 +197,10 @@ pub fn version_code(version: &str) -> Result<u32, String> {
         return Err(format!("version `{version}`: too large for a versionCode"));
     }
     let build = match pre {
-        None => 99,
+        None => 50,
         Some(p) => {
             let n: u32 = p.trim_start_matches(|c: char| !c.is_ascii_digit()).parse().unwrap_or(0);
-            n.clamp(1, 98)
+            n.clamp(1, 49)
         }
     };
     Ok(major * 1_000_000 + minor * 10_000 + patch * 100 + build)
@@ -276,7 +340,10 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     let brand = brand::Brand::current()?;
     let vars = dist::vars(&root, &brand)?;
     let version = vars.get("version").cloned().ok_or("no version")?;
-    let code = version_code(&version)?;
+    let code = match opts.version_code {
+        Some(c) => c,
+        None => version_code(&version)?,
+    };
     let binary = brand.req("binary")?.to_string();
 
     let sdk = sdk_root().ok_or("android: the Android SDK was not found (set ANDROID_HOME)")?;
@@ -317,19 +384,25 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     }
 
     // 2. the manifest and activity, from packaging/android
-    let render = |rel: &str| -> Result<PathBuf, String> {
+    let render = |rel: &str, dest_rel: &str, vars: &BTreeMap<String, String>| -> Result<PathBuf, String> {
         let src = root.join("packaging/android").join(format!("{rel}.in"));
         let text = std::fs::read_to_string(&src).map_err(|e| format!("{}: {e}", src.display()))?;
-        let text = brand::render(&text, &vars).map_err(|e| format!("{}: {e}", src.display()))?;
-        let dest = work.join("gen").join(rel);
+        let text = brand::render(&text, vars).map_err(|e| format!("{}: {e}", src.display()))?;
+        let dest = work.join("gen").join(dest_rel);
         if let Some(d) = dest.parent() {
             mkdir(d)?;
         }
         std::fs::write(&dest, text).map_err(|e| format!("{}: {e}", dest.display()))?;
         Ok(dest)
     };
-    let manifest = render("AndroidManifest.xml")?;
-    let activity = render("java/MainActivity.java")?;
+    let manifest_for = |store: Store| {
+        let dir = match store {
+            Store::Github => "github",
+            Store::Play => "play",
+        };
+        render("AndroidManifest.xml", &format!("{dir}/AndroidManifest.xml"), &store.manifest_vars(&vars))
+    };
+    let activity = render("java/MainActivity.java", "java/MainActivity.java", &vars)?;
 
     // 3. the activity: javac → d8
     let classes = work.join("classes");
@@ -352,7 +425,8 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     let mut c = sdk_tool(tools.join("aapt2"));
     c.args(["compile", "--dir"]).arg(&res).arg("-o").arg(&compiled);
     step(c, "aapt2 compile")?;
-    let link = |proto: bool, dest: &Path| -> Result<(), String> {
+    let link = |store: Store, proto: bool, dest: &Path| -> Result<(), String> {
+        let manifest = manifest_for(store)?;
         let mut c = sdk_tool(tools.join("aapt2"));
         c.args(["link", "-o"]).arg(dest).arg("-I").arg(&jar).arg("--manifest").arg(&manifest).args([
             "--min-sdk-version",
@@ -377,7 +451,7 @@ pub fn package(args: &[&str]) -> Result<(), String> {
 
     // 5. the APK(s): linked resources + dex + native libraries, aligned and signed
     let linked = work.join("linked.apk");
-    link(false, &linked)?;
+    link(opts.store, false, &linked)?;
     for (name, dirs) in apk_outputs(&binary, &version, &opts.abis, opts.split) {
         let mut extra = vec![("classes.dex".to_string(), dex.join("classes.dex"))];
         extra.extend(libs.iter().filter(|(dir, _)| dirs.contains(dir)).map(|(dir, so)| (format!("lib/{dir}/libapp.so"), so.clone())));
@@ -406,7 +480,7 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     // 6. the bundle (Play Store): the same parts in bundletool's module layout
     if opts.aab {
         let proto = work.join("proto.apk");
-        link(true, &proto)?;
+        link(Store::Play, true, &proto)?;
         let mut extra = vec![("dex/classes.dex".to_string(), dex.join("classes.dex"))];
         extra.extend(libs.iter().map(|(dir, so)| (format!("lib/{dir}/libapp.so"), so.clone())));
         let module = work.join("base.zip");
@@ -465,6 +539,10 @@ mod tests {
         ];
         let codes: Vec<u32> = order.iter().map(|v| version_code(v).unwrap()).collect();
         assert!(codes.windows(2).all(|w| w[0] < w[1]), "{codes:?}");
+        // a release leaves codes free above it, below the next version's first prerelease
+        let (release, next) = (version_code("26.43.5").unwrap(), version_code("26.43.6-rc1").unwrap());
+        assert!(next - release > 10, "{release} {next}");
+        assert!(version_code("26.43.6-rc99").unwrap() < version_code("26.43.6").unwrap());
     }
 
     #[test]
@@ -484,6 +562,30 @@ mod tests {
     }
 
     #[test]
+    fn the_play_manifest_never_asks_for_all_files_access() {
+        let template = std::fs::read_to_string(root().join("packaging/android/AndroidManifest.xml.in")).unwrap();
+        let mut vars = BTreeMap::new();
+        for k in ["android_package", "display_name"] {
+            vars.insert(k.to_string(), "x".to_string());
+        }
+        let play = brand::render(&template, &Store::Play.manifest_vars(&vars)).unwrap();
+        let github = brand::render(&template, &Store::Github.manifest_vars(&vars)).unwrap();
+        // only comments may name them in the Play build
+        let elements = |m: &str| m.split("<!--").map(|c| c.split_once("-->").map_or(c, |(_, rest)| rest)).collect::<String>();
+        for gone in ["MANAGE_EXTERNAL_STORAGE", "requestLegacyExternalStorage"] {
+            assert!(!elements(&play).contains(gone), "{gone} in the Play manifest");
+            assert!(elements(&github).contains(gone), "{gone} missing from the GitHub manifest");
+        }
+        // the camera roll needs the photo permissions in both
+        for both in ["READ_MEDIA_IMAGES", "READ_MEDIA_VISUAL_USER_SELECTED"] {
+            assert!(elements(&play).contains(both) && elements(&github).contains(both), "{both}");
+        }
+        assert_eq!(parse(&["--aab"]).unwrap().store, Store::Github);
+        assert_eq!(parse(&["--store", "play"]).unwrap().store, Store::Play);
+        assert!(parse(&["--store", "amazon"]).is_err());
+    }
+
+    #[test]
     fn sdk_tools_find_the_jdk_first_on_path() {
         let home = std::env::temp_dir().join("jdk");
         let path = path_with_java(Some(home.clone().into()), Some(std::env::join_paths([std::env::temp_dir().join("usr-bin")]).unwrap())).unwrap();
@@ -491,6 +593,17 @@ mod tests {
         assert_eq!(dirs, vec![home.join("bin"), std::env::temp_dir().join("usr-bin")]);
         assert_eq!(path_with_java(None, Some("x".into())), None);
         assert_eq!(path_with_java(Some("".into()), Some("x".into())), None);
+    }
+
+    #[test]
+    fn version_code_override_is_validated() {
+        let code = parse(&["--aab", "--version-code", "26430600"]).unwrap().version_code.unwrap();
+        assert!(code > version_code("26.43.5").unwrap() && code < version_code("26.43.6-rc1").unwrap());
+        assert_eq!(parse(&["--aab"]).unwrap().version_code, None);
+        for bad in ["0", "-5", "abc", "2100000001", "99999999999", ""] {
+            assert!(parse(&["--version-code", bad]).is_err(), "{bad}");
+        }
+        assert!(parse(&["--version-code"]).is_err());
     }
 
     #[test]

@@ -441,35 +441,48 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let mut actions: Vec<(&'static str, Value)> = Vec::new();
     let mut inspect: Option<String> = None;
     if s.open {
-        let mut open = true;
-        egui::Window::new(tr("Plug-in Manager")).id(key()).open(&mut open).default_width(560.0).vscroll(true).show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(tr("Module (.wasm):"));
-                let r = ui.add(egui::TextEdit::singleline(&mut s.path).desired_width(320.0));
-                crate::access::label(&r, "Module (.wasm):");
-                if ui.button(tr("Install…")).clicked() {
-                    inspect = Some(s.path.trim().to_string());
+        let open = !crate::dialog_frame::esc_closes(app.ui.dialog.is_some(), ctx);
+        let mut closed = false;
+        egui::Window::new(tr("Plug-in Manager"))
+            .id(key())
+            .title_bar(false)
+            .frame(crate::dialog_frame::card_frame(ctx))
+            .default_width(560.0)
+            .vscroll(true)
+            .show(ctx, |ui| {
+                if crate::dialog_frame::card_header(ui, tr("Plug-in Manager"), Some("plugin-manager:close")) {
+                    closed = true;
+                }
+                ui.horizontal(|ui| {
+                    ui.label(tr("Module (.wasm):"));
+                    let r = ui.add(egui::TextEdit::singleline(&mut s.path).desired_width(320.0));
+                    crate::access::label(&r, "Module (.wasm):");
+                    if ui.button(tr("Install…")).clicked() {
+                        inspect = Some(s.path.trim().to_string());
+                    }
+                });
+                if let Some(dir) = list["dir"].as_str() {
+                    ui.weak(format!("{} {dir}", tr("Installed in")));
+                }
+                for f in list["failed"].as_array().into_iter().flatten() {
+                    ui.colored_label(
+                        ui.visuals().error_fg_color,
+                        format!("{}: {}", f["file"].as_str().unwrap_or(""), f["error"].as_str().unwrap_or("")),
+                    );
+                }
+                if !s.message.is_empty() {
+                    ui.colored_label(ui.visuals().warn_fg_color, &s.message);
+                }
+                ui.separator();
+                let plugins = list["plugins"].as_array().cloned().unwrap_or_default();
+                if plugins.is_empty() {
+                    ui.weak(tr("No plug-ins installed."));
+                }
+                for p in &plugins {
+                    plugin_ui(ui, p, &mut actions);
                 }
             });
-            if let Some(dir) = list["dir"].as_str() {
-                ui.weak(format!("{} {dir}", tr("Installed in")));
-            }
-            for f in list["failed"].as_array().into_iter().flatten() {
-                ui.colored_label(ui.visuals().error_fg_color, format!("{}: {}", f["file"].as_str().unwrap_or(""), f["error"].as_str().unwrap_or("")));
-            }
-            if !s.message.is_empty() {
-                ui.colored_label(ui.visuals().warn_fg_color, &s.message);
-            }
-            ui.separator();
-            let plugins = list["plugins"].as_array().cloned().unwrap_or_default();
-            if plugins.is_empty() {
-                ui.weak(tr("No plug-ins installed."));
-            }
-            for p in &plugins {
-                plugin_ui(ui, p, &mut actions);
-            }
-        });
-        s.open = open;
+        s.open = open && !closed;
     }
     if let Some(path) = inspect {
         s.message.clear();
@@ -515,44 +528,52 @@ fn approval_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static s
     let had = if installed.is_object() { installed["granted"].clone() } else { Value::Null };
     let mut keep = true;
     let window_id = key().with("approve");
-    let shown = egui::Window::new(tr("Install Plug-in")).id(window_id).collapsible(false).resizable(false).show(ctx, |ui| {
-        let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
-        layout.body(ui, |ui| {
-            ui.strong(format!("{} {}", m["name"].as_str().unwrap_or(""), m["version"].as_str().unwrap_or("")));
-            ui.weak(format!("{} · {}", m["id"].as_str().unwrap_or(""), m["author"].as_str().unwrap_or("")));
-            if installed.is_object() {
-                ui.label(format!("{} {}", tr("Updates the installed version"), installed["version"].as_str().unwrap_or("")));
-            }
-            ui.separator();
-            let req = &m["permissions"];
-            let rows = permission_rows(req);
-            if rows.is_empty() {
-                ui.label(tr("It asks for no permissions: it can only keep its own data."));
-            } else {
-                ui.label(tr("It asks for these permissions. Tick the ones you allow:"));
-            }
-            for row in rows {
-                let mut on = row.granted(&pending.grant);
-                let new = !row.granted(&had);
-                let text = if new && installed.is_object() { format!("{}  ({})", row.label(), tr("new")) } else { row.label() };
-                if ui.checkbox(&mut on, text).changed() {
-                    row.set(&mut pending.grant, on);
+    let shown = egui::Window::new(tr("Install Plug-in"))
+        .id(window_id)
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            crate::dialog_frame::card_header(ui, tr("Install Plug-in"), None);
+            let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
+            layout.body(ui, |ui| {
+                ui.strong(format!("{} {}", m["name"].as_str().unwrap_or(""), m["version"].as_str().unwrap_or("")));
+                ui.weak(format!("{} · {}", m["id"].as_str().unwrap_or(""), m["author"].as_str().unwrap_or("")));
+                if installed.is_object() {
+                    ui.label(format!("{} {}", tr("Updates the installed version"), installed["version"].as_str().unwrap_or("")));
                 }
-            }
-        });
-        layout.footer(ui, |ui| {
-            ui.separator();
-            ui.horizontal(|ui| {
-                if ui.button(tr("Install")).clicked() {
-                    actions.push(("plugin.install", json!({"path": pending.path, "grant": pending.grant})));
-                    keep = false;
+                ui.separator();
+                let req = &m["permissions"];
+                let rows = permission_rows(req);
+                if rows.is_empty() {
+                    ui.label(tr("It asks for no permissions: it can only keep its own data."));
+                } else {
+                    ui.label(tr("It asks for these permissions. Tick the ones you allow:"));
                 }
-                if ui.button(tr("Cancel")).clicked() {
-                    keep = false;
+                for row in rows {
+                    let mut on = row.granted(&pending.grant);
+                    let new = !row.granted(&had);
+                    let text = if new && installed.is_object() { format!("{}  ({})", row.label(), tr("new")) } else { row.label() };
+                    if ui.checkbox(&mut on, text).changed() {
+                        row.set(&mut pending.grant, on);
+                    }
                 }
             });
+            layout.footer(ui, |ui| {
+                ui.separator();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    use crate::button::{Button, Kind};
+                    if Button::new("Install").kind(Kind::Primary).widget("button:pluginInstall").show(ui).clicked() {
+                        actions.push(("plugin.install", json!({"path": pending.path, "grant": pending.grant})));
+                        keep = false;
+                    }
+                    if Button::new("Cancel").widget("button:pluginInstallCancel").show(ui).clicked() {
+                        keep = false;
+                    }
+                });
+            });
         });
-    });
     crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
     if keep {
         s.pending = Some(pending);
@@ -622,22 +643,30 @@ fn dialog_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static str
     };
     let Some(decl) = decl else { return };
     let mut keep = true;
-    egui::Window::new(decl.label.clone()).id(key().with("dialog")).collapsible(false).show(ctx, |ui| {
-        for f in &decl.dialog {
-            if let Ok(f) = serde_json::to_value(f) {
-                field_ui(ui, &f, &mut values);
+    egui::Window::new(decl.label.clone())
+        .id(key().with("dialog"))
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
+        .collapsible(false)
+        .show(ctx, |ui| {
+            crate::dialog_frame::card_header(ui, &decl.label, None);
+            for f in &decl.dialog {
+                if let Ok(f) = serde_json::to_value(f) {
+                    field_ui(ui, &f, &mut values);
+                }
             }
-        }
-        ui.horizontal(|ui| {
-            if ui.button(tr("Run")).clicked() {
-                actions.push(("plugin.run", json!({"plugin": plugin, "command": command, "args": values})));
-                keep = false;
-            }
-            if ui.button(tr("Cancel")).clicked() {
-                keep = false;
-            }
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                use crate::button::{Button, Kind};
+                if Button::new("Run").kind(Kind::Primary).widget("button:pluginRun").show(ui).clicked() {
+                    actions.push(("plugin.run", json!({"plugin": plugin, "command": command, "args": values})));
+                    keep = false;
+                }
+                if Button::new("Cancel").widget("button:pluginRunCancel").show(ui).clicked() {
+                    keep = false;
+                }
+            });
         });
-    });
     if keep {
         s.dialog = Some((plugin, command, values));
     }

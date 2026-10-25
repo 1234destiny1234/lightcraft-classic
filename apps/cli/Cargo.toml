@@ -18,6 +18,9 @@ lcc-brand = { workspace = true }
 lcc-engine = { workspace = true }
 lcc-denoise = { workspace = true }
 lcc-camdb = { workspace = true }
+lcc-colourfit = { workspace = true }
+lcc-raw = { workspace = true }
+chrono = { workspace = true }
 lcc-sysmem = { workspace = true }
 lcc-mcp = { workspace = true }
 log = { workspace = true }

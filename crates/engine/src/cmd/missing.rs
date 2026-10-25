@@ -90,30 +90,124 @@ fn stored_hash(p: &Photo) -> Option<&str> {
     p.content_hash.as_deref().map(|h| h.split(':').next().unwrap_or(h)).filter(|h| !h.is_empty())
 }
 
-/// The content hash of the file at `path` (as import computes it), if it can be read.
+/// The content hash of the file at `path` (as import computes it), if it can be read. Read in
+/// pieces: the file is whatever is on the disk, of any size.
 fn file_hash(path: &str) -> Option<String> {
-    std::fs::read(path).ok().map(|b| lcc_preview::hash_bytes(&b).to_string())
+    hash_reader(std::fs::File::open(path).ok()?)
+}
+
+/// The content hash of what `r` gives, read in pieces (the hash import computes of the whole).
+fn hash_reader(mut r: impl std::io::Read) -> Option<String> {
+    let mut hasher = lcc_preview::Hasher128::new();
+    let mut piece = vec![0u8; 1 << 16];
+    loop {
+        match r.read(&mut piece) {
+            Ok(0) => return Some(hasher.finish().to_string()),
+            Ok(n) => {
+                hasher.update(piece.get(..n)?);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A reader that gives its bytes a few at a time, and an interruption in between.
+    struct Trickle<'a>(&'a [u8], bool);
+
+    impl std::io::Read for Trickle<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.1 = !self.1;
+            if self.1 {
+                return Err(std::io::ErrorKind::Interrupted.into());
+            }
+            let n = self.0.len().min(buf.len()).min(7);
+            buf[..n].copy_from_slice(&self.0[..n]);
+            self.0 = &self.0[n..];
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn a_hash_read_in_pieces_is_the_hash_of_the_whole() {
+        // longer than one piece, so the read loop runs more than once
+        let bytes: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+        let whole = lcc_preview::hash_bytes(&bytes).to_string();
+        assert_eq!(hash_reader(bytes.as_slice()).as_deref(), Some(whole.as_str()));
+        assert_eq!(hash_reader(Trickle(&bytes[..1000], false)).as_deref(), Some(lcc_preview::hash_bytes(&bytes[..1000]).to_string().as_str()));
+        assert_eq!(hash_reader(std::io::empty()).as_deref(), Some(lcc_preview::hash_bytes(&[]).to_string().as_str()));
+    }
+
+    /// A scratch folder that goes away with the test, however it ends.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_file_hash_is_the_import_hash_and_a_missing_file_has_none() {
+        let dir = Scratch(std::env::temp_dir().join(format!("lc-file-hash-{}", std::process::id())));
+        let _ = std::fs::remove_dir_all(&dir.0);
+        std::fs::create_dir_all(&dir.0).unwrap();
+        let f = dir.0.join("a.bin");
+        std::fs::write(&f, b"pixels").unwrap();
+        assert_eq!(file_hash(f.to_str().unwrap()), Some(lcc_preview::hash_bytes(b"pixels").to_string()));
+        assert_eq!(file_hash(dir.0.join("nope").to_str().unwrap()), None);
+    }
 }
 
 /// An in-scope photo ([`checked_path`]) as Find Missing Photos sees it: its file, the size and
-/// content hash the library knows (0 / `None` = unknown).
+/// content hash the library knows (0 / `None` = unknown), and the photo whose file it shares
+/// (its own id, or the original of a virtual copy).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FindCandidate {
     pub id: PhotoId,
+    pub original: PhotoId,
     pub path: String,
     pub size: u64,
     pub hash: Option<String>,
 }
 
 /// Every in-scope photo, for [`plan_find_missing`]: the missing ones are looked for, and no
-/// photo's file is used for another. No file-system calls, so the app takes this snapshot on the
+/// photo's file is used for another, except a photo and its virtual copies. No file-system calls, so the app takes this snapshot on the
 /// UI thread and plans on a worker without holding the session.
 pub fn find_candidates(cat: &Catalog) -> Vec<FindCandidate> {
     cat.photos()
         .filter_map(|p| {
-            checked_path(p).map(|f| FindCandidate { id: p.id, path: f.to_string(), size: p.file_size, hash: stored_hash(p).map(str::to_string) })
+            checked_path(p).map(|f| FindCandidate {
+                id: p.id,
+                original: p.copy_of.unwrap_or(p.id),
+                path: f.to_string(),
+                size: p.file_size,
+                hash: stored_hash(p).map(str::to_string),
+            })
         })
         .collect()
+}
+
+/// Which originals' photos use each file: a photo and its virtual copies share one (the
+/// `original` of [`FindCandidate`]).
+type FileOwners = HashMap<String, HashSet<PhotoId>>;
+
+fn file_owners(candidates: &[FindCandidate]) -> FileOwners {
+    let mut owners = FileOwners::new();
+    for c in candidates {
+        owners.entry(c.path.clone()).or_default().insert(c.original);
+    }
+    owners
+}
+
+/// Whether `file` is free for a photo of `original`: no photo uses it, or only that original and
+/// its virtual copies do.
+fn free_for(owners: &FileOwners, file: &str, original: PhotoId) -> bool {
+    owners.get(file).is_none_or(|o| o.iter().all(|x| *x == original))
 }
 
 /// How a missing photo's file was recognised.
@@ -197,13 +291,24 @@ impl FindPlan {
     }
 }
 
+/// How Find Missing compares file names: the part after the last `/` or `\`, in lower case. A
+/// library made on Windows keeps Windows paths, whose `\` isn't a separator to `Path` on macOS or
+/// Linux. Files on disk are named by the same rule, so a macOS or Linux file name that holds a
+/// `\` (`a\b.jpg`) still meets its photo, and a `b.jpg` beside it makes that match ambiguous
+/// rather than a guess. With no `a\b.jpg` there, such a photo may be found as `b.jpg`, if the
+/// size on record agrees.
+fn name_key(path: &str) -> String {
+    path.rsplit(['/', '\\']).next().unwrap_or_default().to_lowercase()
+}
+
 /// The file-system half of Find Missing Photos: which `candidates` are gone, and which file in
 /// `folder` (recursively) is each one's. Touches only the disk — never the session — so the app
 /// runs it on a worker thread (walking a big folder on a network share and hashing look-alikes
 /// takes a while) and relinks the result with `library.findMissing {found, missing, ambiguous}`.
 ///
 /// Matching, per photo:
-/// 1. a file with the same name (any letter case), the same size and the same content hash;
+/// 1. a file with the same name ([`name_key`]: any letter case), the same size and the same
+///    content hash;
 /// 2. renamed: a file of the same size with the same content hash (only same-size files are
 ///    read, so this stays cheap);
 /// 3. without a hash to confirm (or the file was edited in place): the one file with the same
@@ -211,7 +316,8 @@ impl FindPlan {
 ///    `ambiguous`, never guessed (two cameras' `IMG_0001.CR3` of one size are different photos).
 ///
 /// Files that are already some photo's original, or that another photo was just matched with,
-/// are not used.
+/// are not used, except by a virtual copy of that photo or by the photo a copy was made from
+/// (they share one file).
 pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::result::Result<FindPlan, String> {
     if !Path::new(folder).is_dir() {
         return Err(format!("{folder}: not a folder"));
@@ -223,28 +329,28 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
     if lost.is_empty() {
         return Ok(FindPlan::default());
     }
-    let in_use: HashSet<&str> = candidates.iter().map(|c| c.path.as_str()).collect();
+    let mut owners = file_owners(candidates);
     // file name (lower case) → candidate paths; size → paths (filled lazily)
     let mut by_name: HashMap<String, Vec<String>> = HashMap::new();
-    let files: Vec<String> = crate::import::expand(&[folder.to_string()], None).into_iter().filter(|f| !in_use.contains(f.as_str())).collect();
+    let files: Vec<String> = crate::import::expand(&[folder.to_string()], None);
     for f in &files {
-        if let Some(n) = Path::new(f).file_name() {
-            by_name.entry(n.to_string_lossy().to_lowercase()).or_default().push(f.clone());
+        let name = name_key(f);
+        if !name.is_empty() {
+            by_name.entry(name).or_default().push(f.clone());
         }
     }
     let mut by_size: Option<HashMap<u64, Vec<String>>> = None;
     let mut hashes: HashMap<String, Option<String>> = HashMap::new();
     let mut hash_of = |f: &str| hashes.entry(f.to_string()).or_insert_with(|| file_hash(f)).clone();
     let size_of = |f: &str| std::fs::metadata(f).map(|m| m.len()).ok();
-    let mut used: HashSet<String> = HashSet::new();
     let mut plan = FindPlan::default();
     for c in &lost {
-        let name = Path::new(&c.path).file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let name = name_key(&c.path);
         let size = c.size;
         let hash = c.hash.as_deref();
         let named: Vec<&String> = by_name
             .get(&name)
-            .map(|v| v.iter().filter(|f| !used.contains(*f) && (size == 0 || size_of(f) == Some(size))).collect())
+            .map(|v| v.iter().filter(|f| free_for(&owners, f, c.original) && (size == 0 || size_of(f) == Some(size))).collect())
             .unwrap_or_default();
         // 1. same name and size, confirmed by the content hash
         let mut hit: Option<(String, MatchBy)> =
@@ -265,7 +371,7 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
             });
             hit = sizes
                 .get(&size)
-                .and_then(|v| v.iter().find(|f| !used.contains(*f) && hash_of(f).as_deref() == Some(h)))
+                .and_then(|v| v.iter().find(|f| free_for(&owners, f, c.original) && hash_of(f).as_deref() == Some(h)))
                 .map(|f| (f.clone(), MatchBy::Content));
         }
         // 3. same name and size only (no hash, or the file was edited in place): one candidate
@@ -281,7 +387,7 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
             }
         }
         let Some((path, by)) = hit else { continue };
-        used.insert(path.clone());
+        owners.entry(path.clone()).or_default().insert(c.original);
         plan.found.push(FoundFile { id: c.id, from: c.path.clone(), to: path, by });
     }
     plan.missing = lost.len() - plan.found.len();
@@ -291,23 +397,25 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
 /// Relink what [`plan_find_missing`] found, in one undoable step, re-checked against the
 /// catalog as it is now (the search may have run on a worker while the library changed): a
 /// photo that no longer points at the path it was missing from (relinked, removed) is left
-/// alone, and a file that is now some photo's original — or that the plan names twice — is not
-/// used (that photo stays missing). `missing` is the plan's count, corrected for what changed
+/// alone, and a file that is now an unrelated photo's original — or that the plan names for two
+/// unrelated photos — is not used (that photo stays missing). A photo and its virtual copies may
+/// share one. `missing` is the plan's count, corrected for what changed
 /// among the photos the plan names.
 fn commit_find(s: &mut Session, plan: FindPlan) -> Result<Value> {
     let still_at = |cat: &Catalog, id: PhotoId, from: &str| cat.photo(id).and_then(|p| checked_path(p)) == Some(from);
-    let mut in_use: HashSet<String> = candidates(&s.catalog).into_iter().collect();
+    let mut owners = file_owners(&find_candidates(&s.catalog));
     let mut found = Vec::new();
     let mut missing = plan.missing;
     for f in plan.found {
         if !still_at(&s.catalog, f.id, &f.from) {
             continue;
         }
-        if in_use.contains(&f.to) {
+        let original = s.catalog.photo(f.id).and_then(|p| p.copy_of).unwrap_or(f.id);
+        if !free_for(&owners, &f.to, original) {
             missing += 1;
             continue;
         }
-        in_use.insert(f.to.clone());
+        owners.entry(f.to.clone()).or_default().insert(original);
         found.push(f);
     }
     let planned = plan.ambiguous.len();

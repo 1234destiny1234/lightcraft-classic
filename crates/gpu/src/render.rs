@@ -696,9 +696,11 @@ pub fn render(
 
     // 5. per-pixel stage
     let mut fp = FinishParams::new(s, &plan.frame, info, w, h, plan.px_per_long, prep.air, req.space);
+    // soft proofing as the CPU's `finish` sets it up (an output-device table never gets here: see `render`)
+    fp.proof = req.proof.map(|pr| pr.params(req.space));
     // (a deep render is in the output space, as on the CPU: `finish::finish_deep`)
     if let Some(d) = req.display.as_ref().filter(|_| !deep) {
-        fp.for_display(d, None);
+        fp.for_display(d, req.proof);
     }
     let present = Present {
         clarity: prep.clarity.is_some(),
@@ -1125,7 +1127,19 @@ fn masks(cx: &mut Cx<'_>, lin: &Buf, prep: &Prep, plan: &Plan<'_>, host: &mut Ho
                     Some(3)
                 }
                 MaskShape::Brush { strokes } => {
-                    let dabs: Vec<_> = strokes.iter().map(|st| lcc_pipeline::masks::brush_dabs(st, frame, w, h)).collect();
+                    // The kernel takes at most MAX_DABS across the whole mask, so no more than
+                    // that (plus one, to tell "at it" from "past it") is ever built: each stroke
+                    // may otherwise construct two million dabs before the sum below rejects them
+                    // all (#1520).
+                    let mut room = MAX_DABS + 1;
+                    let dabs: Vec<_> = strokes
+                        .iter()
+                        .map(|st| {
+                            let d = lcc_pipeline::masks::brush_dabs_within(st, frame, w, h, room);
+                            room -= d.dabs.len().min(room);
+                            d
+                        })
+                        .collect();
                     // pen pressure varies radius and flow per dab, which the kernel doesn't take: the CPU rasterizes it
                     if dabs.iter().map(|d| d.dabs.len()).sum::<usize>() > MAX_DABS || dabs.iter().any(|d| !d.pressure.is_empty()) {
                         None
@@ -1186,7 +1200,20 @@ fn masks(cx: &mut Cx<'_>, lin: &Buf, prep: &Prep, plan: &Plan<'_>, host: &mut Ho
             };
             let cbuf = plane.as_ref().unwrap_or(&comp_plane);
             let k = [n as u32, 0, mi as u32, op];
+            // An inverted mask is inverted again at the end, so combine on its visible side:
+            // invert the plane, combine, invert back. Op 0 is the plain copy of the first
+            // component (see `combine` in mask.wgsl); ops 1..=3 are add, subtract, intersect.
+            // `finalize` params: [n, 0, mask index, invert = 1, amount = 1.0 (no scaling)];
+            // it reads and writes only `alpha`.
+            let flip = m.invert && op != 0;
+            let fk = [n as u32, 0, mi as u32, 1, 1f32.to_bits()];
+            if flip {
+                cx.run("finalize", &fk, &[None, None, None, None, Some(&alpha)], groups1(n));
+            }
             cx.run("combine", &k, &[None, None, None, Some(cbuf), Some(&alpha)], groups1(n));
+            if flip {
+                cx.run("finalize", &fk, &[None, None, None, None, Some(&alpha)], groups1(n));
+            }
         }
         let amt = (m.adjust.amount / 100.0) as f32;
         cx.run(

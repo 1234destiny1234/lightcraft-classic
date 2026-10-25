@@ -344,10 +344,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let mut close = false;
     let mut action: Option<(String, Value)> = None;
     let t = crate::theme::Tokens::get(ctx);
-    let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(16, 12));
+    let frame = crate::dialog_frame::card_frame(ctx);
     let window_id = egui::Id::new("catalog-dialog");
     let shown = egui::Window::new(crate::i18n::tr(title))
         .id(window_id)
+        .title_bar(false)
         .order(if welcoming { egui::Order::Foreground } else { egui::Order::Middle })
         .collapsible(false)
         .resizable(false)
@@ -356,6 +357,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         .default_width(440.0)
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
+            crate::dialog_frame::card_header(ui, crate::i18n::tr(title), None);
             let dim = |s: &str| egui::RichText::new(crate::i18n::tr(s)).color(t.text_dim);
             // capped to the screen; the buttons are part of each variant's content, so they scroll
             // with it in a window too short for the whole dialog

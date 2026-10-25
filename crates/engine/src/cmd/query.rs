@@ -1,6 +1,8 @@
 //! Read-only queries (not journaled): catalog, photos, develop state, controls, presets, albums.
 
-use lcc_catalog::{Album, Photo, PhotoId};
+use std::collections::HashMap;
+
+use lcc_catalog::{Album, AlbumId, Photo, PhotoId};
 use lcc_develop::{CONTROLS, controls};
 use serde_json::{Value, json};
 
@@ -36,9 +38,9 @@ pub fn photo_summary(p: &Photo) -> Value {
 /// instead of overflowing the stack.
 const MAX_ALBUM_DEPTH: usize = 64;
 
-fn album_json(a: &Album, all: &[Album], cat: &lcc_catalog::Catalog, depth: usize) -> Value {
+fn album_json(a: &Album, all: &[Album], counts: &HashMap<AlbumId, usize>, cat: &lcc_catalog::Catalog, depth: usize) -> Value {
     let children: Vec<Value> = if depth < MAX_ALBUM_DEPTH {
-        all.iter().filter(|c| c.parent == Some(a.id)).map(|c| album_json(c, all, cat, depth + 1)).collect()
+        all.iter().filter(|c| c.parent == Some(a.id)).map(|c| album_json(c, all, counts, cat, depth + 1)).collect()
     } else {
         Vec::new()
     };
@@ -46,7 +48,7 @@ fn album_json(a: &Album, all: &[Album], cat: &lcc_catalog::Catalog, depth: usize
         "id": a.id.0,
         "name": a.name,
         "folder": a.folder,
-        "count": cat.album_count(a.id),
+        "count": counts.get(&a.id).copied().unwrap_or(0),
         "cover": a.cover.map(|c| c.0),
         "children": children,
     });
@@ -170,7 +172,9 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         cmd!(query "albums.list", "List Albums", [], None, "{}", always, |s, _| {
             let all: Vec<Album> = s.catalog.albums().cloned().collect();
-            Ok(Value::Array(all.iter().filter(|a| a.parent.is_none()).map(|a| album_json(a, &all, &s.catalog, 0)).collect()))
+            // every album counted in one pass, so a smart album tested by others is worked out once
+            let counts = lcc_catalog::tally::AlbumTally::of(&s.catalog);
+            Ok(Value::Array(all.iter().filter(|a| a.parent.is_none()).map(|a| album_json(a, &all, counts.counts(), &s.catalog, 0)).collect()))
         }),
         cmd!(query "photo.inspect", "Inspect Photo", [], None, "{id?}", always, |s, p| {
             let id = photo_arg(s, p, "photo.inspect")?;
@@ -225,6 +229,26 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         cmd!(query "presets.list", "List Presets", [], None, "{}", always, |s, _| {
             Ok(Value::Array(s.presets.iter().map(|p| json!({"id": p.id, "name": p.name, "group": p.group, "favorite": p.favorite, "builtin": p.builtin})).collect()))
+        }),
+        cmd!(query "presets.folders", "List Preset Folders", [], None, "{} — all preset folders (user, built-in, and empty folders)", always, |s, _| {
+            let mut set = std::collections::BTreeSet::new();
+            for f in &s.preset_folders {
+                set.insert(f.clone());
+                let mut cur = f.as_str();
+                while let Some((par, _)) = cur.rsplit_once('/') {
+                    set.insert(par.to_string());
+                    cur = par;
+                }
+            }
+            for p in s.presets.iter() {
+                set.insert(p.group.clone());
+                let mut cur = p.group.as_str();
+                while let Some((par, _)) = cur.rsplit_once('/') {
+                    set.insert(par.to_string());
+                    cur = par;
+                }
+            }
+            Ok(Value::Array(set.into_iter().map(Value::String).collect()))
         }),
         cmd!(query "profiles.list", "List Profiles", [], None, "{} — every profile (built-in, then imported LUTs marked `imported`) with its group and favourite flag", always, |s, _| {
             let favorite = |id: &str| s.profile_favorites.iter().any(|f| f == id);

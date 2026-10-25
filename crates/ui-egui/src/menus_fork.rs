@@ -21,15 +21,20 @@ pub(super) fn commands() -> impl Iterator<Item = &'static UiCommand> {
         .chain(crate::timelapse_ui::COMMANDS)
         .chain(crate::panels::filterbar::COMMANDS)
         .chain(crate::import_report::COMMANDS)
+        .chain(crate::modern::COMMANDS)
+        .chain(crate::modern_library::COMMANDS)
+        .chain(crate::modern_sheets::COMMANDS)
 }
 
 /// The Edit panel's sections the fork adds: Transform (Upright and the transform sliders, upstream's Geometry in the
-/// Crop tool), as Lightroom Classic's Transform panel. Opened and closed like the others (`section.*`).
+/// Crop tool), as Lightroom Classic's Transform panel, and Plug-in Filters (the photo's pixel-filter stack). Opened and
+/// closed like the others (`section.*`).
 const EDIT_SECTIONS: &[UiCommand] = &[
     ("section.curve", "Tone Curve", Some("Cmd+2"), "Window>Edit Sections"),
     ("section.mixer", "Color Mixer", Some("Cmd+3"), "Window>Edit Sections"),
     ("section.grading", "Color Grading", Some("Cmd+4"), "Window>Edit Sections"),
     ("section.geometry", "Transform", Some("Cmd+7"), "Window>Edit Sections"),
+    ("section.pluginFilters", "Plug-in Filters", None, "Window>Edit Sections"),
 ];
 
 /// P4.3: the Plug-in Manager (`crate::panels::plugins`); native only, so the web build lists none.
@@ -48,6 +53,15 @@ pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
         return Some(r);
     }
     if let Some(r) = crate::catalog_ui::run(app, id, p) {
+        return Some(r);
+    }
+    if let Some(r) = crate::modern::run(app, id, p) {
+        return Some(r);
+    }
+    if let Some(r) = crate::modern_library::run(app, id, p) {
+        return Some(r);
+    }
+    if let Some(r) = crate::modern_sheets::run(app, id, p) {
         return Some(r);
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -76,7 +90,7 @@ pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
     }
     Some(match id {
         // the fork's Edit sections, opened and closed as upstream's are (⌥-click: just this one)
-        "section.curve" | "section.mixer" | "section.grading" | "section.geometry" => {
+        "section.curve" | "section.mixer" | "section.grading" | "section.geometry" | "section.pluginFilters" => {
             let sec = &id["section.".len()..];
             app.ui.right = crate::state::RightPanel::Edit;
             if p.get("solo").and_then(Value::as_bool) == Some(true) {

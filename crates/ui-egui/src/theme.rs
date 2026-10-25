@@ -44,6 +44,9 @@ pub struct Tokens {
     pub grid_bg: Color32,
     pub cell: Color32,
     pub cell_selected: Color32,
+    /// A thumbnail's place while its picture is still being made: static, apart from the grid, the
+    /// cells and the canvas in every theme.
+    pub skeleton: Color32,
     pub divider: Color32,
     pub inset: Color32,
     pub field: Color32,
@@ -125,6 +128,7 @@ impl Default for Tokens {
             grid_bg: Color32::from_rgb(0x0f, 0x0f, 0x0f),
             cell: Color32::from_rgb(0x1c, 0x1c, 0x1c),
             cell_selected: Color32::from_rgb(0x2d, 0x2d, 0x2d),
+            skeleton: Color32::from_rgb(0x25, 0x25, 0x25),
             divider: Color32::from_rgb(0x1c, 0x1c, 0x1c),
             inset: Color32::from_rgb(0x23, 0x23, 0x23),
             field: Color32::from_rgb(0x22, 0x22, 0x22),
@@ -172,6 +176,7 @@ impl Tokens {
                 grid_bg: rgb(0x080808),
                 cell: rgb(0x121212),
                 cell_selected: rgb(0x262626),
+                skeleton: rgb(0x1d1d1d),
                 divider: rgb(0x0e0e0e),
                 inset: rgb(0x181818),
                 field: rgb(0x161616),
@@ -189,6 +194,7 @@ impl Tokens {
                 grid_bg: rgb(0xd9d9d9),
                 cell: rgb(0xcbcbcb),
                 cell_selected: rgb(0xb4b4b4),
+                skeleton: rgb(0xa6a6a6),
                 divider: rgb(0xc4c4c4),
                 inset: rgb(0xdcdcdc),
                 field: rgb(0xffffff),
@@ -219,6 +225,7 @@ impl Tokens {
                 grid_bg: rgb(0xf2f2f2),
                 cell: rgb(0xe8e8e8),
                 cell_selected: rgb(0xd2d2d2),
+                skeleton: rgb(0xbcbcbc),
                 divider: rgb(0xe0e0e0),
                 inset: rgb(0xf0f0f0),
                 field: rgb(0xffffff),
@@ -459,23 +466,65 @@ pub enum SliderLayout {
     OneRow,
     /// Name and value on a line, the track across the panel under them, as in Camera Raw.
     TwoRows,
+    /// One rounded bar with the name and value inside it, dragged anywhere (the Modern layout's).
+    Pill,
 }
 
 impl Default for SliderLayout {
-    /// Two rows on Android's tablets, where a finger wants the longer track; one row elsewhere.
+    /// Pills on Android, where a finger wants the whole bar; one row elsewhere.
     fn default() -> Self {
-        if cfg!(target_os = "android") { SliderLayout::TwoRows } else { SliderLayout::OneRow }
+        if cfg!(target_os = "android") { SliderLayout::Pill } else { SliderLayout::OneRow }
     }
 }
 
 impl SliderLayout {
-    pub const ALL: [SliderLayout; 2] = [SliderLayout::OneRow, SliderLayout::TwoRows];
+    pub const ALL: [SliderLayout; 3] = [SliderLayout::OneRow, SliderLayout::TwoRows, SliderLayout::Pill];
 
     pub fn label(self) -> &'static str {
         match self {
             SliderLayout::OneRow => "One Row",
             SliderLayout::TwoRows => "Two Rows",
+            SliderLayout::Pill => "Pill",
         }
+    }
+}
+
+/// How large a panel slider's name and value are (Settings ▸ Interface).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SliderText {
+    /// Small text, so long names fit beside the track.
+    #[default]
+    Compact,
+    /// The size of the interface's regular text.
+    FullSize,
+}
+
+impl SliderText {
+    pub const ALL: [SliderText; 2] = [SliderText::Compact, SliderText::FullSize];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SliderText::Compact => "Compact",
+            SliderText::FullSize => "Full Size",
+        }
+    }
+}
+
+fn slider_text_id() -> egui::Id {
+    egui::Id::new("app-slider-text")
+}
+
+/// The slider text size `ctx` uses.
+pub fn slider_text(ctx: &egui::Context) -> SliderText {
+    ctx.data(|d| d.get_temp::<SliderText>(slider_text_id())).unwrap_or_default()
+}
+
+/// Size panel sliders' names and values as `text` says from the next frame on.
+pub fn set_slider_text(ctx: &egui::Context, text: SliderText) {
+    if slider_text(ctx) != text {
+        ctx.data_mut(|d| d.insert_temp(slider_text_id(), text));
+        ctx.request_repaint();
     }
 }
 
@@ -649,8 +698,9 @@ pub fn apply_kind(ctx: &egui::Context, kind: ThemeKind) {
     v.extreme_bg_color = t.field;
     v.faint_bg_color = t.inset;
     v.window_stroke = Stroke::new(1.0, t.button_border);
-    v.window_corner_radius = CornerRadius::same(6);
-    v.menu_corner_radius = CornerRadius::same(6);
+    // cards: every window and dialog, and its popups and menus, softly rounded
+    v.window_corner_radius = CornerRadius::same(14);
+    v.menu_corner_radius = CornerRadius::same(10);
     v.selection.bg_fill = t.accent.gamma_multiply(0.6);
     v.selection.stroke = Stroke::new(1.0, t.accent);
     v.override_text_color = Some(t.text_label);
@@ -665,6 +715,10 @@ pub fn apply_kind(ctx: &egui::Context, kind: ThemeKind) {
     );
     w.noninteractive.bg_stroke = Stroke::new(1.0, t.divider);
     w.inactive.bg_stroke = Stroke::new(1.0, t.button_border);
+    // egui's own buttons, fields and combo boxes: softly rounded, as the app's buttons and cards
+    for state in [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+        state.corner_radius = CornerRadius::same(7);
+    }
     ctx.set_visuals_of(egui::Theme::Dark, v.clone());
     ctx.set_visuals_of(egui::Theme::Light, v);
     ctx.set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });

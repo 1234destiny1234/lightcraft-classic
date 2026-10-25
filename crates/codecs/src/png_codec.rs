@@ -1,11 +1,15 @@
 //! PNG decode via the `png` crate (8/16-bit, palette, tRNS, iCCP, eXIf, iTXt XMP, sRGB/cICP/cHRM/gAMA).
 
-use crate::convert::{Buf, Meta, Model, Raw, check_size, finish};
+use crate::convert::{Buf, Meta, Model, Raw, check_size, finish, try_filled};
 use crate::space::{NamedSpace, SourceSpace, SpaceOrigin, Trc};
 use crate::{DecodeOptions, Decoded, Error, Format, Result};
 use lcc_color::{Mat3, RgbSpace, Xy};
 
 const F: Format = Format::Png;
+
+/// Expansion cap for a compressed text chunk's payload: real XMP documents are a few hundred
+/// kilobytes, so anything past this is hostile input, not metadata.
+const MAX_TEXT_CHUNK: usize = 4 << 20;
 
 fn err(e: impl std::fmt::Display) -> Error {
     Error::Malformed(F, e.to_string())
@@ -14,7 +18,8 @@ fn err(e: impl std::fmt::Display) -> Error {
 pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
     let mut dec = png::Decoder::new(std::io::Cursor::new(bytes));
     dec.set_transformations(png::Transformations::EXPAND);
-    dec.set_limits(png::Limits { bytes: opts.max_pixels.saturating_mul(8).min(usize::MAX as u64) as usize });
+    // the byte budget, not a multiple of the pixel cap (which allowed 8 GiB, issue #2125)
+    dec.set_limits(png::Limits { bytes: opts.max_bytes.min(isize::MAX as u64) as usize });
     let mut reader = dec.read_info().map_err(err)?;
     let (w, h) = {
         let i = reader.info();
@@ -22,7 +27,10 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
     };
     check_size(F, w as u64, h as u64, opts)?;
     let size = reader.output_buffer_size().ok_or_else(|| err("buffer size overflow"))?;
-    let mut buf = vec![0u8; size];
+    if size as u64 > opts.max_bytes {
+        return Err(Error::TooLarge(w.into(), h.into()));
+    }
+    let mut buf = try_filled(size, 0u8, (w as usize, h as usize))?;
     let out = reader.next_frame(&mut buf).map_err(err)?;
     // Text chunks after IDAT land in `info` once the stream is finished; ignore trailing errors.
     let _ = reader.finish();
@@ -42,11 +50,18 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
     };
     let raw = Raw { width: out.width as usize, height: out.height as usize, model, alpha, premultiplied: false, buf: samples, bit_depth: depth };
 
+    // png's `get_text()` inflates a compressed chunk with no bound of its own: a tiny
+    // iTXt can claim an XMP document of arbitrary size. Expand through the bounded path
+    // instead, and drop any XMP bigger than the cap.
     let xmp = info
         .utf8_text
         .iter()
         .find(|t| t.keyword == "XML:com.adobe.xmp")
-        .and_then(|t| t.get_text().ok())
+        .and_then(|t| {
+            let mut t = t.clone();
+            t.decompress_text_with_limit(MAX_TEXT_CHUNK).ok()?;
+            t.get_text().ok()
+        })
         .or_else(|| info.uncompressed_latin1_text.iter().find(|t| t.keyword == "XML:com.adobe.xmp").map(|t| t.text.clone()));
     let exif = info.exif_metadata.as_ref().map(|e| {
         let e = e.to_vec();
@@ -167,4 +182,56 @@ fn rgb_to_xyz_d50_checked(space: &RgbSpace) -> Option<Mat3> {
         return None;
     }
     Some(crate::space::rgb_to_xyz_d50(space))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::DecodeOptions;
+
+    /// A compressed text chunk is expanded by `png` through our own cap: an XMP document
+    /// bigger than it is dropped, not inflated. Compressing an 8 MiB string is a few
+    /// kilobytes — the reverse of what the unbounded `get_text()` path allowed.
+    #[test]
+    fn compressed_xmp_over_the_cap_is_dropped() {
+        let out = png_with_compressed_xmp(&"x".repeat(8 << 20));
+        let d = crate::decode(&out, DecodeOptions::default()).unwrap();
+        assert!(d.xmp.is_none());
+        assert_eq!((d.width, d.height), (1, 1));
+    }
+
+    /// XMP within the cap is still read, compressed or not.
+    #[test]
+    fn compressed_xmp_under_the_cap_is_read() {
+        let out = png_with_compressed_xmp(&"<?xpacket?><xmp/>".repeat(100));
+        let d = crate::decode(&out, DecodeOptions::default()).unwrap();
+        assert!(d.xmp.as_deref().is_some_and(|x| x.contains("xmp/")));
+    }
+
+    /// A little-endian PNG with one compressed iTXt chunk carrying `payload` as XMP.
+    fn png_with_compressed_xmp(payload: &str) -> Vec<u8> {
+        use png::text_metadata::{EncodableTextChunk, ITXtChunk};
+        let mut base = Vec::new();
+        {
+            let mut enc = png::Encoder::new(&mut base, 1, 1);
+            enc.set_color(png::ColorType::Grayscale);
+            enc.set_depth(png::BitDepth::Eight);
+            let mut w = enc.write_header().unwrap();
+            w.write_image_data(&[0x7F]).unwrap();
+            w.finish().unwrap();
+        }
+        // `ITXtChunk::encode` writes the complete chunk (length, type, payload, CRC), with
+        // the text compressed.
+        let mut chunk = Vec::new();
+        let mut xmp = ITXtChunk::new("XML:com.adobe.xmp", payload);
+        xmp.compressed = true;
+        xmp.compress_text().unwrap();
+        xmp.encode(&mut chunk).unwrap();
+        // Text chunks after IDAT land in `info` once the stream is finished: insert ours
+        // before the trailing IEND (a zero-length chunk is exactly 12 bytes).
+        let split = base.len() - 12;
+        let mut out = base[..split].to_vec();
+        out.extend_from_slice(&chunk);
+        out.extend_from_slice(&base[split..]);
+        out
+    }
 }

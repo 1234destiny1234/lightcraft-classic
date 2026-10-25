@@ -33,6 +33,14 @@ fn open(h: &mut Headless, command: &str) {
 /// The dialog lies inside the window, and so do its buttons (`button:dialogCancel` when it has one).
 fn assert_fits(h: &Headless, what: &str) {
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, h.size);
+    if matches!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { .. })) {
+        // Settings fills the window: its way out (‹) and its scrolling rows are on screen
+        for id in ["settings:back", "settings:rows"] {
+            let r = rect(h, id);
+            assert!(screen.contains_rect(r), "{what}: {id} {r:?} runs off the {screen:?} window");
+        }
+        return;
+    }
     let dialog = rect(h, "dialog:window");
     assert!(screen.contains_rect(dialog), "{what}: dialog {dialog:?} runs off the {screen:?} window");
     let mut buttons = vec!["button:dialogOk"];

@@ -36,11 +36,11 @@ use crate::media::ProbeInfo;
 /// This includes preview-only raws; the file probe decides whether sensor decoding is available.
 pub const EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "png", "tif", "tiff", "webp", "dng", "cr2", "cr3", "nef", "nrw", "arw", "sr2", "srf", "raf", "orf", "rw2", "rwl", "raw", "pef",
-    "srw", "psd", "jxl", "gif", "bmp",
+    "srw", "psd", "psb", "jxl", "gif", "bmp",
     // Decoded when built with the codecs' `heif` feature; otherwise the import reports them as
     // failed with the reason ("HEIC/HEIF support isn't included in this build").
     "heic", "heif", "avif", // a HEIC without the `heif` feature is reported as failed
-    "iiq", "crw", "mrw", "x3f", "kdc", "mos", "erf", "3fr", "fff", "mef", // video clips (MediaKind::Video; see VIDEO_EXTENSIONS)
+    "iiq", "crw", "mrw", "x3f", "kdc", "mos", "erf", "3fr", "fff", "mef", "gpr", // video clips (MediaKind::Video; see VIDEO_EXTENSIONS)
     "mp4", "m4v", "mov", "mkv", "webm", "mts", "m2ts", "3gp", "mxf",
 ];
 
@@ -392,6 +392,42 @@ pub fn apply_import_defaults(s: &Session, p: &mut Photo) {
 
 pub fn is_supported(path: &Path) -> bool {
     path.extension().is_some_and(|e| EXTENSIONS.contains(&e.to_string_lossy().to_lowercase().as_str()))
+}
+
+/// The web file picker's accept list, derived from [`EXTENSIONS`]. Each extension
+/// is listed in both cases: browsers' `accept` matching is case-insensitive per
+/// spec, but some implementations (e.g. Windows/Edge) match case-sensitively and
+/// rejected uppercase `.NEF` files, so a lowercase-only list silently hid raws
+/// such as CR3, NRW, RAF, ORF, RW2, RWL, RAW, PEF and SRW from the picker.
+///
+/// The picker only offers files this build can actually import: `.avif` has no
+/// AV1 decoder in any build, and `.heic`/`.heif` decode only when the codecs'
+/// `heif` feature is enabled ([`lcc_codecs::Format::Heif::can_decode`]).
+/// [`EXTENSIONS`] itself stays complete — files on disk are still recognised,
+/// and import reports them as failed, saying why.
+pub fn accept_list() -> String {
+    let heif_decodable = lcc_codecs::Format::Heif.can_decode();
+    let mut out = String::new();
+    for &ext in EXTENSIONS {
+        // Skip extensions a web user could pick but this build could not import.
+        let pickable = match ext {
+            "avif" => false,
+            "heic" | "heif" => heif_decodable,
+            _ => true,
+        };
+        if !pickable {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(',');
+        }
+        out.push('.');
+        out.push_str(ext);
+        out.push(',');
+        out.push('.');
+        out.push_str(&ext.to_uppercase());
+    }
+    out
 }
 
 /// Expand files and folders (recursively) into supported files. `skip` (e.g. the library folder)
@@ -1073,6 +1109,8 @@ impl ImportJob {
         // copies or moves — the slow part, reading and writing every byte and verifying it — are
         // collected and run on several threads (issue #367), then their outcomes take their places.
         let mut plan = Plan::default();
+        // sidecar names are answered from one listing per folder (round trips cost on a network share)
+        let mut listing = crate::sidecar::FolderListing::default();
         for (path, info) in todo.into_iter().zip(probed) {
             if cancel.load(Relaxed) {
                 break;
@@ -1113,7 +1151,7 @@ impl ImportJob {
             // the XMP sidecar (or a raw's embedded XMP), read before copying: its capture time files
             // and names the copy when the file itself has none
             let raw = info.kind == MediaKind::Raw;
-            let packet = crate::sidecar::find_sidecar_for_import(&stems, self.naming, &path)
+            let packet = crate::sidecar::find_sidecar_for_import(&stems, self.naming, &path, &mut listing)
                 .and_then(|f| std::fs::read_to_string(f).ok())
                 .or_else(|| info.xmp.clone().filter(|_| raw));
             let target = crate::crs::Target::for_file(info.kind, &info.format, info.preview_only.is_some(), &info.meta.camera);
@@ -1478,6 +1516,8 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     }
                 }
                 let sidecar = sidecar.map(|sc| sc.resolve_label(&s.catalog)).filter(|sc| *sc != crate::sidecar::SidecarData::default());
+                // the photo is upright as the file's own orientation turns it, when the file states one
+                let sidecar = sidecar.map(|sc| crate::sidecar::SidecarData { orientation: info.orientation.or(sc.orientation), ..sc });
                 // a copy is catalogued under its new name
                 let name = Path::new(&stored).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
                 let mut p = Photo::new(id, Source::File { path: stored }, &name, &info.format, info.width, info.height, &now);
@@ -1684,6 +1724,52 @@ mod tests_known;
 #[cfg(test)]
 mod prepared_tests {
     use super::*;
+
+    /// Extensions the picker may offer: every one in [`EXTENSIONS`], minus the
+    /// files this build cannot import (see [`accept_list`]).
+    fn pickable_extensions() -> Vec<&'static str> {
+        let heif_decodable = lcc_codecs::Format::Heif.can_decode();
+        EXTENSIONS
+            .iter()
+            .copied()
+            .filter(|ext| match *ext {
+                "avif" => false,
+                "heic" | "heif" => heif_decodable,
+                _ => true,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn accept_list_covers_every_pickable_extension_in_both_cases() {
+        let list = accept_list();
+        for ext in pickable_extensions() {
+            assert!(list.contains(&format!(".{ext}")), "lowercase .{ext} missing from accept list");
+            assert!(list.contains(&format!(".{}", ext.to_uppercase())), "uppercase .{} missing from accept list", ext.to_uppercase());
+        }
+    }
+
+    /// The web picker must not offer files this build cannot import: `.avif` has
+    /// no AV1 decoder in any build, so it is never listed, in either case.
+    #[test]
+    fn accept_list_never_offers_avif() {
+        let list = accept_list();
+        assert!(!list.contains(".avif"), "{list}");
+        assert!(!list.contains(".AVIF"), "{list}");
+    }
+
+    /// `.heic`/`.heif` follow the codecs' `heif` feature: listed (in both cases)
+    /// only when this build can decode them; otherwise hidden, so a web user
+    /// cannot pick a file that would fail to import.
+    #[test]
+    fn accept_list_offers_heic_heif_only_when_decodable() {
+        let list = accept_list();
+        let listed = lcc_codecs::Format::Heif.can_decode();
+        for ext in ["heic", "heif"] {
+            assert_eq!(list.contains(&format!(".{ext}")), listed, "lowercase .{ext}");
+            assert_eq!(list.contains(&format!(".{}", ext.to_uppercase())), listed, "uppercase .{ext}");
+        }
+    }
 
     #[test]
     fn revalidate_add_only_converts_matching_ready_item() {

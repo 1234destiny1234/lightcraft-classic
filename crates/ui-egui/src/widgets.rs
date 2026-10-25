@@ -249,6 +249,8 @@ pub struct SliderOut {
     pub drag_started: bool,
     pub drag_stopped: bool,
     pub reset: bool,
+    /// A pill with more settings behind it was long-pressed or right-clicked ([`pill`]).
+    pub more: bool,
 }
 
 /// What a value typed into a slider asks for (issue #322): a number such as `0.5`, `+12`, `-1,5`
@@ -280,6 +282,20 @@ const THUMB_RING: f32 = 4.0;
 /// Size of a slider's name and value in a panel (issue #346: small enough that names fit).
 const LABEL_FONT: f32 = 10.5;
 
+/// The font of a panel slider's name and value: [`LABEL_FONT`] when compact, the interface's
+/// regular text (`TextStyle::Body`, as dialog form sliders) at Full Size (Settings ▸ Interface).
+fn slider_font(ui: &Ui) -> egui::FontId {
+    match crate::theme::slider_text(ui.ctx()) {
+        crate::theme::SliderText::Compact => Tokens::get(ui.ctx()).font(LABEL_FONT),
+        crate::theme::SliderText::FullSize => egui::TextStyle::Body.resolve(ui.style()),
+    }
+}
+
+/// How much larger the slider text is than [`LABEL_FONT`], to widen the value and name columns.
+fn text_scale(font: &egui::FontId) -> f32 {
+    if font.size.is_finite() && font.size > 0.0 { (font.size / LABEL_FONT).max(1.0) } else { 1.0 }
+}
+
 /// A slider row: the name (left-aligned, flush with section headers),
 /// a track with a hollow ring thumb occupying most of the panel width, and a compact value readout.
 /// Double-click the label or thumb to reset (hovering either says so). Shift-drag = fine adjustment.
@@ -299,18 +315,23 @@ pub fn form_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool) -
 }
 
 fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>, form_label: Option<f32>) -> SliderOut {
+    if form_label.is_none() && crate::theme::slider_layout(ui.ctx()) == crate::theme::SliderLayout::Pill {
+        return pill_slider(ui, spec, value, enabled, label_override, false);
+    }
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     // a panel slider on two rows (Settings ▸ Interface): name and value, then the track under them
     let two_rows = form_label.is_none() && crate::theme::slider_layout(ui.ctx()) == crate::theme::SliderLayout::TwoRows;
-    let row_h = if two_rows { t.slider_row_h + TWO_ROW_EXTRA } else { t.slider_row_h };
+    let font = slider_font(ui);
+    let k = text_scale(&font);
+    let row_h = if two_rows { t.slider_row_h + TWO_ROW_EXTRA + TWO_ROW_TEXT_H * (k - 1.0) } else { t.slider_row_h };
     let (row, _) = ui.allocate_exact_size(vec2(w, row_h), Sense::hover());
     // one row: name (left-aligned flush with section header) | wide track | compact value
     let label_str = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
     let geo = match form_label {
         Some(label_w) => SliderGeometry::form(row, label_w),
-        None if two_rows => SliderGeometry::two_rows(row),
-        None => SliderGeometry::new(row, label_column(ui, w)),
+        None if two_rows => SliderGeometry::two_rows(row, k),
+        None => SliderGeometry::new(row, label_column(ui, w, &font, k), k),
     };
     let (label_rect, track_rect, value_rect) = (geo.label, geo.track, geo.value);
     let id = ui.id().with(spec.id);
@@ -471,7 +492,7 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(value_rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
         // the old value is selected when the field takes the focus, so typing replaces it
         let field = crate::text_field::TextField::singleline(&format!("sliderField:{}", spec.id), &mut text)
-            .font(t.font(LABEL_FONT))
+            .font(if form_label.is_some() { t.font(LABEL_FONT) } else { font.clone() })
             .horizontal_align(egui::Align::RIGHT)
             .width(value_rect.width())
             .margin(egui::Margin::ZERO)
@@ -657,7 +678,7 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     let p = ui.painter();
     // the name, right-aligned against its track; ellipsized when the column is too narrow for it
     // (in a form, the font of the other rows' labels)
-    let label_font = if form_label.is_some() { egui::TextStyle::Body.resolve(ui.style()) } else { t.font(LABEL_FONT) };
+    let label_font = if form_label.is_some() { egui::TextStyle::Body.resolve(ui.style()) } else { font.clone() };
     let mut job = egui::text::LayoutJob::simple_singleline(label_str, label_font, text_c);
     job.wrap = egui::text::TextWrapping { max_width: label_rect.width(), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let galley = ui.painter().layout_job(job);
@@ -666,7 +687,13 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     let gpos = pos2(gx, label_rect.center().y - galley.size().y / 2.0);
     p.galley(gpos, galley, text_c);
     if typing.is_none() {
-        p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), t.font(LABEL_FONT), text_c);
+        p.text(
+            value_rect.right_center(),
+            Align2::RIGHT_CENTER,
+            shown_value(spec, v),
+            if form_label.is_some() { t.font(LABEL_FONT) } else { font.clone() },
+            text_c,
+        );
         // the scrub pointer, as over Lightroom's values: a drag here changes the value
         if enabled && (value_resp.hovered() || scrub.is_some()) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -691,6 +718,261 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     out
 }
 
+/// A pill slider's height (points): big enough for a finger, small enough for a mouse.
+pub(crate) const PILL_H: f32 = 40.0;
+
+/// The Modern layout's slider (also Settings ▸ Sliders ▸ Pill): one rounded bar the width of the
+/// panel with the name on the left and the value on the right, inside it. A drag anywhere on it
+/// moves the value by the drag's travel over the bar's width (Shift: a tenth), so a tap never jumps
+/// it; the colour grows from the default (the middle of a ± slider). Double-click resets, a click on
+/// the value types one, sideways scrolling and the arrow keys nudge it. Registers the same ids as
+/// [`slider`] (`slider:`, `sliderLabel:`, `sliderValue:`). Own design.
+/// A [`pill_slider`] that says it has more settings behind it (`more`): a small mark after its name,
+/// and a long press or right-click sets [`SliderOut::more`].
+pub fn pill(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, more: bool) -> SliderOut {
+    pill_slider(ui, spec, value, enabled, None, more)
+}
+
+/// How long a still press on a pill waits before it opens its settings (s).
+const PILL_HOLD: f64 = 0.5;
+
+fn pill_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>, more: bool) -> SliderOut {
+    let t = Tokens::get(ui.ctx());
+    let w = ui.available_width();
+    let (row, _) = ui.allocate_exact_size(vec2(w, PILL_H + 4.0), Sense::hover());
+    let pill = row.shrink2(vec2(0.0, 2.0));
+    let radius = pill.height() / 2.0;
+    let name = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
+    // Settings ▸ Slider text: Full Size makes the name and value larger, as on the other layouts
+    let k = text_scale(&slider_font(ui));
+    let font = t.semibold(13.0 * k);
+    let value_font = t.font(13.0 * k);
+    let id = ui.id().with(spec.id);
+    let value_w = (72.0 * k).min(pill.width() * 0.4);
+    let value_rect = Rect::from_min_max(pos2(pill.right() - radius * 0.6 - value_w, pill.top()), pos2(pill.right() - radius * 0.6, pill.bottom()));
+    let label_rect =
+        Rect::from_min_max(pos2(pill.left() + radius * 0.6, pill.top()), pos2((value_rect.left() - 6.0).max(pill.left()), pill.bottom()));
+    let resp = ui.interact(pill, id, if enabled { Sense::click_and_drag() } else { Sense::hover() });
+    let value_resp = ui.interact(value_rect, id.with("value"), if enabled { Sense::click() } else { Sense::hover() });
+    register(ui.ctx(), format!("slider:{}", spec.id), pill);
+    register(ui.ctx(), format!("sliderLabel:{}", spec.id), label_rect);
+    register(ui.ctx(), format!("sliderValue:{}", spec.id), value_rect);
+    resp.widget_info(|| egui::WidgetInfo::slider(enabled, value, name.clone()));
+    let shown = shown_value(spec, value);
+    ui.ctx().accesskit_node_builder(resp.id, |node| {
+        node.set_min_numeric_value(spec.min);
+        node.set_max_numeric_value(spec.max);
+        node.set_numeric_value_step(spec.step);
+        node.set_value(shown);
+        if enabled {
+            node.add_action(egui::accesskit::Action::Increment);
+            node.add_action(egui::accesskit::Action::Decrement);
+        }
+    });
+    if enabled && (resp.clicked() || resp.drag_started()) {
+        resp.request_focus();
+    }
+    let mut out = SliderOut::default();
+    if more && enabled {
+        // a right-click, or a still press held a moment, opens the settings behind it (once a press)
+        let held_id = id.with("more-held");
+        let held = ui.input(|i| i.pointer.press_start_time().map(|t| i.time - t).unwrap_or(0.0));
+        let still = ui.input(|i| match (i.pointer.press_origin(), i.pointer.interact_pos()) {
+            (Some(a), Some(b)) => a.distance(b) < 8.0,
+            _ => true,
+        });
+        let fired: bool = ui.data(|m| m.get_temp(held_id)).unwrap_or(false);
+        if resp.is_pointer_button_down_on() && !resp.dragged() {
+            if !fired && held >= PILL_HOLD && still {
+                out.more = true;
+                ui.data_mut(|m| m.insert_temp(held_id, true));
+            } else if !fired {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        } else if fired && !resp.is_pointer_button_down_on() {
+            ui.data_mut(|m| m.remove::<bool>(held_id));
+        }
+        if resp.secondary_clicked() {
+            out.more = true;
+        }
+    }
+    let step = spec.step.max(1e-9);
+    let snap = |v: f64| ((v / step).round() * step).clamp(spec.min, spec.max);
+    let mut v = value;
+    // typing a value: (text, frames since it opened)
+    let typing_id = id.with("typing");
+    let field_id = format!("sliderField:{}", spec.id);
+    let mut typing: Option<(String, u8)> = ui.data(|m| m.get_temp(typing_id));
+    if enabled && typing.is_none() && value_resp.clicked() {
+        typing = Some((shown_value(spec, value).trim_start_matches('+').to_string(), 0));
+    }
+    let pos_id = id.with("pill-pos");
+    if let Some((mut text, frames)) = typing.take() {
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(value_rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        let field = crate::text_field::TextField::singleline(&field_id, &mut text)
+            .font(value_font.clone())
+            .horizontal_align(egui::Align::RIGHT)
+            .width(value_rect.width())
+            .margin(egui::Margin::ZERO)
+            .select_on_focus(true)
+            .begin_edit(frames == 0)
+            .show(&mut child);
+        if frames < 2 && !matches!(field.ending, Some(crate::text_field::Ending::Return | crate::text_field::Ending::Escape)) {
+            field.response.request_focus();
+            typing = Some((text, frames.saturating_add(1)));
+        } else if field.ending.is_some() || !field.editing || !enabled {
+            // Esc keeps the old value; Return or clicking away applies the typed one
+            let cancelled = !enabled || field.cancelled();
+            if let Some(nv) = typed_value(spec, &text).filter(|nv| !cancelled && (nv - value).abs() > 1e-12) {
+                out.value = Some(nv);
+                out.drag_started = true;
+                out.drag_stopped = true;
+                v = nv;
+            }
+        } else {
+            typing = Some((text, frames));
+        }
+        ui.data_mut(|m| match &typing {
+            Some(t) => {
+                m.insert_temp(typing_id, t.clone());
+            }
+            None => {
+                m.remove::<(String, u8)>(typing_id);
+            }
+        });
+    } else if resp.double_clicked() {
+        out.reset = true;
+        out.value = Some(spec.default);
+        v = spec.default;
+    } else {
+        if resp.drag_started() {
+            out.drag_started = true;
+            ui.data_mut(|m| m.insert_temp(pos_id, spec.position(value)));
+        }
+        if resp.dragged() {
+            let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
+            let dx = ui.input(|i| i.pointer.delta().x);
+            let width = f64::from(pill.width().max(1.0));
+            let start = ui.data(|m| m.get_temp::<f64>(pos_id)).unwrap_or_else(|| spec.position(value));
+            let pos = (start + f64::from(dx) / width * fine).clamp(0.0, 1.0);
+            ui.data_mut(|m| m.insert_temp(pos_id, pos));
+            let nv = snap(spec.value_at(pos));
+            if (nv - value).abs() > 1e-12 {
+                out.value = Some(nv);
+                v = nv;
+            }
+        }
+        if resp.drag_stopped() {
+            out.drag_stopped = true;
+            ui.data_mut(|m| m.remove::<f64>(pos_id));
+        }
+        // the arrow keys (hovered or focused), a screen reader's increment / decrement
+        let (inc, dec) = ui.input(|i| {
+            i.events.iter().fold((false, false), |(inc, dec), e| match e {
+                egui::Event::AccessKitActionRequest(r) if r.target_node == resp.id.accesskit_id() => {
+                    (inc || r.action == egui::accesskit::Action::Increment, dec || r.action == egui::accesskit::Action::Decrement)
+                }
+                _ => (inc, dec),
+            })
+        });
+        let pointer_in = ui.rect_contains_pointer(pill);
+        if enabled && out.value.is_none() && (pointer_in || resp.has_focus() || inc || dec) {
+            let (up, down, shift) = ui.input_mut(|i| {
+                let shift = i.modifiers.shift;
+                let m = if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
+                (i.consume_key(m, egui::Key::ArrowUp), i.consume_key(m, egui::Key::ArrowDown), shift)
+            });
+            let (up, down) = (up || inc, down || dec);
+            if up || down {
+                let nv = nudged(spec, value, if up { 1.0 } else { -1.0 } * if shift { 5.0 } else { 1.0 });
+                if (nv - value).abs() > 1e-12 {
+                    out.value = Some(nv);
+                    out.drag_started = true;
+                    out.drag_stopped = true;
+                    v = nv;
+                }
+            }
+        }
+        // a mostly sideways scroll over it nudges it (the panel scrolls only up and down)
+        let side_id = id.with("side-rem");
+        let (dx, dy) = ui.input(|i| (i.smooth_scroll_delta.x, i.smooth_scroll_delta.y));
+        if !enabled || out.value.is_some() || !pointer_in || dx.abs() <= dy.abs() {
+            ui.data_mut(|m| m.remove::<f32>(side_id));
+        } else {
+            ui.input_mut(|i| i.smooth_scroll_delta = egui::Vec2::ZERO);
+            let mut remainder = ui.data(|m| m.get_temp::<f32>(side_id)).unwrap_or(0.0);
+            let steps = wheel_nudges(&mut remainder, dx);
+            ui.data_mut(|m| m.insert_temp(side_id, remainder));
+            let nv = nudged(spec, value, steps);
+            if steps != 0.0 && (nv - value).abs() > 1e-12 {
+                out.value = Some(nv);
+                out.drag_started = true;
+                out.drag_stopped = true;
+                v = nv;
+            }
+        }
+    }
+    // paint: the bar, the fill from the default to the value, the default's tick, name and value
+    let p = ui.painter();
+    let active = resp.dragged() || resp.has_focus();
+    p.rect_filled(pill, radius, t.button);
+    let to_x = |v: f64| pill.left() + spec.position(v) as f32 * pill.width();
+    let (x0, x1) = (to_x(spec.default.clamp(spec.min, spec.max)), to_x(v));
+    if (x1 - x0).abs() > 0.5 {
+        let fill = Rect::from_x_y_ranges(x0.min(x1)..=x0.max(x1), pill.y_range());
+        let c = if enabled { t.accent.gamma_multiply(if active { 0.75 } else { 0.55 }) } else { t.text_disabled.gamma_multiply(0.35) };
+        p.with_clip_rect(fill.intersect(p.clip_rect())).rect_filled(pill, radius, c);
+    }
+    if let Some(stops) = track_stops(&spec.track) {
+        // a coloured track (temperature, tint, hue…) as a thin line along the bottom
+        let line = Rect::from_min_max(
+            pos2(pill.left() + radius, pill.bottom() - 6.0),
+            pos2((pill.right() - radius).max(pill.left() + radius), pill.bottom() - 4.0),
+        );
+        let n = stops.len().max(2) - 1;
+        let segs = 32;
+        let stop = |i: usize| stops.get(i.min(n)).copied().unwrap_or(t.track);
+        for i in 0..segs {
+            let (a, b) = (i as f32 / segs as f32, (i + 1) as f32 / segs as f32);
+            let seg = (a * n as f32).floor() as usize;
+            let c = lerp(stop(seg), stop(seg + 1), a * n as f32 - seg as f32);
+            p.rect_filled(Rect::from_x_y_ranges(line.left() + line.width() * a..=line.left() + line.width() * b + 0.5, line.y_range()), 0.0, c);
+        }
+    }
+    if spec.default > spec.min && spec.default < spec.max {
+        p.vline(x0, pill.shrink(radius * 0.55).y_range(), Stroke::new(1.0, t.text_dim.gamma_multiply(0.5)));
+    }
+    if resp.hovered() && enabled && !active {
+        p.rect_stroke(pill, radius, Stroke::new(1.0, t.accent.gamma_multiply(0.6)), StrokeKind::Inside);
+    }
+    let text_c = if enabled { t.text } else { t.text_disabled };
+    let mut job = egui::text::LayoutJob::simple_singleline(name, font, text_c);
+    job.wrap =
+        egui::text::TextWrapping { max_width: label_rect.width().max(0.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    let galley = p.layout_job(job);
+    let gw = galley.size().x;
+    p.galley(pos2(label_rect.left(), label_rect.center().y - galley.size().y / 2.0), galley, text_c);
+    let mut after = label_rect.left() + gw;
+    if (v - spec.default).abs() > 1e-9 && !spec.id.starts_with("wb.") {
+        // changed from its default: a small dot after the name
+        p.circle_filled(pos2(after + 7.0, label_rect.center().y), 2.5, t.pick);
+        after += 10.0;
+    }
+    if more {
+        // more settings behind it: a small "more" mark (long press or right-click)
+        let m = Rect::from_center_size(pos2(after + 12.0, label_rect.center().y), egui::Vec2::splat(12.0));
+        crate::icons::paint(p, m, crate::icons::Icon::More, t.text_dim);
+        register(ui.ctx(), format!("sliderMore:{}", spec.id), m);
+    }
+    if typing.is_none() {
+        p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), value_font, text_c);
+    }
+    if resp.hovered() || resp.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+    }
+    out
+}
+
 /// Where a one-row slider's parts go: name column, track and value.
 struct SliderGeometry {
     label: Rect,
@@ -700,6 +982,9 @@ struct SliderGeometry {
 
 /// How much taller a two-row slider is than a one-row one.
 const TWO_ROW_EXTRA: f32 = 14.0;
+
+/// Height of a two-row slider's name and value line at [`LABEL_FONT`].
+const TWO_ROW_TEXT_H: f32 = 12.0;
 
 /// Width of a slider's value column: fits numbers like "+100", "8978", "+0.80", "-5.00" at
 /// [`LABEL_FONT`].
@@ -711,10 +996,11 @@ const VALUE_W: f32 = 28.0;
 const MAX_LABEL_COL: f32 = 76.0;
 
 impl SliderGeometry {
-    fn new(row: Rect, label_col: f32) -> Self {
+    fn new(row: Rect, label_col: f32, k: f32) -> Self {
         let (pad_l, pad_r, gap) = (12.0, 12.0, 8.0);
         let label = Rect::from_min_size(pos2(row.left() + pad_l, row.top()), vec2(label_col, row.height()));
-        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(label.right()), row.top()), pos2(row.right() - pad_r, row.bottom()));
+        let value =
+            Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W * k).max(label.right()), row.top()), pos2(row.right() - pad_r, row.bottom()));
         let track_l = label.right() + gap;
         let track_r = (value.left() - gap).max(track_l + 1.0);
         let track = Rect::from_min_max(pos2(track_l, row.top()), pos2(track_r, row.bottom()));
@@ -723,13 +1009,13 @@ impl SliderGeometry {
 
     /// Two rows: the name at the left and the value at the right of the top line, the track the
     /// width of both under them (its thumb at either end just inside the row's padding).
-    fn two_rows(row: Rect) -> Self {
+    fn two_rows(row: Rect, k: f32) -> Self {
         let (pad_l, pad_r) = (12.0, 12.0);
         // the name and value sit close over their own track, with the gap above them, so each
         // slider reads as one unit and the rows stand apart (issue #346)
         let split = (row.bottom() - 14.0).max(row.top());
-        let text_top = (split - 12.0).max(row.top());
-        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(row.left() + pad_l), text_top), pos2(row.right() - pad_r, split));
+        let text_top = (split - TWO_ROW_TEXT_H * k).max(row.top());
+        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W * k).max(row.left() + pad_l), text_top), pos2(row.right() - pad_r, split));
         let label = Rect::from_min_max(pos2(row.left() + pad_l, text_top), pos2((value.left() - 8.0).max(row.left() + pad_l), split));
         let track_l = row.left() + pad_l + THUMB_RING;
         let track_r = (row.right() - pad_r - THUMB_RING).max(track_l + 1.0);
@@ -754,9 +1040,9 @@ impl SliderGeometry {
 /// [`LABEL_FONT`] in the current language, so the column (and every track) stays the same width as
 /// sections and flyouts open and close (issue #397), strictly capped so the interactive track
 /// occupies most of the panel width (names past it are ellipsized).
-fn label_column(ui: &Ui, row_w: f32) -> f32 {
+fn label_column(ui: &Ui, row_w: f32, font: &egui::FontId, k: f32) -> f32 {
     let key = egui::Id::new("slider-label-column");
-    let lang = format!("{:?}", crate::i18n::language());
+    let lang = format!("{:?}/{}", crate::i18n::language(), font.size);
     let widest = match ui.data(|d| d.get_temp::<(String, f32)>(key)) {
         Some((l, w)) if l == lang => w,
         _ => {
@@ -764,14 +1050,14 @@ fn label_column(ui: &Ui, row_w: f32) -> f32 {
             let w = lcc_develop::controls::CONTROLS
                 .iter()
                 .chain(lcc_develop::controls::INDEXED)
-                .map(|c| ui.painter().layout_no_wrap(crate::i18n::tr(c.label).to_string(), t.font(LABEL_FONT), t.text_label).size().x)
+                .map(|c| ui.painter().layout_no_wrap(crate::i18n::tr(c.label).to_string(), font.clone(), t.text_label).size().x)
                 .fold(0.0_f32, f32::max)
                 .ceil();
             ui.data_mut(|d| d.insert_temp(key, (lang, w)));
             w
         }
     };
-    let max_col = ((row_w - 48.0) * 0.34).clamp(24.0, MAX_LABEL_COL);
+    let max_col = ((row_w - 48.0) * (0.34 * k).min(0.42)).clamp(24.0, MAX_LABEL_COL * k);
     widest.clamp(24.0_f32.min(max_col), max_col)
 }
 
@@ -930,10 +1216,12 @@ pub fn text_button_wide(ui: &mut Ui, id: &str, label: &str, active: bool, width:
 fn text_button_sized(ui: &mut Ui, id: &str, label: &str, active: bool, width: Option<f32>) -> Response {
     let label = if id.starts_with("labelSet-") { label } else { crate::i18n::tr(label) };
     let t = Tokens::get(ui.ctx());
-    let font = t.semibold(11.5);
+    // finger-sized on the touch Settings screen
+    let finger = crate::dialog_frame::finger_sized(ui);
+    let font = t.semibold(if finger { 14.0 } else { 11.5 });
     let galley = ui.painter().layout_no_wrap(label.to_string(), font, t.text);
-    let w = width.filter(|w| w.is_finite()).unwrap_or(galley.size().x + 18.0);
-    let size = vec2(w.max(37.0), 24.0);
+    let w = width.filter(|w| w.is_finite()).unwrap_or(galley.size().x + if finger { 28.0 } else { 18.0 });
+    let size = vec2(w.max(if finger { 56.0 } else { 37.0 }), if finger { 40.0 } else { 24.0 });
     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, active, label));
     register(ui.ctx(), format!("button:{id}"), r);
@@ -947,9 +1235,62 @@ fn text_button_sized(ui: &mut Ui, id: &str, label: &str, active: bool, width: Op
     let p = ui.painter();
     // #122: an "on" choice gets a brighter edge as well as a brighter fill, so it reads as selected.
     let edge = if active { t.text_dim } else { t.button_border };
-    p.rect(r, CornerRadius::same(4), fill, Stroke::new(1.0, edge), StrokeKind::Inside);
+    p.rect(r, CornerRadius::same(if finger { 10 } else { 6 }), fill, Stroke::new(1.0, edge), StrokeKind::Inside);
     p.with_clip_rect(r.intersect(p.clip_rect())).galley(r.center() - galley.size() / 2.0, galley, t.text);
     resp
+}
+
+/// A segmented choice: the options side by side in one rounded track, the chosen one raised on a
+/// soft highlight. Each option is a button registered `button:{id}-{i}`; returns the one clicked.
+/// Wraps onto further rows when the options don't fit. Own design.
+pub fn segments(ui: &mut Ui, id: &str, labels: &[&str], chosen: Option<usize>) -> Option<usize> {
+    let t = Tokens::get(ui.ctx());
+    let finger = crate::dialog_frame::finger_sized(ui);
+    let font = t.semibold(if finger { 13.5 } else { 11.5 });
+    let (h, pad) = if finger { (34.0, 3.0) } else { (24.0, 2.0) };
+    let widths: Vec<f32> = labels
+        .iter()
+        .map(|l| ui.painter().layout_no_wrap(crate::i18n::tr(l).to_string(), font.clone(), t.text).size().x + if finger { 26.0 } else { 16.0 })
+        .collect();
+    let total = widths.iter().sum::<f32>() + 2.0 * pad;
+    let mut clicked = None;
+    let one_row = total <= ui.available_width();
+    let draw = |ui: &mut Ui, range: std::ops::Range<usize>, clicked: &mut Option<usize>| {
+        let w = range.clone().map(|i| widths.get(i).copied().unwrap_or(0.0)).sum::<f32>() + 2.0 * pad;
+        let (track, _) = ui.allocate_exact_size(vec2(w, h + 2.0 * pad), Sense::hover());
+        ui.painter().rect_filled(track, (h + 2.0 * pad) / 2.0, t.button);
+        let mut x = track.left() + pad;
+        for i in range {
+            let cw = widths.get(i).copied().unwrap_or(0.0);
+            let cell = Rect::from_min_size(pos2(x, track.top() + pad), vec2(cw, h));
+            x += cw;
+            let label = crate::i18n::tr(labels.get(i).copied().unwrap_or(""));
+            let resp = ui.interact(cell, ui.id().with((id, i)), Sense::click());
+            let on = chosen == Some(i);
+            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
+            register(ui.ctx(), format!("button:{id}-{i}"), cell);
+            if on {
+                ui.painter().rect(cell, h / 2.0, t.pressed, Stroke::new(1.0, t.text_dim.gamma_multiply(0.5)), StrokeKind::Inside);
+            } else if resp.hovered() {
+                ui.painter().rect_filled(cell, h / 2.0, t.hover);
+            }
+            ui.painter().text(cell.center(), Align2::CENTER_CENTER, label, font.clone(), if on { t.text } else { t.text_label });
+            if resp.clicked() {
+                *clicked = Some(i);
+            }
+        }
+    };
+    if one_row {
+        draw(ui, 0..labels.len(), &mut clicked);
+    } else {
+        // too wide for one track: one per option, wrapping
+        ui.horizontal_wrapped(|ui| {
+            for i in 0..labels.len() {
+                draw(ui, i..i + 1, &mut clicked);
+            }
+        });
+    }
+    clicked
 }
 
 /// The width each of `n` buttons gets when they share `room` points, `gap` apart.
@@ -963,6 +1304,8 @@ pub fn shared_width(room: f32, n: usize, gap: f32) -> f32 {
 pub fn segmented(ui: &mut Ui, id: &str, items: &[(&str, &str)], active: Option<usize>, per_row: usize) -> Option<usize> {
     let t = Tokens::get(ui.ctx());
     let per_row = per_row.max(1);
+    let finger = crate::dialog_frame::finger_sized(ui);
+    let (seg_h, font) = if finger { (44.0, t.semibold(14.0)) } else { (24.0, t.semibold(11.5)) };
     let gap = 4.0;
     let w = ui.available_width();
     let seg_w = ((w - gap * (per_row as f32 - 1.0)) / per_row as f32).max(24.0);
@@ -973,7 +1316,7 @@ pub fn segmented(ui: &mut Ui, id: &str, items: &[(&str, &str)], active: Option<u
             for (j, (label, key)) in row.iter().enumerate() {
                 let label = crate::i18n::tr(label);
                 let i = row_i * per_row + j;
-                let (r, resp) = ui.allocate_exact_size(vec2(seg_w, 24.0), Sense::click());
+                let (r, resp) = ui.allocate_exact_size(vec2(seg_w, seg_h), Sense::click());
                 crate::widgets::announce_selected(&resp, label.to_string(), active == Some(i));
                 register(ui.ctx(), format!("button:{id}-{key}"), r);
                 let fill = if active == Some(i) {
@@ -985,7 +1328,7 @@ pub fn segmented(ui: &mut Ui, id: &str, items: &[(&str, &str)], active: Option<u
                 };
                 let p = ui.painter();
                 p.rect(r, CornerRadius::same(4), fill, Stroke::new(1.0, t.button_border), StrokeKind::Inside);
-                p.text(r.center(), Align2::CENTER_CENTER, label, t.semibold(11.5), t.text);
+                p.text(r.center(), Align2::CENTER_CENTER, label, font.clone(), t.text);
                 if resp.clicked() {
                     clicked = Some(i);
                 }
@@ -1081,42 +1424,6 @@ pub fn icon_button_named(ui: &mut Ui, id: &str, icon: Icon, size: egui::Vec2, ac
     if !tooltip.is_empty() { resp.on_hover_text(tooltip) } else { resp }
 }
 
-/// Star rating row (5 stars); returns a new rating when clicked (clicking the current rating clears).
-pub fn stars(ui: &mut Ui, id: &str, rating: u8, size: f32) -> Option<u8> {
-    let t = Tokens::get(ui.ctx());
-    let mut out = None;
-    let mut hover_n = None;
-    let mut rects = [Rect::NOTHING; 5];
-    for (i, slot) in (0..5u8).zip(rects.iter_mut()) {
-        let (r, resp) = ui.allocate_exact_size(vec2(size, size), Sense::click());
-        crate::widgets::announce_selected(&resp, format!("{} ★", i + 1), i < rating);
-        register(ui.ctx(), format!("star:{id}:{}", i + 1), r);
-        crate::access::named(&resp, egui::WidgetType::RadioButton, &format!("{} {}", crate::i18n::tr("Rating"), i + 1));
-        if resp.hovered() {
-            hover_n = Some(i + 1);
-        }
-        if resp.clicked() {
-            out = Some(if rating == i + 1 { 0 } else { i + 1 });
-        }
-        *slot = r;
-    }
-    // Hover previews the rating a click would set: stars 1..=hovered light up. The hovered star also gets the
-    // icon_button hover square, so hovering the current rating (where the preview looks the same) still shows feedback.
-    for (i, r) in (0..5u8).zip(rects) {
-        if hover_n == Some(i + 1) {
-            ui.painter().rect_filled(r, 4.0, t.hover.gamma_multiply(0.7));
-        }
-        let filled = star_lit(i, rating, hover_n);
-        paint(ui.painter(), r.shrink(size * 0.12), if filled { Icon::StarFilled } else { Icon::Star }, if filled { t.star } else { t.icon });
-    }
-    out
-}
-
-/// Whether the star at zero-based index `i` is drawn filled: the hovered star's rating previews over the current one.
-fn star_lit(i: u8, rating: u8, hover: Option<u8>) -> bool {
-    i < hover.unwrap_or(rating)
-}
-
 /// A borderless dropdown button: `text` followed by a painted chevron (no font glyph needed).
 pub fn dropdown(ui: &mut Ui, id: &str, text: &str, font: egui::FontId, color: Color32) -> Response {
     dropdown_within(ui, id, text, font, color, f32::INFINITY)
@@ -1140,23 +1447,13 @@ pub fn dropdown_within(ui: &mut Ui, id: &str, text: &str, font: egui::FontId, co
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn slow_slider_drags_move_less_than_the_pointer_and_quick_ones_keep_up() {
         assert!(drag_gain(0.5) < 1.0 && drag_gain(0.5) > 0.0);
         assert!(drag_gain(-1.0) <= drag_gain(5.0));
         assert!((drag_gain(40.0) - 1.0).abs() < 1e-6);
-    }
-
-    use super::*;
-
-    /// Issue #647: hovering a star previews the rating a click would set.
-    #[test]
-    fn hovered_star_previews_its_rating() {
-        let lit = |rating, hover| (0..5u8).filter(|&i| star_lit(i, rating, hover)).count();
-        assert_eq!(lit(2, None), 2, "no hover shows the rating");
-        assert_eq!(lit(2, Some(4)), 4);
-        assert_eq!(lit(5, Some(1)), 1);
-        assert_eq!(lit(0, Some(3)), 3);
     }
 
     #[test]

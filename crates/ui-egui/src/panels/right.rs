@@ -113,6 +113,19 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     });
 }
 
+/// Only the open tool's own controls (Crop, Remove / Heal, Masking), without the histogram, the
+/// tool row or the Previous / Sync bar around them: the Modern layout's tool card.
+pub(crate) fn tool_only(app: &mut LccApp, ui: &mut egui::Ui) {
+    let Some(id) = app.session.active() else { return };
+    ui.spacing_mut().item_spacing.y = 0.0;
+    match app.ui.right {
+        RightPanel::Crop => classic_crop::show(app, ui, id),
+        RightPanel::Remove => remove(app, ui, id),
+        RightPanel::Masking => super::masking::show(app, ui, id),
+        _ => {}
+    }
+}
+
 /// Height of the Previous / Sync… bar under the Edit panel.
 const SYNC_BAR_H: f32 = 44.0;
 
@@ -495,7 +508,7 @@ fn crop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 app.ui.tool = if on { String::new() } else { "straighten".into() };
             }
             if cmd_icon(app, ui, "straightenAuto", Icon::Auto, "Auto Straighten", Some("crop.autoStraighten"), false).clicked() {
-                let _ = app.run("crop.autoStraighten", json!({}));
+                app.auto_straighten(ui.ctx());
             }
         });
     });

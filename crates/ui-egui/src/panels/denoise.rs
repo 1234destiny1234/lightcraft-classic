@@ -148,6 +148,25 @@ pub fn detail_toggle(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, on: bool,
     });
 }
 
+/// The bar under the Denoise slider while a photo's picture is made: at most 240 px wide, and
+/// sweeping while the number of tiles is not known yet. The percentage is `progress::percent`, as the
+/// bar's accessible value is: 100 % only once done. (The panel shows the job in the activity
+/// stack instead; the bar stays for the progress-bar tests.)
+#[cfg(test)]
+pub(crate) fn detail_bar(ui: &mut egui::Ui, done: u64, total: u64) -> egui::Response {
+    let fraction = crate::progress::fraction_of(done, total);
+    let text = match fraction {
+        Some(f) => tr_format!("Making the denoised picture… {}%", crate::progress::percent(f)),
+        None => tr("Starting…").to_string(),
+    };
+    crate::progress::Progress::new(fraction).label(text).width(ui.available_width().min(240.0)).widget("denoise:progress").show(ui)
+}
+
+/// The bar in Settings, AI Denoise: 380 px wide however wide the tab is.
+pub(crate) fn settings_bar(ui: &mut egui::Ui, done: u64, total: u64, text: String) -> egui::Response {
+    crate::progress::Progress::new(crate::progress::fraction_of(done, total)).label(text).width(380.0).widget("denoise:settingsProgress").show(ui)
+}
+
 /// The line under the Denoise slider for the photo `id`, whose Amount is `amount`.
 pub fn detail_status(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, amount: f64) {
     let t = Tokens::get(ui.ctx());
@@ -180,13 +199,15 @@ pub fn detail_status(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, amount: f
                 }
             });
         }
+        // Waiting, in line and being made are passing states of background work: they add no line here (it would
+        // push every control under it down and back up while the user drags a slider); the activity stack shows the
+        // progress, with the photo's file name.
         PhotoState::Idle => {
             if amount > 0.0 && app.session.denoise_auto() {
                 // the pump has not met this photo yet: let it come round soon instead of waiting out its pause
                 let now = ui.ctx().input(|i| i.time);
                 app.caches.denoise.next_pump = app.caches.denoise.next_pump.min(now + 0.05);
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(60));
-                egui::Frame::NONE.inner_margin(pad).show(ui, |ui| note(ui, "Waiting to start…", t.text_dim));
             } else if amount > 0.0 {
                 egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
                     note(ui, "Its denoised picture is not made yet, and pictures are not made on their own (Settings, AI Denoise).", t.text_dim);
@@ -199,28 +220,7 @@ pub fn detail_status(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, amount: f
                 });
             }
         }
-        PhotoState::Queued { ahead } => {
-            egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-                let text = if ahead == 0 {
-                    tr("Next up for AI Denoise…").to_string()
-                } else {
-                    tr_format!("In line for AI Denoise ({ahead} ahead)…", ahead = ahead)
-                };
-                note(ui, &text, t.text_dim);
-            });
-        }
-        PhotoState::Running { done, total } => {
-            egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-                let frac = if total > 0 { (done as f32 / total as f32).clamp(0.0, 1.0) } else { 0.0 };
-                let text = if total > 0 {
-                    tr_format!("Making the denoised picture… {}%", (frac * 100.0).round() as u32)
-                } else {
-                    tr("Starting…").to_string()
-                };
-                let bar = ui.add(egui::ProgressBar::new(frac).desired_width(ui.available_width().min(240.0)).text(RichText::new(text).size(11.0)));
-                register(ui.ctx(), "denoise:progress", bar.rect);
-            });
-        }
+        PhotoState::Queued { .. } | PhotoState::Running { .. } => {}
         PhotoState::Failed { why, unsupported } => {
             egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
                 let color = if unsupported { t.text_dim } else { t.caution };
@@ -272,8 +272,12 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     if all.is_empty() {
         hint(ui, t, "Only if you were given a {app} denoise model (a folder with a .onnx file and denoise-model.json):");
     }
-    let r = ui.add_enabled(runtime && app.services.pick_denoise_model.is_some(), egui::Button::new(tr("Install from file…")));
-    register(ui.ctx(), "denoise:installFile", r.rect);
+    let installing = downloads.iter().any(|d| d["id"] == "local-install" && d["state"].as_str() == Some("installing"));
+    let r = crate::button::Button::new("Install from file…")
+        .enabled(runtime && app.services.pick_denoise_model.is_some())
+        .busy(installing)
+        .widget("denoise:installFile")
+        .show(ui);
     if r.clicked()
         && let Some(path) = app.services.pick_denoise_model.as_mut().and_then(|f| f().into_iter().next())
     {
@@ -364,7 +368,6 @@ fn work_section(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, list: &Value) {
     let (running, queued) = (app.caches.denoise.running, app.caches.denoise.queued);
     match running {
         Some((done, total)) => {
-            let frac = if total > 0 { (done as f32 / total as f32).clamp(0.0, 1.0) } else { 0.0 };
             let name = status["running"]["photo"]
                 .as_u64()
                 .and_then(|p| app.session.catalog.photo(PhotoId(p)).map(|p| p.file_name.clone()))
@@ -376,8 +379,7 @@ fn work_section(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, list: &Value) {
                 done = done,
                 total = total
             );
-            let bar = ui.add(egui::ProgressBar::new(frac).desired_width(380.0).text(RichText::new(text).size(11.5)));
-            register(ui.ctx(), "denoise:settingsProgress", bar.rect);
+            settings_bar(ui, done, total, text);
         }
         None if queued > 0 => hint(ui, t, &count(queued, "photo waiting", "photos waiting")),
         None => {
@@ -481,17 +483,22 @@ fn model_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, m: &Value, dl: Opt
                 match (dl_state, dl) {
                     (Some("running"), Some(d)) => {
                         let (got, total) = (d["bytes"].as_u64().unwrap_or(0), d["total"].as_u64().unwrap_or(0));
-                        let frac = if total > 0 { (got as f32 / total as f32).clamp(0.0, 1.0) } else { 0.0 };
                         let text = if total > 0 && got >= total {
                             tr("Checking…").to_string()
                         } else {
                             tr_format!("{} of {} from {host}", mb(Some(got)), mb(Some(total)), host = host)
                         };
-                        let bar = ui.add(egui::ProgressBar::new(frac).desired_width(260.0).text(RichText::new(text).font(t.font(11.5))));
-                        register(ui.ctx(), format!("denoise:progress:{id}"), bar.rect);
+                        crate::progress::Progress::new(crate::progress::fraction_of(got, total))
+                            .label(text)
+                            .width(crate::progress::ROW_WIDTH.min(ui.available_width()))
+                            .widget(format!("denoise:progress:{id}"))
+                            .show(ui);
                     }
                     (Some("done" | "installing"), _) => {
-                        ui.label(RichText::new(tr("Downloaded and checked. Installing…")).font(t.font(11.5)).color(t.text_dim));
+                        ui.horizontal(|ui| {
+                            crate::progress::spinner(ui, 12.0);
+                            ui.label(RichText::new(tr("Downloaded and checked. Installing…")).font(t.font(11.5)).color(t.text_dim));
+                        });
                     }
                     (Some("failed"), Some(d)) => {
                         let why = sentence(d["error"].as_str().unwrap_or("The download failed"));

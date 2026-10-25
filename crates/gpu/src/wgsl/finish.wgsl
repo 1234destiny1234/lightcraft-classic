@@ -137,7 +137,9 @@ fn color_ops(rgb: vec3<f32>, local_sat: f32, local_hue: f32) -> vec3<f32> {
     let lab0 = oklab(rgb);
     var l = lab0.x;
     var c = sqrt(lab0.y * lab0.y + lab0.z * lab0.z);
-    var h = atan2(lab0.z, lab0.y);
+    // a neutral (black or grey) pixel has no hue: atan2(0, 0) is undefined in WGSL (NaN on some
+    // GPUs, which a later lightening such as the vignette then shows); the CPU's atan2 gives 0
+    var h = select(atan2(lab0.z, lab0.y), 0.0, c == 0.0);
     if (pu(F_MIXER) != 0u) {
         let w = band_weights(h);
         var dh = 0.0;
@@ -283,6 +285,46 @@ fn out_encode(v: f32) -> f32 {
     return 1.099 * pow(l, 0.45) - 0.099;
 }
 
+// The 3×3 matrix stored row by row from field `o`.
+fn mat_at(o: u32) -> array<vec3<f32>, 3> {
+    return array<vec3<f32>, 3>(
+        vec3<f32>(pf(o), pf(o + 1u), pf(o + 2u)),
+        vec3<f32>(pf(o + 3u), pf(o + 4u), pf(o + 5u)),
+        vec3<f32>(pf(o + 6u), pf(o + 7u), pf(o + 8u)),
+    );
+}
+
+// `finish::gamut_map` (SDR): the chroma scale that brings `r` into 0..1 towards its luminance (1: in gamut) ...
+fn gamut_scale(r: vec3<f32>, luma: vec3<f32>, top: f32) -> f32 {
+    let yy = clamp(dot(luma, r), 0.0, top);
+    var tg = 1.0;
+    for (var k = 0u; k < 3u; k++) {
+        let cc = r[k];
+        if (cc < 0.0) {
+            tg = min(tg, yy / max(yy - cc, 1e-9));
+        } else if (cc > top) {
+            tg = min(tg, (top - yy) / max(cc - yy, 1e-9));
+        }
+    }
+    return tg;
+}
+
+// ... and `r` scaled by it.
+fn gamut_apply(r: vec3<f32>, luma: vec3<f32>, tg: f32, top: f32) -> vec3<f32> {
+    if (tg < 1.0) {
+        let yy = clamp(dot(luma, r), 0.0, top);
+        return yy + (r - yy) * tg;
+    }
+    return r;
+}
+
+// `finish::out_of_gamut`: `r` needed desaturating by `t` to fit and isn't just a neutral beyond white or below black.
+fn out_of_gamut(r: vec3<f32>, t: f32) -> bool {
+    let lo = min(r.x, min(r.y, r.z));
+    let hi = max(r.x, max(r.y, r.z));
+    return t < 0.995 && (hi - lo) > 0.02 * max(abs(hi), 1e-3) && hi - lo > 1e-3 && (lo < -1e-3 || (hi > 1.0 && lo < 1.0));
+}
+
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let w = pu(F_W);
@@ -355,14 +397,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // --- dehaze (scene linear)
     let dz = pf(F_DEHAZE) + lt[10];
     if (dz != 0.0 && pu(F_HAS_DARK) != 0u) {
-        let d = clamp(dark[i] / pf(F_AIR_PRE), 0.0, 1.0);
+        // the dark channel is a blur, not a patch minimum: never attribute more veil than the
+        // pixel's own minimum channel, or dark pixels next to bright ones crush to black (#2504)
         let air = pf(F_AIR);
+        let cmin = min(c.x, min(c.y, c.z));
+        let d = clamp(min(select(0.0, dark[i] / pf(F_AIR_PRE), pf(F_AIR_PRE) > 0.0), select(0.0, cmin / air, air > 0.0)), 0.0, 1.0);
         if (dz > 0.0 && pu(F_DEHAZE_V3) != 0u) {
             // process V3 (`finish::dehaze_v3_pixel`)
             let k0 = clamp(dz, 0.0, 1.0);
             let k = k0 * (0.4 + 0.6 * k0);
             let t = max(1.0 - 0.95 * k * d, 0.3);
-            let veil = min(air * (1.0 - t), 0.9 * max(min(c.x, min(c.y, c.z)), 0.0));
+            let veil = min(air * (1.0 - t), 0.9 * max(cmin, 0.0));
             c = max((c - veil) / t, vec3<f32>(0.0));
         } else if (dz > 0.0) {
             let t = max(1.0 - 0.95 * min(dz, 1.0) * d, 0.12);
@@ -480,7 +525,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let mx = max(d.x, max(d.y, d.z));
     if (mx > peak) {
         let t = clamp((mx - peak) / max(mx - o, 1e-6), 0.0, 1.0);
-        d = d + (o - d) * t;
+        let grey = d + (o - d) * t;
+        if (pu(F_HUE_CLIP) != 0u) {
+            let kept = hue_clip(d, peak);
+            d = kept + (grey - kept) * hue_fade(o, mx, peak);
+        } else {
+            d = grey;
+        }
     }
 
     // --- colour
@@ -530,26 +581,28 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
     }
 
-    // --- gamut map to the output space (desaturate towards luminance until in range)
-    let om = array<vec3<f32>, 3>(
-        vec3<f32>(pf(F_OUT_M), pf(F_OUT_M + 1u), pf(F_OUT_M + 2u)),
-        vec3<f32>(pf(F_OUT_M + 3u), pf(F_OUT_M + 4u), pf(F_OUT_M + 5u)),
-        vec3<f32>(pf(F_OUT_M + 6u), pf(F_OUT_M + 7u), pf(F_OUT_M + 8u)),
-    );
-    var r = mul3(om, d);
-    let yy = clamp(pf(F_OUT_Y) * r.x + pf(F_OUT_Y + 1u) * r.y + pf(F_OUT_Y + 2u) * r.z, 0.0, peak);
-    var tg = 1.0;
-    for (var k = 0u; k < 3u; k++) {
-        let cc = r[k];
-        if (cc < 0.0) {
-            tg = min(tg, yy / max(yy - cc, 1e-9));
-        } else if (cc > peak) {
-            tg = min(tg, (peak - yy) / max(cc - yy, 1e-9));
+    // --- gamut map to the output space (desaturate towards luminance until in range);
+    // soft proofing maps into the proof space first and shows that in the output space
+    // (warn: 0 none, 1 destination gamut, 2 display gamut)
+    var warn = 0u;
+    var r: vec3<f32>;
+    if (pu(F_PROOF) != 0u) {
+        let q0 = mul3(mat_at(F_PROOF_M), d);
+        let tq = gamut_scale(q0, vec3<f32>(pf(F_PROOF_Y), pf(F_PROOF_Y + 1u), pf(F_PROOF_Y + 2u)), 1.0);
+        if (pu(F_PROOF_DEST_WARN) != 0u && out_of_gamut(q0, tq)) {
+            warn = 1u;
         }
+        let py = vec3<f32>(pf(F_PROOF_Y), pf(F_PROOF_Y + 1u), pf(F_PROOF_Y + 2u));
+        r = mul3(mat_at(F_PROOF_OUT), keep_hue_in_gamut(q0, gamut_apply(q0, py, tq, 1.0), py, 1.0));
+    } else {
+        r = mul3(mat_at(F_OUT_M), d);
     }
-    if (tg < 1.0) {
-        r = yy + (r - yy) * tg;
+    let oy = vec3<f32>(pf(F_OUT_Y), pf(F_OUT_Y + 1u), pf(F_OUT_Y + 2u));
+    let tg = gamut_scale(r, oy, peak);
+    if (pu(F_PROOF) != 0u && pu(F_PROOF_DISP_WARN) != 0u && warn == 0u && out_of_gamut(r, tg)) {
+        warn = 2u;
     }
+    r = keep_hue_in_gamut(r, gamut_apply(r, oy, tg, peak), oy, peak);
 
     // --- encode, curves, grain
     var e: vec3<f32>;
@@ -602,6 +655,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let k = pf(F_GRAIN_AMT) * g * (0.35 + 2.6 * lum * (1.0 - lum));
         e = e + k;
     }
+    if (warn == 1u) {
+        e = vec3<f32>(1.0, 0.0, 0.0);
+    } else if (warn == 2u) {
+        e = vec3<f32>(0.0, 0.25, 1.0);
+    }
     if (deep) {
         // linear in the output primaries (`finish::finish_deep`): up to `peak` (HDR) or 1
         let q = max(e, vec3<f32>(0.0));
@@ -615,4 +673,49 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     e = vec3<f32>(out_encode(e.x), out_encode(e.y), out_encode(e.z));
     out[i] = enc8(e.x) | (enc8(e.y) << 8u) | (enc8(e.z) << 16u) | (255u << 24u);
+}
+
+// `finish::hue_clip` (process V5): the brightest channel limited to `peak`, the darkest kept (all three `peak` when it
+// is above too), the middle one in its place between them
+fn hue_clip(c: vec3<f32>, peak: f32) -> vec3<f32> {
+    let hi = max(c.x, max(c.y, c.z));
+    if (!(hi > peak)) {
+        return c;
+    }
+    let lo = min(c.x, min(c.y, c.z));
+    if (lo >= peak) {
+        return vec3<f32>(peak);
+    }
+    return vec3<f32>(lo) + (c - vec3<f32>(lo)) * ((peak - lo) / (hi - lo));
+}
+
+// `finish::HUE_FADE_FROM` and `HUE_FADE_EV` (keep in step)
+const HUE_FADE_FROM: f32 = 0.35;
+const HUE_FADE_EV: f32 = 2.0;
+
+// `finish::hue_fade`
+fn hue_fade(y: f32, hi: f32, peak: f32) -> f32 {
+    let over = select(0.0, log2(hi / peak), hi > peak && peak > 0.0);
+    return max(sstep(HUE_FADE_FROM * peak, peak, y), sstep(0.0, HUE_FADE_EV, over));
+}
+
+// `finish::keep_hue_in_gamut`, or `mapped` itself before process V5
+fn keep_hue_in_gamut(r: vec3<f32>, mapped: vec3<f32>, luma: vec3<f32>, peak: f32) -> vec3<f32> {
+    if (pu(F_HUE_CLIP) == 0u) {
+        return mapped;
+    }
+    let c = hue_clip(r, peak);
+    // `finish::lift_negatives`
+    let yy = clamp(dot(luma, c), 0.0, peak);
+    var t = 1.0;
+    for (var k = 0u; k < 3u; k++) {
+        if (c[k] < 0.0) {
+            t = min(t, yy / max(yy - c[k], 1e-9));
+        }
+    }
+    var kept = c;
+    if (t < 1.0) {
+        kept = yy + (c - yy) * t;
+    }
+    return kept + (mapped - kept) * hue_fade(dot(luma, r), max(r.x, max(r.y, r.z)), peak);
 }

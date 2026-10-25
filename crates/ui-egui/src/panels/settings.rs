@@ -3,7 +3,8 @@
 //!
 //! Changes apply immediately (no OK/Cancel). Where they are stored:
 //! - **app settings** ([`crate::state::AppSettings`]: startup view, delete confirmation, GPU,
-//!   preview size, filmstrip/grid badges, last library, monitor profile) and Auto Advance live in
+//!   preview size, filmstrip/grid badges, last library, monitor profile, whether Import Lightroom
+//!   Catalog… asks where a catalog goes) and Auto Advance live in
 //!   the UI state,
 //!   saved by the host in its config folder (`ui.json`);
 //! - **library settings** (import defaults, XMP sidecars, thumbnail cache size, slideshow
@@ -37,6 +38,9 @@ pub const TABS: &[(&str, &str)] = &[
     ("sync", "Sync"),
     ("shortcuts", "Shortcuts"),
 ];
+
+/// The room Settings ▸ Slideshow wants: its settings column, the gap and the live preview.
+pub(crate) const SLIDESHOW_W: f32 = SLIDESHOW_COLUMN_W + 12.0 + super::slide_layout::PREVIEW_W;
 
 /// Thumbnail cache sizes offered (MB).
 const CACHE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
@@ -85,7 +89,7 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, tab: &mut String, max_height: f
     });
 }
 
-fn tab_body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, tab: &str) {
+pub(crate) fn tab_body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, tab: &str) {
     match tab {
         "import" => import_tab(app, ui, t),
         "folders" => super::settings_folders::settings_tab(app, ui, t),
@@ -102,6 +106,55 @@ fn tab_body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, tab: &str) {
         "sync" => super::peer_sync::settings_tab(app, ui, t),
         _ => general_tab(app, ui, t),
     }
+}
+
+/// `path` shortened to fit `max` (as `width` measures it) by dropping leading folders, after
+/// either kind of separator, so that its end stays (`…/Pictures/Library`,
+/// `…\Pictures\Library`): the end says which folder it is. A last folder too long by itself
+/// loses its end ([`crate::widgets::elide_head`]).
+fn elide_path(path: &str, max: f32, width: impl Fn(&str) -> f32) -> String {
+    if width(path) <= max {
+        return path.to_string();
+    }
+    // (a separator at the very end is not where a name starts: `…/` alone would say nothing)
+    let end = path.trim_end_matches(['/', '\\']).len();
+    let mut rest = path;
+    while let Some(i) = rest.find(['/', '\\']).filter(|i| path.len() - rest.len() + i + 1 < end) {
+        let separator = if rest.get(i..).is_some_and(|r| r.starts_with('\\')) { '\\' } else { '/' };
+        rest = rest.get(i + 1..).unwrap_or("");
+        let shorter = format!("…{separator}{rest}");
+        if width(&shorter) <= max {
+            return shorter;
+        }
+    }
+    let name = rest.trim_end_matches(['/', '\\']);
+    // (nothing but separators: never an empty label)
+    if name.is_empty() { "…".to_string() } else { crate::widgets::elide_head(name, max, width) }
+}
+
+/// A folder or file path on one line in the room left in its row (`text:{id}`): shortened from
+/// the front when it is too long ([`elide_path`]), with all of it in a tooltip then. `after` is
+/// the width of what follows it on the line (a button, a note) and its spacing: the path leaves
+/// that room, so those never wrap onto a second line.
+fn path_label(ui: &mut egui::Ui, id: &str, path: &str, font: egui::FontId, color: egui::Color32, after: f32) {
+    let shown =
+        elide_path(path, (ui.available_width() - after).max(0.0), |s| ui.painter().layout_no_wrap(s.to_string(), font.clone(), color).size().x);
+    // (`truncate` is the last resort, for a room narrower than "…")
+    let r = ui.add(egui::Label::new(RichText::new(&shown).font(font).color(color)).truncate().show_tooltip_when_elided(false));
+    register(ui.ctx(), format!("text:{id}"), r.rect);
+    if shown != path {
+        r.on_hover_text(path);
+    }
+}
+
+/// The width of `text` in the style `style`, and the gap before it: what a label takes in a row.
+fn label_width(ui: &egui::Ui, text: &str, style: egui::TextStyle) -> f32 {
+    ui.painter().layout_no_wrap(text.to_string(), style.resolve(ui.style()), egui::Color32::WHITE).size().x + ui.spacing().item_spacing.x
+}
+
+/// The same for a button, which has padding either side of its text.
+fn button_width(ui: &egui::Ui, text: &str) -> f32 {
+    label_width(ui, text, egui::TextStyle::Button) + 2.0 * ui.spacing().button_padding.x
 }
 
 /// A section heading; in a dialog form it starts a titled group (an inset panel).
@@ -122,9 +175,17 @@ pub(super) fn row<R>(ui: &mut egui::Ui, t: &Tokens, label: &str, add: impl FnOnc
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(egui::vec2(PANEL_LABEL_W, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.set_min_width(PANEL_LABEL_W);
-            ui.label(RichText::new(crate::i18n::tr(label)).color(t.text_label));
+            // (a label longer than its column wraps in it; it does not push the controls along)
+            ui.add(egui::Label::new(RichText::new(crate::i18n::tr(label)).color(t.text_label)).wrap());
         });
-        add(ui)
+        // The controls wrap in the room beside the label, each further line starting under the
+        // first control, so a row with many choices grows down and never widens the window.
+        let wrapped = egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true);
+        ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), wrapped, |ui| {
+            ui.spacing_mut().item_spacing.y = 4.0;
+            add(ui)
+        })
+        .inner
     })
     .inner
 }
@@ -146,15 +207,16 @@ pub(super) fn check(ui: &mut egui::Ui, id: &str, value: &mut bool, label: &str) 
 
 /// Mutually exclusive buttons (`button:{id}-{index}`).
 pub(super) fn choices<V: PartialEq + Copy>(ui: &mut egui::Ui, id: &str, options: &[(V, &str)], value: &mut V) -> bool {
-    let mut changed = false;
-    ui.spacing_mut().item_spacing.x = 4.0;
-    for (i, (v, l)) in options.iter().enumerate() {
-        if crate::widgets::text_button(ui, &format!("{id}-{i}"), l, *value == *v).clicked() && *value != *v {
+    // one segmented control (`button:{id}-{i}` each)
+    let labels: Vec<&str> = options.iter().map(|(_, l)| *l).collect();
+    let chosen = options.iter().position(|(v, _)| *v == *value);
+    match crate::widgets::segments(ui, id, &labels, chosen).and_then(|i| options.get(i)) {
+        Some((v, _)) if *v != *value => {
             *value = *v;
-            changed = true;
+            true
         }
+        _ => false,
     }
-    changed
 }
 
 // ----------------------------------------------------------------------------------- Shortcuts
@@ -184,6 +246,13 @@ fn shortcuts_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
 // ------------------------------------------------------------------------------------- General
 
 fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
+    // Modern (Android's default) or Classic; on either, this row switches back
+    row(ui, t, crate::i18n::tr("Layout"), |ui| {
+        let mut modern = app.ui.modern.enabled;
+        if choices(ui, "settingsLayout", &[(false, "Classic – Advanced"), (true, "Modern – Simple")], &mut modern) {
+            let _ = app.run("view.modernLayout", json!({"on": modern}));
+        }
+    });
     row(ui, t, crate::i18n::tr("Language"), |ui| {
         // a list, not a row of buttons: there are too many languages for one line
         let current = language_label(ui.ctx(), app.ui.language);
@@ -203,7 +272,7 @@ fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         None => crate::i18n::tr("In memory — nothing is saved").to_string(),
     };
     row(ui, t, crate::i18n::tr("Location"), |ui| {
-        ui.label(RichText::new(location).color(t.text));
+        path_label(ui, "settingsLocation", &location, egui::TextStyle::Body.resolve(ui.style()), t.text, 0.0);
     });
     row(ui, t, "", |ui| {
         let can = app.services.pick_folder.is_some();
@@ -221,12 +290,36 @@ fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             hint(ui, t, crate::i18n::tr("not available here"));
         }
     });
+    // where libraries are folders to choose from (not in the browser, which keeps one)
+    if app.services.pick_folder.is_some() {
+        use crate::state::LaunchLibrary;
+        row(ui, t, crate::i18n::tr("At launch"), |ui| {
+            choices(
+                ui,
+                "settingsAtLaunch",
+                &[(LaunchLibrary::Last, "Open the last library"), (LaunchLibrary::Ask, "Ask me")],
+                &mut app.ui.settings.at_launch,
+            );
+        });
+        hint(ui, t, crate::i18n::tr("Ask me lists your recent libraries at launch. Holding Alt (Option on a Mac) as the window appears asks once."));
+    }
+    // File ▸ Import Lightroom Catalog… (#2672): the window that asks where a catalog goes, or not
+    ui.label(RichText::new(crate::i18n::tr("When importing a Lightroom catalog")).color(t.text_label));
+    row(ui, t, "", |ui| {
+        use crate::state::LightroomImport;
+        choices(
+            ui,
+            "settingsLightroomImport",
+            &[(LightroomImport::Ask, "Ask where to import it"), (LightroomImport::AlwaysMerge, "Always merge into the open library")],
+            &mut app.ui.settings.lightroom_import,
+        );
+    });
     heading(ui, t, crate::i18n::tr("Startup"));
     row(ui, t, crate::i18n::tr("Open in"), |ui| {
         choices(
             ui,
             "settingsStartup",
-            &[(StartupView::Last, "Last view"), (StartupView::Grid, "Photo Grid"), (StartupView::Detail, "Detail")],
+            &[(StartupView::Last, "Last view"), (StartupView::Grid, "Photo Grid"), (StartupView::Detail, "Detail View")],
             &mut app.ui.settings.startup_view,
         );
     });
@@ -246,6 +339,8 @@ fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     check(ui, "settings.autoAdvance", &mut app.ui.auto_advance, "Auto Advance: move to the next photo after rating or flagging");
     check(ui, "settings.confirmDelete", &mut app.ui.settings.confirm_delete, "Confirm before moving photos to Recently Deleted");
     check(ui, "settings.askBeforeMove", &mut app.ui.settings.ask_before_move, "Confirm before moving photos to another folder on disk");
+    heading(ui, t, crate::i18n::tr("Dialogs"));
+    check(ui, "settings.closeDialogsOutside", &mut app.ui.settings.close_dialogs_outside, "Close a dialog by clicking outside it");
     heading(ui, t, crate::i18n::tr("External Editing"));
     row(ui, t, crate::i18n::tr("PhotoCraft"), |ui| {
         crate::text_field::TextField::singleline("field:photocraftPath", &mut app.ui.settings.photocraft_path)
@@ -453,29 +548,31 @@ fn import_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             }
         });
     }
-    if !app.session.metadata_presets.is_empty() {
-        row(ui, t, crate::i18n::tr("Metadata preset"), |ui| {
-            let cur = d.metadata_preset.clone();
-            let mut pick = None;
-            let r = crate::widgets::combo_box("settingsMetaPreset")
-                .width(240.0)
-                .selected_text(cur.clone().unwrap_or_else(|| crate::i18n::tr("None").into()))
-                .show_ui(ui, |ui| {
-                    if ui.selectable_label(cur.is_none(), crate::i18n::tr("None")).clicked() {
-                        pick = Some(String::new());
+    row(ui, t, crate::i18n::tr("Metadata preset"), |ui| {
+        let cur = d.metadata_preset.clone();
+        let mut pick = None;
+        let r = crate::widgets::combo_box("settingsMetaPreset")
+            .width(240.0)
+            .selected_text(cur.clone().unwrap_or_else(|| crate::i18n::tr("None").into()))
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(cur.is_none(), crate::i18n::tr("None")).clicked() {
+                    pick = Some(String::new());
+                }
+                for m in &app.session.metadata_presets {
+                    if ui.selectable_label(cur.as_deref() == Some(m.name.as_str()), &m.name).clicked() {
+                        pick = Some(m.name.clone());
                     }
-                    for m in &app.session.metadata_presets {
-                        if ui.selectable_label(cur.as_deref() == Some(m.name.as_str()), &m.name).clicked() {
-                            pick = Some(m.name.clone());
-                        }
-                    }
-                });
-            register(ui.ctx(), "combo:settingsMetaPreset", r.response.rect);
-            if let Some(n) = pick {
-                let _ = app.run("library.preferences", json!({"import": {"metadataPreset": n}}));
-            }
-        });
-    }
+                }
+                ui.separator();
+                if ui.button(crate::i18n::tr("Import Presets…")).clicked() {
+                    let _ = app.run("file.importPresets", json!({}));
+                }
+            });
+        register(ui.ctx(), "combo:settingsMetaPreset", r.response.rect);
+        if let Some(n) = pick {
+            let _ = app.run("library.preferences", json!({"import": {"metadataPreset": n}}));
+        }
+    });
     heading(ui, t, crate::i18n::tr("XMP sidecars"));
     let mut xmp = app.session.xmp;
     if check(ui, "settings.autoWriteXmp", &mut xmp.auto_write, "Automatically write changes into XMP sidecars") {
@@ -532,7 +629,17 @@ fn import_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         heading(ui, t, crate::i18n::tr("Auto Import"));
         hint(ui, t, crate::i18n::tr("Photos that arrive in this folder (tethering, a scanner, a sync app) are added as soon as they're complete."));
         row(ui, t, crate::i18n::tr("Watched folder"), |ui| {
-            ui.label(RichText::new(d.auto_folder.clone().unwrap_or_else(|| crate::i18n::tr("Off").into())).color(t.text));
+            match &d.auto_folder {
+                Some(folder) => path_label(
+                    ui,
+                    "settingsAutoFolder",
+                    folder,
+                    egui::TextStyle::Body.resolve(ui.style()),
+                    t.text,
+                    button_width(ui, crate::i18n::tr("Choose…")) + button_width(ui, crate::i18n::tr("Turn Off")),
+                ),
+                None => drop(ui.label(RichText::new(crate::i18n::tr("Off")).color(t.text))),
+            }
             let can = app.services.pick_folder.is_some();
             let r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Choose…")));
             register(ui.ctx(), "button:settingsAutoFolder", r.rect);
@@ -675,14 +782,69 @@ pub fn lens_db_folder(app: &mut LccApp, p: &Value) -> Result<Value, String> {
 
 // --------------------------------------------------------------------------------- Performance
 
+/// Keep recent zoomed HDR views: offered only where the GPU has room for them on this screen;
+/// elsewhere greyed out, with why (an HDR display only: SDR windows keep no HDR textures).
+fn hdr_zoom_cache(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
+    const LABEL: &str = "Keep recent zoomed HDR views in graphics memory";
+    let Some(fit) = app.hdr_cache_fit(ui.ctx()) else { return };
+    let mb = |b: u64| b.div_ceil(1 << 20);
+    if fit.fits() {
+        check(ui, "settings.hdrZoomCache", &mut app.ui.settings.hdr_zoom_cache, LABEL);
+        hint(
+            ui,
+            t,
+            &crate::i18n::tr_format!(
+                "Panning back or zooming in again on an HDR edit shows it at once instead of rendering it again. Uses up to {need} MB of graphics memory on this screen.",
+                need = mb(fit.need)
+            ),
+        );
+        return;
+    }
+    let mut off = false;
+    ui.add_enabled_ui(false, |ui| check(ui, "settings.hdrZoomCache", &mut off, LABEL));
+    let why = crate::i18n::tr_format!(
+        "Not available on this computer: keeping them needs about {need} MB of graphics memory on this screen, and the graphics card has {have} MB. The app uses at most a quarter of it for them, so the rest stays free for the photo itself and other apps. Zoomed HDR views still work; going back to one renders it again.",
+        need = mb(fit.need),
+        have = fit.have.map_or(0, mb)
+    );
+    crate::dialog_frame::in_control_column(ui, |ui| {
+        ui.label(RichText::new(why).size(11.0).color(t.caution));
+    });
+}
+
+/// The graphics interface GPU rendering uses: a choice on Windows only (DirectX 12 by default,
+/// whose shader compiler can make the start slow on some machines; Vulkan there is opt-in, issue
+/// #136). Elsewhere there is one sensible interface.
+fn gpu_backend_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
+    use crate::state::GpuBackend;
+    if !cfg!(target_os = "windows") {
+        return;
+    }
+    let opts = [(GpuBackend::Auto, crate::i18n::tr("Automatic")), (GpuBackend::Dx12, "DirectX 12"), (GpuBackend::Vulkan, "Vulkan")];
+    row(ui, t, crate::i18n::tr("Graphics interface"), |ui| {
+        choices(ui, "settingsGpuBackend", &opts, &mut app.ui.settings.gpu_backend);
+    });
+    hint(
+        ui,
+        t,
+        crate::i18n::tr(
+            "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.",
+        ),
+    );
+}
+
 fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use lcc_engine::gpu;
     heading(ui, t, crate::i18n::tr("Rendering"));
     #[cfg(target_os = "windows")]
     check(ui, "settings.composeWindow", &mut app.ui.settings.compose_window, "Prevent G-SYNC/FreeSync flicker (applies at next launch)");
     check(ui, "settings.gpu", &mut app.ui.settings.gpu, "Use the GPU for rendering");
+    gpu_backend_row(app, ui, t);
     check(ui, "settings.hdrDisplay", &mut app.ui.settings.hdr_display, "HDR display where the screen supports it (applies at next launch)");
-    let status = if !gpu::available() {
+    // `available` waits for a device still being created: say so instead of blocking the frame
+    let status = if gpu::enabled() && !gpu::ready() {
+        "GPU: starting…".to_string()
+    } else if !gpu::available() {
         match gpu::unavailable_reason() {
             Some(why) => crate::i18n::tr_format!("Rendering on the CPU: {why}", why = why),
             None => "No usable GPU found: rendering on the CPU".to_string(),
@@ -696,6 +858,7 @@ fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     crate::dialog_frame::in_control_column(ui, |ui| {
         ui.add(egui::Label::new(RichText::new(crate::i18n::tr(&status)).size(11.0).color(t.text_dim)).truncate()).on_hover_text(&status);
     });
+    hdr_zoom_cache(app, ui, t);
     row(ui, t, crate::i18n::tr("Preview size"), |ui| {
         let opts: Vec<(u32, String)> =
             PREVIEW_LIMITS.iter().map(|e| (*e, if *e == 0 { crate::i18n::tr("Automatic").to_string() } else { format!("{e} px") })).collect();
@@ -707,6 +870,14 @@ fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         t,
         crate::i18n::tr(
             "Automatic renders the Detail view at the size it is shown, up to the photo's own pixels. Choose a size to cap it: smaller is faster.",
+        ),
+    );
+    check(ui, "settings.highQualityAdjustmentPreviews", &mut app.ui.settings.high_quality_adjustment_previews, "High quality adjustment previews");
+    hint(
+        ui,
+        t,
+        crate::i18n::tr(
+            "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.",
         ),
     );
     row(ui, t, crate::i18n::tr("Memory for caches"), |ui| {
@@ -777,8 +948,18 @@ fn smart_previews(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let available = loc["available"].as_bool().unwrap_or(true);
     let custom = loc["custom"].as_bool().unwrap_or(false);
     row(ui, t, crate::i18n::tr("Folder"), |ui| {
-        let text = format!("{path}{}", if custom { "" } else { "  (library default)" });
-        ui.add(egui::Label::new(RichText::new(text.clone()).color(if available { t.text } else { t.reject })).truncate()).on_hover_text(text);
+        path_label(
+            ui,
+            "settingsSmartFolder",
+            &path,
+            egui::TextStyle::Body.resolve(ui.style()),
+            if available { t.text } else { t.reject },
+            if custom { 0.0 } else { label_width(ui, "(library default)", egui::TextStyle::Body) },
+        );
+        if !custom {
+            let r = ui.label(RichText::new("(library default)").color(t.text));
+            register(ui.ctx(), "text:settingsSmartDefault", r.rect);
+        }
     });
     let (count, bytes) = (loc["count"].as_u64().unwrap_or(0), loc["bytes"].as_u64().unwrap_or(0));
     if available {
@@ -894,7 +1075,7 @@ fn display_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         let info = d.describe();
         if !screen {
             row(ui, t, crate::i18n::tr("File"), |ui| {
-                ui.label(RichText::new(&d.path).size(11.0).color(t.text_dim));
+                path_label(ui, "settingsDisplayFile", &d.path, egui::FontId::proportional(11.0), t.text_dim, 0.0);
             });
         }
         row(ui, t, crate::i18n::tr("Type"), |ui| {
@@ -953,7 +1134,7 @@ fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         t,
         crate::i18n::tr("Grouped: keywords inside the same keyword share a line naming it, and long lists and the suggestions are shortened."),
     );
-    heading(ui, t, crate::i18n::tr("Detail"));
+    heading(ui, t, crate::i18n::tr("Detail View"));
     check(ui, "settings.navigator", &mut app.ui.navigator, "Show the Navigator while zoomed in");
     check(ui, "settings.hideFilterInDevelop", &mut app.ui.settings.hide_filter_in_develop, "Hide filter text in Develop mode");
     row(ui, t, crate::i18n::tr("Info overlay"), |ui| {
@@ -964,8 +1145,9 @@ fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
 }
 
 /// View ▸ View Options (⌘J), Lightroom Classic's Loupe View tab: whether the info overlay shows and
-/// which, and the three lines each of Info 1 and Info 2 shows (`view.viewOptions`). Changes apply
-/// as they are made.
+/// which, the three lines each of Info 1 and Info 2 shows, which of them shows briefly when the
+/// photo changes, and whether the loupe shows its loading and rendering message
+/// (`view.viewOptions`). Changes apply as they are made.
 pub(super) fn view_options(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use crate::state::{InfoOverlay as I, LoupeInfo, LoupeInfoField as F};
     heading(ui, t, crate::i18n::tr("Loupe View"));
@@ -1000,7 +1182,15 @@ pub(super) fn view_options(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         if r.clicked() {
             *lines = defaults;
         }
+        // one Info at most shows briefly: ticking one unticks the other
+        let info = if n == 1 { I::Basic } else { I::Exposure };
+        let mut briefly = app.ui.settings.loupe_info.briefly == info;
+        if check(ui, &format!("viewOptions.briefly{n}"), &mut briefly, "Show briefly when photo changes") {
+            app.ui.settings.loupe_info.briefly = if briefly { info } else { I::Off };
+        }
     }
+    heading(ui, t, crate::i18n::tr("General"));
+    check(ui, "viewOptions.loupeMessages", &mut app.ui.settings.loupe_messages, "Show message when loading or rendering photos");
 }
 
 // ----------------------------------------------------------------------------------- Slideshow
@@ -1035,6 +1225,24 @@ fn slideshow_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         (ui.ctx().content_rect().height() - 260.0).clamp(300.0, 760.0)
     };
     let pad = crate::dialog_frame::GROUP_PAD as i8;
+    // the touch Settings screen on a narrow screen: the preview above, the settings under it, in
+    // the page's own scrolling
+    if crate::dialog_frame::finger_sized(ui) && ui.available_width() < SLIDESHOW_COLUMN_W + 12.0 + super::slide_layout::PREVIEW_W {
+        super::slide_layout::preview(app, ui, t, f32::INFINITY);
+        ui.add_space(6.0);
+        super::slide_templates::section(app, ui, t);
+        ui.add_space(6.0);
+        playback_section(app, ui, t);
+        ui.add_space(6.0);
+        super::slide_layout::sections(app, ui, t);
+        ui.add_space(6.0);
+        super::slide_overlays::sections(app, ui, t);
+        ui.add_space(6.0);
+        super::slide_titles::sections(app, ui, t);
+        ui.add_space(6.0);
+        export_section(app, ui, t);
+        return;
+    }
     ui.horizontal_top(|ui| {
         ui.allocate_ui_with_layout(egui::vec2(SLIDESHOW_COLUMN_W, tall), top_down, |ui| {
             ui.set_width(SLIDESHOW_COLUMN_W);
@@ -1061,7 +1269,7 @@ fn slideshow_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         ui.add_space(12.0);
         ui.allocate_ui_with_layout(egui::vec2(super::slide_layout::PREVIEW_W, tall), top_down, |ui| {
             ui.set_width(super::slide_layout::PREVIEW_W);
-            super::slide_layout::preview(app, ui, t);
+            super::slide_layout::preview(app, ui, t, f32::INFINITY);
             crate::dialog_frame::group_end(ui);
         });
     });
@@ -1071,7 +1279,7 @@ fn slideshow_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
 fn export_section(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     heading(ui, t, crate::i18n::tr("Export"));
     let running = app.session.slideshow_export.as_ref().is_some_and(|r| r.running());
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for (id, label, format) in [
             ("slideshowExportPdf", "Export PDF…", "pdf"),
             ("slideshowExportJpeg", "Export JPEG…", "jpeg"),
@@ -1091,6 +1299,11 @@ fn playback_section(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use lcc_engine::slideshow::{FADE_MAX, SLIDE_MAX, SLIDE_MIN};
     heading(ui, t, crate::i18n::tr("Playback"));
     let s = app.session.slideshow.clone();
+    let mut v = s.manual;
+    if check(ui, "settings.slideshowManual", &mut v, "Manual slideshow") {
+        let _ = app.run("slideshow.playback", json!({"manual": v}));
+    }
+    hint(ui, t, crate::i18n::tr("A manual slideshow shows each slide until → or ← changes it. Exports still use the slide duration."));
     row(ui, t, crate::i18n::tr("Slide duration"), |ui| {
         duration_slider(app, ui, "slideshowSlide", "slideDuration", s.slide_duration, SLIDE_MIN..=SLIDE_MAX)
     });
@@ -1191,6 +1404,10 @@ fn appearance(ui: &mut egui::Ui, t: &Tokens, s: &mut crate::state::AppSettings, 
         let options = crate::theme::SliderLayout::ALL.map(|layout| (layout, layout.label()));
         choices(ui, "settingsSliderLayout", &options, &mut s.slider_layout);
     });
+    row(ui, t, crate::i18n::tr("Slider text"), |ui| {
+        let options = crate::theme::SliderText::ALL.map(|size| (size, size.label()));
+        choices(ui, "settingsSliderText", &options, &mut s.slider_text);
+    });
     row(ui, t, crate::i18n::tr("Slider control"), |ui| {
         let options = crate::theme::SliderControl::ALL.map(|c| (c, c.label()));
         choices(ui, "settingsSliderControl", &options, &mut s.slider_control);
@@ -1251,12 +1468,7 @@ fn theme_card<V: PartialEq + Copy>(
                             });
                             register(ui.ctx(), format!("button:themeFavorite-{}", kind.id()), r.rect);
                             if favorite || hovered {
-                                crate::icons::paint(
-                                    ui.painter(),
-                                    r.rect.shrink(4.0),
-                                    if favorite { crate::icons::Icon::StarFilled } else { crate::icons::Icon::Star },
-                                    if favorite { t.accent } else { t.text_dim },
-                                );
+                                crate::rating::paint_star(ui.painter(), r.rect.shrink(4.0), favorite, if favorite { t.accent } else { t.text_dim });
                             }
                             if r.clicked() {
                                 if favorite {
@@ -1482,6 +1694,7 @@ fn switch_library(app: &mut LccApp, path: &str, demo: bool) -> Result<Value, Str
     // or failed switch reopens the same catalog, so its pins stay).
     app.ui.reference = None;
     app.ui.compare = None;
+    app.ui.brief_info = crate::state::BriefInfo::default();
     if app.ui.view == crate::state::ViewMode::Reference {
         app.ui.view = crate::state::ViewMode::PhotoGrid;
     }
@@ -1577,7 +1790,7 @@ fn valid_library_name(s: &str) -> Result<&str, String> {
 }
 
 /// `base` inside `location`, or `base 2`, `base 3`… if that is taken.
-fn free_name(location: &std::path::Path, base: &str) -> std::path::PathBuf {
+pub(crate) fn free_name(location: &std::path::Path, base: &str) -> std::path::PathBuf {
     let first = location.join(base);
     if !first.exists() {
         return first;
@@ -1585,25 +1798,53 @@ fn free_name(location: &std::path::Path, base: &str) -> std::path::PathBuf {
     (2..1000u32).map(|i| location.join(format!("{base} {i}"))).find(|p| !p.exists()).unwrap_or(first)
 }
 
-/// `app.recentLibraries {clear?: bool}`: the recently opened libraries, newest first, as
-/// `[{path, name, exists, open}]` (`exists: false`: moved or on a disconnected drive). `clear`
-/// forgets them all.
+/// `app.recentLibraries {remove?: path, clear?: bool}`: the recently opened libraries, newest
+/// first, as `[{path, name, exists, checking, open, lastOpened}]`. `exists` is what the last
+/// background check found (`false`: moved, on a disconnected drive, not a folder or no longer a
+/// library; `null`: not checked yet, or the check couldn't tell — a folder that can't be listed, an
+/// unreadable catalog, a lookup or check that failed; `checking` says whether a check is running): the command never
+/// looks at a folder itself, as one on an offline network share can take seconds to answer.
+/// `lastOpened`: ISO 8601 time, `null` when not known. `remove` forgets that
+/// one entry (an error if the list doesn't hold it) and `clear` forgets them all; neither touches
+/// anything on disk (issue #1290).
 pub fn recent_libraries(app: &mut LccApp, p: &Value) -> Result<Value, String> {
+    match p.get("remove") {
+        None | Some(Value::Null) => {}
+        Some(Value::String(path)) => {
+            if !forget_library(&mut app.ui.settings, path) {
+                return Err(format!("app.recentLibraries: {path:?} is not in the recent libraries"));
+            }
+            app.recent_checks.forget(path);
+        }
+        Some(_) => return Err("app.recentLibraries: remove must be a library path (a string)".into()),
+    }
     if p.get("clear").and_then(Value::as_bool) == Some(true) {
-        app.ui.settings.recent_libraries.clear();
+        for path in std::mem::take(&mut app.ui.settings.recent_libraries) {
+            app.recent_checks.forget(&path);
+        }
+        app.ui.settings.recent_opened.clear();
     }
     let open = app.session.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone());
-    let list: Vec<Value> = app
-        .ui
-        .settings
+    let (settings, checks) = (&app.ui.settings, &app.recent_checks);
+    let list: Vec<Value> = settings
         .recent_libraries
         .iter()
         .map(|r| {
             let d = std::path::Path::new(r);
-            json!({"path": r, "name": library_name(d), "exists": d.is_dir(), "open": open.as_deref() == Some(d)})
+            let exists = checks.exists(r);
+            json!({"path": r, "name": library_name(d), "exists": exists, "checking": checks.is_checking(r), "open": open.as_deref() == Some(d), "lastOpened": settings.recent_opened.get(r)})
         })
         .collect();
     Ok(Value::Array(list))
+}
+
+/// Forget `path` in File ▸ Open Recent Library (and when it was opened); the library itself is
+/// left where it is. False if the list didn't hold it.
+pub fn forget_library(settings: &mut crate::state::AppSettings, path: &str) -> bool {
+    let before = settings.recent_libraries.len();
+    settings.recent_libraries.retain(|r| r != path);
+    settings.recent_opened.remove(path);
+    settings.recent_libraries.len() != before
 }
 
 // ---------------------------------------------------------------------------- Display profile
@@ -1707,5 +1948,50 @@ mod tests {
         assert_eq!(app.ui.reference, pin, "a refused New Library during a scan keeps the reference pin");
         assert!(app.scan.is_some());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::elide_path;
+
+    /// Width = characters, so a limit of 20 is "20 characters".
+    fn fit(path: &str, max: usize) -> String {
+        elide_path(path, max as f32, |s| s.chars().count() as f32)
+    }
+
+    #[test]
+    fn a_path_that_fits_is_left_alone() {
+        assert_eq!(fit("/Users/me/Pictures", 18), "/Users/me/Pictures");
+        assert_eq!(fit("", 5), "");
+    }
+
+    #[test]
+    fn leading_folders_go_first_and_the_end_stays() {
+        assert_eq!(fit("/Users/me/Pictures/Library", 20), "…/Pictures/Library");
+        assert_eq!(fit("/Users/me/Pictures/Library", 10), "…/Library");
+    }
+
+    /// Windows paths: `Path::display` gives backslashes there.
+    #[test]
+    fn a_path_with_backslashes_keeps_its_end_too() {
+        assert_eq!(fit(r"C:\Users\me\Pictures\Library", 20), r"…\Pictures\Library");
+        assert_eq!(fit(r"C:\Users\me/Pictures\Library", 10), r"…\Library");
+    }
+
+    #[test]
+    fn a_last_folder_too_long_by_itself_loses_its_end() {
+        assert_eq!(fit("/Users/me/a-very-long-folder-name", 8), "a-very-…");
+        assert_eq!(fit("no-separator-at-all", 8), "no-sepa…");
+        assert_eq!(fit("/Users/Фотографии-из-отпуска", 8), "Фотогра…");
+    }
+
+    #[test]
+    fn a_separator_at_the_end_is_not_where_the_name_starts() {
+        assert_eq!(fit("/Users/me/Pictures/Library/", 11), "…/Library/");
+        assert_eq!(fit("/Users/me/a-very-long-folder-name/", 8), "a-very-…");
+        assert_eq!(fit(r"C:\Users\me\Library\", 11), r"…\Library\");
+        assert_eq!(fit("///", 2), "…");
+        assert_eq!(fit(r"\\server\share\folder", 15), r"…\share\folder");
     }
 }

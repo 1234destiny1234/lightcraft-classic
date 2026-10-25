@@ -66,6 +66,17 @@ pub fn folders(app: &mut LccApp) -> Value {
             "With access to all files, folders on the device are read where they are instead of being copied.",
         ));
     }
+    if app.services.camera_roll.is_some() {
+        out.push(entry(
+            "cameraRoll",
+            "Camera roll",
+            Some("DCIM/Camera".to_string()),
+            true,
+            true,
+            false,
+            "Adds the photos taken with this device to the library (asks for access to your photos).",
+        ));
+    }
     let st = app.session.lens_db.status();
     let lens = st["dir"].as_str().map(str::to_string);
     let env = st["origin"] == "env";
@@ -160,6 +171,7 @@ fn act(app: &mut LccApp, id: &str, reset: bool) -> Result<Value, String> {
         ("smartPreviews", true) => app.run("library.smartPreviewsLocation", json!({"reset": true, "existing": "move"})),
         ("lensProfiles", false) => app.run("app.lensDbFolder", json!({})),
         ("deviceStorage", false) => app.run("app.allFilesAccess", json!({})),
+        ("cameraRoll", false) => app.run("file.addCameraRoll", json!({})),
         _ => Ok(Value::Null),
     }
 }
@@ -202,7 +214,8 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         ui.horizontal(|ui| {
             ui.add_space(LABEL_W + ui.spacing().item_spacing.x);
             ui.spacing_mut().item_spacing.x = 4.0;
-            if change && crate::widgets::text_button(ui, &format!("folderChange-{id}"), "Change…", false).clicked() {
+            let change_label = if id == "cameraRoll" { "Import…" } else { "Change…" };
+            if change && crate::widgets::text_button(ui, &format!("folderChange-{id}"), change_label, false).clicked() {
                 action = Some((id.to_string(), false));
             }
             if reset {

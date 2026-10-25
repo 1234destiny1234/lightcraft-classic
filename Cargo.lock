@@ -1455,6 +1455,14 @@ version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=82a24b006eefa036b43c09a67fb9a3fbd17ffe63#82a24b006eefa036b43c09a67fb9a3fbd17ffe63"
 
 [[package]]
+name = "craft-media"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs?rev=f0ad6c1e1d297908915f4be315b0fcfc9be7b5d4#f0ad6c1e1d297908915f4be315b0fcfc9be7b5d4"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "craft-ui"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=5c874d51eeb3de70e735c8ce87a59a7dedd47675#5c874d51eeb3de70e735c8ce87a59a7dedd47675"
@@ -1526,9 +1534,9 @@ dependencies = [
 
 [[package]]
 name = "crypto-bigint"
-version = "0.7.5"
+version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a52aa3fcda4e6302a9f48734f234d35d4721b96f8fe07d073f07ce9df4f0271"
+checksum = "d726facc8b27e604391b232b970cdc19b5468c69f08b466b9734c759216c7415"
 dependencies = [
  "cpubits",
  "ctutils",
@@ -1568,7 +1576,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3633a51a39c69ebbaa4feaa694bd83d241e4093901c84a0963b19d9bb3f0cf8f"
 dependencies = [
- "crypto-bigint 0.7.5",
+ "crypto-bigint 0.7.8",
  "rand_core 0.10.1",
 ]
 
@@ -1592,9 +1600,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.3"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03bb0e1cc970d482d121d9a1744999169b69a07470b3d644a7894e53fcaf4574"
+checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
 dependencies = [
  "cmov",
  "subtle",
@@ -2124,7 +2132,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d65aa39b3a5c1c9c1b745c9a019234bb7a21b77abcb4f4d266d706e2d577d65"
 dependencies = [
  "base16ct 1.0.0",
- "crypto-bigint 0.7.5",
+ "crypto-bigint 0.7.8",
  "crypto-common 0.2.2",
  "digest 0.11.3",
  "ff 0.14.0",
@@ -2317,7 +2325,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2464,8 +2472,8 @@ checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
 name = "filmcraft-aac"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-bitstream",
  "thiserror 2.0.21",
@@ -2473,16 +2481,16 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-ac3"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "filmcraft-apv"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2491,8 +2499,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-av1"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2501,21 +2509,24 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-bitstream"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
+dependencies = [
+ "craft-media",
+]
 
 [[package]]
 name = "filmcraft-color"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "filmcraft-dnx"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2524,8 +2535,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-frame"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-color",
  "filmcraft-time",
@@ -2535,8 +2546,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-h264"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2545,8 +2556,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-h264enc"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2555,8 +2566,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-hevc"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2565,22 +2576,24 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-isobmff"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
- "filmcraft-bitstream",
- "thiserror 2.0.21",
+ "craft-media",
 ]
 
 [[package]]
 name = "filmcraft-matroska"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
+dependencies = [
+ "craft-media",
+]
 
 [[package]]
 name = "filmcraft-mpeg2v"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "rayon",
  "thiserror 2.0.21",
@@ -2588,26 +2601,29 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-mpegts"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "filmcraft-mxf"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
+dependencies = [
+ "chrono",
+]
 
 [[package]]
 name = "filmcraft-opus"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 
 [[package]]
 name = "filmcraft-prores"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2616,16 +2632,16 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-time"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "filmcraft-vp9"
-version = "0.10.0"
-source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
+version = "0.12.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=cfaad0c7807452d526a7b6870ff59450ccf08106#cfaad0c7807452d526a7b6870ff59450ccf08106"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -4419,7 +4435,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-actions"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -4427,7 +4443,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-android"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "android_logger",
  "eframe",
@@ -4446,7 +4462,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-android-host"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "android-activity",
  "jni 0.21.1",
@@ -4455,18 +4471,18 @@ dependencies = [
 
 [[package]]
 name = "lcc-app"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "bytemuck",
  "chrono",
  "eframe",
  "egui",
  "getrandom 0.3.4",
- "half",
  "lcc-brand",
  "lcc-codecs",
  "lcc-engine",
  "lcc-gpu",
+ "lcc-gpumem",
  "lcc-hdrmeta",
  "lcc-pipeline",
  "lcc-raster",
@@ -4492,7 +4508,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-audio-out"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "cpal",
  "futures",
@@ -4504,7 +4520,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-book"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "hayro",
  "lcc-codecs",
@@ -4521,26 +4537,28 @@ dependencies = [
 
 [[package]]
 name = "lcc-brand"
-version = "26.43.4"
+version = "26.43.7"
 
 [[package]]
 name = "lcc-camdb"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "lcc-color",
  "lcc-raw",
  "serde",
+ "serde_json",
  "toml",
 ]
 
 [[package]]
 name = "lcc-catalog"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "chrono",
  "crc32fast",
  "lcc-brand",
+ "lcc-camdb",
  "lcc-develop",
  "lcc-fuzzkit",
  "lcc-geo",
@@ -4560,7 +4578,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-classic-slideshow"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "claxon",
  "hayro",
@@ -4584,17 +4602,20 @@ dependencies = [
 
 [[package]]
 name = "lcc-cli"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
+ "chrono",
  "dhat",
  "lcc-brand",
  "lcc-camdb",
  "lcc-codecs",
+ "lcc-colourfit",
  "lcc-denoise",
  "lcc-engine",
  "lcc-mcp",
  "lcc-merge",
  "lcc-raster",
+ "lcc-raw",
  "lcc-scenes",
  "lcc-sysmem",
  "lcc-testkit",
@@ -4606,7 +4627,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-codecs"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "avif-serialize",
  "bytemuck",
@@ -4632,6 +4653,7 @@ dependencies = [
  "ravif",
  "rayon",
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tiff",
  "zune-core",
@@ -4640,7 +4662,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-color"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "lcc-geom",
@@ -4649,8 +4671,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcc-colourfit"
+version = "26.43.7"
+dependencies = [
+ "lcc-brand",
+ "lcc-camdb",
+ "lcc-codecs",
+ "lcc-color",
+ "lcc-develop",
+ "lcc-engine",
+ "lcc-meta",
+ "lcc-pipeline",
+ "lcc-raster",
+ "lcc-raw",
+ "lcc-scenes",
+ "lcc-testkit",
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lcc-credentials"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "argon2 0.5.3",
  "chacha20poly1305",
@@ -4666,7 +4709,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-denoise"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "faer-core",
  "lcc-brand",
@@ -4684,8 +4727,9 @@ dependencies = [
 
 [[package]]
 name = "lcc-denoise-core"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
+ "dhat",
  "lcc-brand",
  "lcc-raster",
  "miniz_oxide 0.8.9",
@@ -4700,7 +4744,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-develop"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "lcc-color",
@@ -4713,7 +4757,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-engine"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "ab_glyph",
  "base64",
@@ -4723,6 +4767,7 @@ dependencies = [
  "filmcraft-h264enc",
  "filmcraft-isobmff",
  "fs4",
+ "half",
  "harfrust",
  "jxl-oxide",
  "lcc-actions",
@@ -4789,7 +4834,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-faces"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "lcc-testkit",
@@ -4805,7 +4850,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-fetch"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "log",
@@ -4817,7 +4862,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-filters"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "rayon",
  "serde",
@@ -4830,14 +4875,14 @@ dependencies = [
 
 [[package]]
 name = "lcc-fuzzkit"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "lcc-geo"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "flate2",
  "image",
@@ -4851,7 +4896,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-geocode"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "miniz_oxide 0.8.9",
  "serde",
@@ -4859,7 +4904,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-geom"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "proptest",
@@ -4868,7 +4913,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-gpu"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "bytemuck",
  "lcc-brand",
@@ -4888,15 +4933,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcc-gpumem"
+version = "26.43.7"
+dependencies = [
+ "ash",
+ "lcc-testkit",
+ "objc2-metal 0.3.2",
+ "pollster 1.0.1",
+ "wgpu",
+ "wgpu-hal",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "lcc-hash"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "sha1 0.10.7",
 ]
 
 [[package]]
 name = "lcc-hdrmeta"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "ash",
  "wgpu",
@@ -4905,7 +4963,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-heif"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "heic-rs",
  "lcc-brand",
@@ -4914,7 +4972,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-immich"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-catalog",
  "lcc-credentials",
@@ -4931,14 +4989,14 @@ dependencies = [
 
 [[package]]
 name = "lcc-inpaint"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "rayon",
 ]
 
 [[package]]
 name = "lcc-layout"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-fuzzkit",
  "lcc-raster",
@@ -4949,16 +5007,16 @@ dependencies = [
 
 [[package]]
 name = "lcc-lensdb"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-develop",
  "lcc-geom",
- "quick-xml 0.38.4",
+ "quick-xml",
 ]
 
 [[package]]
 name = "lcc-mcp"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "lcc-codecs",
@@ -4976,7 +5034,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-merge"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "half",
  "lcc-brand",
@@ -4994,21 +5052,21 @@ dependencies = [
 
 [[package]]
 name = "lcc-meta"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "chrono",
  "lcc-brand",
  "lcc-geom",
  "lcc-tiff",
  "proptest",
- "quick-xml 0.38.4",
+ "quick-xml",
  "serde",
  "serde_json",
 ]
 
 [[package]]
 name = "lcc-net"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "flate2",
  "lcc-brand",
@@ -5024,11 +5082,11 @@ dependencies = [
 
 [[package]]
 name = "lcc-notes"
-version = "26.43.4"
+version = "26.43.7"
 
 [[package]]
 name = "lcc-pdf"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "hayro",
  "lcc-fuzzkit",
@@ -5043,7 +5101,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-peer"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "base64",
  "chacha20poly1305",
@@ -5062,8 +5120,9 @@ dependencies = [
 
 [[package]]
 name = "lcc-pipeline"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
+ "dhat",
  "image",
  "lcc-brand",
  "lcc-color",
@@ -5083,7 +5142,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-plugins"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-fuzzkit",
  "lcc-net",
@@ -5098,7 +5157,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-preview"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "jpeg-encoder",
  "lcc-brand",
@@ -5111,7 +5170,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-print"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "lcc-codecs",
@@ -5133,7 +5192,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-psd"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "flate2",
  "lcc-psd",
@@ -5144,7 +5203,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-publish"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-catalog",
  "lcc-fuzzkit",
@@ -5155,7 +5214,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-raster"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "lcc-color",
@@ -5168,12 +5227,13 @@ dependencies = [
 
 [[package]]
 name = "lcc-raw"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "dhat",
  "jpeg-encoder",
  "jxl-oxide",
  "lcc-brand",
+ "lcc-codecs",
  "lcc-color",
  "lcc-geom",
  "lcc-meta",
@@ -5194,7 +5254,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-scenes"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "image",
  "lcc-brand",
@@ -5206,7 +5266,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-segment"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -5217,12 +5277,13 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "lcc-slideshow"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-raster",
  "serde",
@@ -5231,21 +5292,21 @@ dependencies = [
 
 [[package]]
 name = "lcc-sysmem"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
 ]
 
 [[package]]
 name = "lcc-testkit"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
 ]
 
 [[package]]
 name = "lcc-tether"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-fuzzkit",
  "nusb",
@@ -5255,7 +5316,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-text"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-fuzzkit",
  "lcc-testkit",
@@ -5267,7 +5328,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-tiff"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-brand",
  "proptest",
@@ -5277,7 +5338,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-ui-egui"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "craft-ui",
  "egui",
@@ -5325,7 +5386,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-updater"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "base64",
  "ed25519-dalek 2.2.0",
@@ -5338,7 +5399,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-video"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "filmcraft-aac",
  "filmcraft-ac3",
@@ -5369,7 +5430,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-video-export"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "filmcraft-aac",
  "filmcraft-color",
@@ -5385,7 +5446,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-web"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "crc32fast",
  "eframe",
@@ -5407,7 +5468,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-webgallery"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-fuzzkit",
  "russh",
@@ -5419,7 +5480,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-winspool"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "lcc-testkit",
  "windows-sys 0.61.2",
@@ -5781,7 +5842,7 @@ dependencies = [
  "once_cell",
  "png 0.18.1",
  "thiserror 2.0.21",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6118,7 +6179,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7132,7 +7193,7 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c555a6e4eb7d4e158fcb028c835c3b8642206ddc279b5c6b202ef9a8bdb592f4"
 dependencies = [
- "crypto-bigint 0.7.5",
+ "crypto-bigint 0.7.8",
  "crypto-common 0.2.2",
  "ff 0.14.0",
  "rand_core 0.10.1",
@@ -7310,15 +7371,6 @@ name = "quick-error"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
-
-[[package]]
-name = "quick-xml"
-version = "0.38.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
-dependencies = [
- "memchr",
-]
 
 [[package]]
 name = "quick-xml"
@@ -7697,7 +7749,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4a459cddafb3fe76b31fd8f1108007566c40301feb64dc7b54656eb7388172b"
 dependencies = [
- "crypto-bigint 0.7.5",
+ "crypto-bigint 0.7.8",
  "hmac 0.13.0",
 ]
 
@@ -7785,7 +7837,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30b2aa4ba0d89f73d1e332df05be0eeab8840351c36ca5654341dfdb57bb3caf"
 dependencies = [
  "const-oid 0.10.2",
- "crypto-bigint 0.7.5",
+ "crypto-bigint 0.7.8",
  "crypto-primes",
  "digest 0.11.3",
  "pkcs1 0.8.0-rc.4",
@@ -7810,7 +7862,7 @@ dependencies = [
  "bytes",
  "cbc",
  "cipher 0.5.2",
- "crypto-bigint 0.7.5",
+ "crypto-bigint 0.7.8",
  "ctr 0.10.1",
  "curve25519-dalek 5.0.0",
  "data-encoding",
@@ -7962,18 +8014,18 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "once_cell",
  "rustls-pki-types",
- "rustls-webpki 0.103.15",
+ "rustls-webpki 0.103.16",
  "subtle",
  "zeroize",
 ]
@@ -8030,9 +8082,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -8529,7 +8581,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8599,7 +8651,7 @@ checksum = "7b54d0ed0498daf3f78d82e00e28c8eec9d75a067c4cfbcc7a0f7d0f4077749e"
 dependencies = [
  "base64ct",
  "bytes",
- "crypto-bigint 0.7.5",
+ "crypto-bigint 0.7.8",
  "ctutils",
  "digest 0.11.3",
  "pem-rfc7468 1.0.0",
@@ -8778,10 +8830,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8898,9 +8950,9 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokio"
-version = "1.53.1"
+version = "1.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
+checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
 dependencies = [
  "bytes",
  "libc",
@@ -9071,7 +9123,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9606,7 +9658,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "338e30461b3a2b67d70eb30a6d89f8e0c93a833e07d2ae89085cd070c4a00ac0"
 dependencies = [
  "proc-macro2",
- "quick-xml 0.41.0",
+ "quick-xml",
  "quote",
 ]
 
@@ -9644,9 +9696,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.9"
+version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -9852,7 +9904,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10411,7 +10463,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "26.43.4"
+version = "26.43.7"
 dependencies = [
  "base64",
  "brotli",

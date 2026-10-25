@@ -279,9 +279,19 @@ pub(crate) struct Analyses {
 }
 
 /// Measures `src` with `filter` for `entry` (its old analysis left out): the analysis (`Null` when the
-/// plug-in has none to give).
-fn measure(filter: &lcc_filters::Filter, entry: &PluginFilter, src: &lcc_raster::Rgb32f, cancel: &std::sync::atomic::AtomicBool) -> Measured {
-    let (data, w, h) = lcc_pipeline::plugin_filters::analysis_input(src, ANALYZE_EDGE);
+/// plug-in has none to give). A filter asking for `"analyzeArea": "crop"` gets the photo as `settings`
+/// frame it (crop, straighten, orientation…), else the whole uncropped photo.
+fn measure(
+    filter: &lcc_filters::Filter,
+    entry: &PluginFilter,
+    src: &lcc_raster::Rgb32f,
+    settings: &DevelopSettings,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Measured {
+    let (data, w, h) = match filter.manifest().analyze_area {
+        lcc_filters::AnalyzeArea::Crop => lcc_pipeline::plugin_filters::analysis_input_framed(src, settings, ANALYZE_EDGE),
+        lcc_filters::AnalyzeArea::Frame => lcc_pipeline::plugin_filters::analysis_input(src, ANALYZE_EDGE),
+    };
     let (w, h) = (u32::try_from(w).map_err(|_| "image too large")?, u32::try_from(h).map_err(|_| "image too large")?);
     let mut entry = entry.clone();
     entry.analysis = None;
@@ -322,7 +332,7 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
         let (filter, cancel) = (filter.clone(), cancel.clone());
         move || -> Measured {
             let src = source.load_source()?;
-            measure(&filter, &f, &src.image, &cancel)
+            measure(&filter, &f, &src.image, &d, &cancel)
         }
     };
     if wait {
