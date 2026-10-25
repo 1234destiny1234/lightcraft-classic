@@ -489,6 +489,41 @@ fn tracklog_auto_tag() {
 }
 
 #[test]
+fn tracklog_auto_tag_decodes_character_references_and_undoes_once() {
+    use lcc_catalog::Op;
+
+    const PLAIN: &str = r#"<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>
+      <trkpt lat="45" lon="7"><time>2026-01-01T00:00:30Z</time></trkpt>
+      <trkpt lat="47" lon="9"><time>2026-01-01T00:01:30Z</time></trkpt>
+    </trkseg></trk></gpx>"#;
+    const ENCODED: &str = r#"<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>
+      <trkpt lat="4&#53;" lon="7"><time>2026-01-01T00:00:&#51;0Z</time></trkpt>
+      <trkpt lat="4&#55;" lon="9"><time>2026-01-01T00:01:30Z</time></trkpt>
+    </trkseg></trk></gpx>"#;
+
+    let mut s = Session::with_demo();
+    let Some(id) = s.visible_cloned().first().copied() else {
+        panic!("the demo library has a photo");
+    };
+    s.commit("test capture time", Op::SetCaptured { id, captured: Some("2026-01-01T00:01:00".into()) }).unwrap();
+    let original_gps = s.catalog.photo(id).unwrap().meta.gps;
+    let params = |gpx: &str, dry_run| json!({"gpx": gpx, "ids": [id.0], "dryRun": dry_run});
+
+    let plain = s.execute("photo.autoTagTracklog", &params(PLAIN, true)).unwrap();
+    let encoded = s.execute("photo.autoTagTracklog", &params(ENCODED, true)).unwrap();
+    assert_eq!(plain, encoded);
+    assert_eq!(encoded["photos"][0]["gps"], json!([46.0, 8.0]));
+    assert_eq!(s.catalog.photo(id).unwrap().meta.gps, original_gps, "dry run leaves GPS unchanged");
+
+    let undo_depth = s.undo.len();
+    s.execute("photo.autoTagTracklog", &params(ENCODED, false)).unwrap();
+    assert_eq!(s.undo.len(), undo_depth + 1);
+    assert_eq!(s.catalog.photo(id).unwrap().meta.gps, Some((46.0, 8.0)));
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.catalog.photo(id).unwrap().meta.gps, original_gps);
+}
+
+#[test]
 fn tracklog_auto_tag_rejects_malformed_capture_time_without_history_changes() {
     let mut s = Session::with_demo();
     let id = s.visible_cloned().first().map(|id| id.0).unwrap();

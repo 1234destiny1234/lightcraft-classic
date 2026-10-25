@@ -39,6 +39,14 @@ impl DevelopSettings {
         serde_json::from_value(v.clone())
     }
 
+    /// [`Self::from_json`] for settings from outside the app, such as a sidecar's `lc:settings`
+    /// (issue #2555): kept in range as [`Self::merged`] keeps them.
+    pub fn from_untrusted_json(v: &Value) -> Result<DevelopSettings, serde_json::Error> {
+        let mut s = DevelopSettings::from_json(v)?;
+        s.keep_in_range(&DevelopSettings::default());
+        Ok(s)
+    }
+
     /// Merge a partial JSON object into these settings (fields not mentioned are kept). A white balance that
     /// names no [`WbScale`] keeps the meaning it always had (`Legacy`), whatever scale these settings were on: a
     /// partial from before the scale existed, or one that never said, must not become Kelvin by landing on
@@ -59,8 +67,9 @@ impl DevelopSettings {
 
     /// What crs XMP import does to the values it reads, for settings that arrive as JSON (presets, `develop.merge`,
     /// `render --settings`; issue #1946): every slider clamped through its control spec, point curves in 0..1, and a
-    /// crop with no area left as it was in `before`. Unrotated, the crop is clipped to the photo first; a turned crop
-    /// may reach past 0..1 and is left to the crop tools, which know the photo's size.
+    /// crop with no area left as it was in `before`. The angle is kept within ±45° (not finite: 0). Unrotated, the crop
+    /// is clipped to the photo first; a turned crop may reach past 0..1 and is bounded where the photo's size is known
+    /// (`CropGeometry::bounded`, applied by the pipeline).
     fn keep_in_range(&mut self, before: &DevelopSettings) {
         for c in controls::CONTROLS {
             if let Some(v) = controls::get(self, c.id) {
@@ -72,6 +81,7 @@ impl DevelopSettings {
             *p = lcc_geom::Point::new(p.x.clamp(0.0, 1.0), p.y.clamp(0.0, 1.0));
         }
         let g = &mut self.crop.geometry;
+        g.angle = if g.angle.is_finite() { g.angle.clamp(-45.0, 45.0) } else { 0.0 };
         if g.angle == 0.0 {
             g.rect = g.rect.intersect(&lcc_geom::Rect::UNIT);
         }
@@ -177,7 +187,8 @@ impl DevelopSettings {
         }
     }
 
-    /// Reset every control in `section` to its default.
+    /// Reset every control in `section` to its default, and the settings of the section that are not
+    /// controls (the creative profile, the curve, the white balance mode).
     pub fn reset_section(&mut self, section: Section) {
         for c in controls::in_section(section) {
             controls::set(self, c.id, c.default);
@@ -189,6 +200,13 @@ impl DevelopSettings {
             }
             Section::Color => self.wb.mode = WbMode::AsShot,
             Section::Detail => self.enhance.denoise_on = None,
+            // the creative profile is not a control: the chosen look goes back to the default one,
+            // and so does the camera's own local tone mapping
+            Section::Profile => {
+                let d = Profile::default();
+                self.profile.id = d.id;
+                self.profile.camera_local_tone = d.camera_local_tone;
+            }
             _ => {}
         }
     }
@@ -204,6 +222,19 @@ mod tests_process;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resetting_the_profile_section_restores_the_default_profile() {
+        // the chosen creative profile is not a control, so resetting the section must restore it too
+        let mut s = super::DevelopSettings::default();
+        s.profile.id = "lc.muted.matte-soft".into();
+        s.profile.amount = 40.0;
+        s.profile.camera_local_tone = !super::Profile::default().camera_local_tone;
+        s.reset_section(super::Section::Profile);
+        assert_eq!(s.profile.id, super::Profile::default().id, "the creative profile survives a Profile reset");
+        assert_eq!(s.profile.amount, super::Profile::default().amount);
+        assert_eq!(s.profile.camera_local_tone, super::Profile::default().camera_local_tone);
+    }
+
     use super::*;
     use serde_json::json;
 
