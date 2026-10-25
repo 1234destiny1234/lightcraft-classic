@@ -1032,7 +1032,7 @@
   "Saving Lightroom import index…": "Сохранение индекса импорта Lightroom…",
   "Scale": "Масштаб",
   "Scanning": "Сканирование",
-  "Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.": "Оценки остаются на фото: фильтруйте или создавайте смарт-альбомы по полям «Фокус» и «Лучшие из похожих кадров».",
+  "Scores stay on the photos: filter or make smart albums with Focus, Eyes Open, Aesthetic and Cull Score.": "Оценки остаются на фото: фильтруйте или создавайте смарт-альбомы по полям «Фокус», «Открытые глаза», «Эстетика» и «Оценка отбора».",
   "Screen": "Экран",
   "Scroll menu down": "Прокрутить меню вниз",
   "Scroll menu up": "Прокрутить меню вверх",
@@ -2391,5 +2391,9 @@
   "Import dropped files without review": "Импортировать перетащенные файлы без проверки",
   "An import is running": "Импорт уже выполняется",
   "An import is running. Drop photos when it has finished": "Импорт уже выполняется. Перетащите фото, когда он закончится",
-  "Finish Lightroom catalog import before adding photos": "Завершите импорт каталога Lightroom, прежде чем добавлять фото"
+  "Finish Lightroom catalog import before adding photos": "Завершите импорт каталога Lightroom, прежде чем добавлять фото",
+  "Aesthetic": "Эстетика",
+  "Clipped (assisted culling)": "Обрезка (помощь при отборе)",
+  "Cull Score": "Оценка отбора",
+  "Eyes Open": "Открытые глаза"
 }

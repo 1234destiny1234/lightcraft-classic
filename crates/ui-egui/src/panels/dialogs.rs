@@ -453,7 +453,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     crate::widgets::register(ui.ctx(), "field:cullSimilar", r.rect);
                     clamp_cull_burst(burst_gap, similarity);
                     crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Lower it when a panning or moving burst splits into several groups.")).color(t.text_dim));
-                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus, Eyes Open, Aesthetic and Cull Score.")).color(t.text_dim));
                 }
                 Dialog::WhatsNew => {
                     ui.scope(|ui| {
