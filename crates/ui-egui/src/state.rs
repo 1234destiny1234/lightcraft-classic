@@ -1312,6 +1312,9 @@ pub struct UiState {
     /// A Settings section to bring into view once (`app.settings {section}`), e.g. `lensProfiles`.
     #[serde(skip)]
     pub settings_section: Option<String>,
+    /// Develop ▸ Lens Corrections: the lens maker picked in the lens picker before a model (issue #307).
+    #[serde(skip)]
+    pub lens_pick_make: Option<String>,
     /// The start-up update check has run (once per session; Help ▸ Check for Updates… is manual).
     #[serde(skip)]
     pub update_checked_at_startup: bool,
@@ -1951,6 +1954,7 @@ impl Default for UiState {
             status: String::new(),
             dialog: None,
             settings_section: None,
+            lens_pick_make: None,
             update_checked_at_startup: false,
             update_checked_at: 0.0,
             update_pending: None,

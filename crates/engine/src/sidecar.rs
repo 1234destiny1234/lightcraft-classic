@@ -712,11 +712,13 @@ fn packet(p: &Photo, cat: &lcc_catalog::Catalog, remove_location: bool, gps: boo
     }
     // the pixel-filter stack goes in its own namespace, not in `lc:settings`
     let filters: Vec<lcc_meta::XmpPluginFilter> = p.develop.plugin_filters.iter().map(crate::cmd::plugin_filters::to_xmp).collect();
-    let settings = if filters.is_empty() {
+    // (a lens picked from the lens database stays in the catalog: not written to XMP yet, issue #307)
+    let settings = if filters.is_empty() && p.develop.optics.lens.is_none() {
         serde_json::to_string(&*p.develop).unwrap_or_default()
     } else {
         let mut d = (*p.develop).clone();
         d.plugin_filters.clear();
+        d.optics.lens = None;
         serde_json::to_string(&d).unwrap_or_default()
     };
     let flag = match p.flag {
