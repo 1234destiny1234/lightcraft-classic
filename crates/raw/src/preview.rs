@@ -431,7 +431,7 @@ const CR3_MAX_WALK: usize = 8 << 20;
 fn cr3_preview_boxes(bytes: &[u8]) -> Option<&[u8]> {
     let mut best: Option<&[u8]> = None;
     let mut walked = 0usize;
-    'tags: for tag in [b"PRVW", b"THMB"] {
+    for tag in [b"PRVW", b"THMB"] {
         let mut from = 0;
         while let Some(i) = bytes.get(from..).and_then(|s| s.windows(4).position(|w| w == tag)).map(|p| p + from) {
             from = i + 4;
@@ -445,8 +445,9 @@ fn cr3_preview_boxes(bytes: &[u8]) -> Option<&[u8]> {
                 continue;
             }
             let Some(jpeg) = bytes.get(j..end) else { continue };
+            // One that doesn't fit the budget left is skipped; a smaller one later may still fit.
             if walked + jpeg.len() > CR3_MAX_WALK {
-                break 'tags;
+                continue;
             }
             walked += jpeg.len();
             if is_dct_jpeg(jpeg) {
