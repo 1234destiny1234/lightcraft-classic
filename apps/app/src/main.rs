@@ -1108,6 +1108,9 @@ fn main() -> eframe::Result {
     }
     let gpu_on = prefs.as_ref().is_none_or(|u| u.settings.gpu) && gpu_crash.is_none();
     lcc_engine::gpu::set_enabled(gpu_on);
+    if let Some(u) = &prefs {
+        lcc_engine::gpu::backend::set_compute_preference(u.settings.gpu_backend.name());
+    }
     // the window's renderer: probed (Windows) and with a fallback chain, so a driver that can't
     // build egui's pipeline never kills the start-up
     let compose_window = prefs.as_ref().is_some_and(|ui| ui.settings.compose_window) && std::env::var_os("WGPU_BACKEND").is_none();
