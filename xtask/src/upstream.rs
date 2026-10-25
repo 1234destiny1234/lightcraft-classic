@@ -727,7 +727,9 @@ mod tests {
         let m = Manifest::load(&crate::root()).unwrap();
         assert!(m.is_owned("crates/catalog/src/lib.rs"));
         assert!(m.is_owned("crates/ui-egui/src/panels/classic.rs"));
-        assert!(m.is_shared("crates/ui-egui/src/app.rs"));
+        // the UI is the fork's own since upstream changes are reviewed and ported by hand (docs/upstream-merge.md)
+        assert!(m.is_owned("crates/ui-egui/src/app.rs"));
+        assert!(m.is_shared("crates/pipeline/src/lib.rs"));
         assert!(!m.is_shared("crates/ui-egui/locales/en/main.ftl"));
         assert!(!m.is_shared("docs/parity-checklist.md"));
     }
