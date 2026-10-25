@@ -702,6 +702,7 @@ impl Catalog {
 
     /// The op being applied changes photo `id` (or adds or removes it).
     fn touch(&mut self, id: PhotoId) {
+        self.index.photo_touched(id, self.photos.len());
         // (the revision the op will make: `apply` counts up once it is done)
         self.changes.touched.push_back((self.revision.saturating_add(1), id, self.changes.now));
         while self.changes.touched.len() > MAX_TOUCHED {
@@ -1772,6 +1773,8 @@ mod tests_lock;
 mod tests_repair;
 #[cfg(test)]
 mod tests_robust;
+#[cfg(test)]
+mod tests_search_text;
 #[cfg(test)]
 mod tests_sort_cache;
 #[cfg(test)]
