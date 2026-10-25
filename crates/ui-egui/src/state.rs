@@ -981,6 +981,18 @@ pub struct UiState {
     /// The overlay (on, mode) to go back to when Show Luminance Map is turned off.
     #[serde(skip)]
     pub luminance_map_restore: Option<(bool, String)>,
+    /// The mask overlay was switched on with O or the eye by the Masks title: it stays on through
+    /// edits (it only hides while a slider is at work). Off, the overlay shows by itself only for a
+    /// mask without settings ([`crate::panels::detail::mask_has_settings`]).
+    #[serde(skip)]
+    pub mask_overlay_pinned: bool,
+    /// A mask slider is at work until then: no mask overlay covers the photo.
+    #[serde(skip)]
+    pub mask_adjusting_until: Option<std::time::Instant>,
+    /// The mask whose row in the Masks list is under the pointer: its overlay shows while nothing is
+    /// being adjusted.
+    #[serde(skip)]
+    pub mask_hover: Option<u32>,
     /// Mirroring of the triangle / spiral crop guides (0..4).
     pub crop_overlay_orient: u8,
     pub crop_overlay: CropOverlay,
@@ -1766,6 +1778,9 @@ impl Default for UiState {
             unsaved_seen: false,
             frame_rate: lcc_brand::env("FPS").is_some_and(|v| matches!(v.trim(), "1" | "on" | "true" | "yes")),
             luminance_map_restore: None,
+            mask_overlay_pinned: false,
+            mask_adjusting_until: None,
+            mask_hover: None,
             view: ViewMode::Detail,
             modern: crate::modern::ModernUi::default(),
             left_panel: false,
