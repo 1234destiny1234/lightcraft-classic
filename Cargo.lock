@@ -4462,11 +4462,11 @@ dependencies = [
  "eframe",
  "egui",
  "getrandom 0.3.4",
- "half",
  "lcc-brand",
  "lcc-codecs",
  "lcc-engine",
  "lcc-gpu",
+ "lcc-gpumem",
  "lcc-hdrmeta",
  "lcc-pipeline",
  "lcc-raster",
@@ -4748,6 +4748,7 @@ dependencies = [
  "filmcraft-h264enc",
  "filmcraft-isobmff",
  "fs4",
+ "half",
  "harfrust",
  "jxl-oxide",
  "lcc-actions",
@@ -4910,6 +4911,19 @@ dependencies = [
  "log",
  "pollster 1.0.1",
  "wgpu",
+]
+
+[[package]]
+name = "lcc-gpumem"
+version = "26.43.6"
+dependencies = [
+ "ash",
+ "lcc-testkit",
+ "objc2-metal 0.3.2",
+ "pollster 1.0.1",
+ "wgpu",
+ "wgpu-hal",
+ "windows 0.62.2",
 ]
 
 [[package]]

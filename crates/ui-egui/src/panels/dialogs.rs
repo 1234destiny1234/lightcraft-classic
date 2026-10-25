@@ -287,9 +287,13 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     }
     .to_string();
     // a card: rounded, a faint light edge, a soft shadow; the title inside it (below)
+    // On a phone the small dialogs (not the full-window screens) are bottom sheets: the window's
+    // full width, on its bottom edge, the top corners rounded, a grab handle that closes them.
+    let sheet = crate::dialog_frame::phone_sheet(ctx, &dlg);
+    let insets = app.ui.modern.insets;
     let frame = egui::Frame::window(&ctx.global_style())
-        .inner_margin(egui::Margin { left: 18, right: 18, top: 14, bottom: 14 })
-        .corner_radius(16.0)
+        .inner_margin(egui::Margin { left: 18, right: 18, top: if sheet { 6 } else { 14 }, bottom: 14 })
+        .corner_radius(if sheet { egui::CornerRadius { nw: 20, ne: 20, sw: 0, se: 0 } } else { egui::CornerRadius::same(16) })
         .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
         .shadow(egui::epaint::Shadow { offset: [0, 10], blur: 32, spread: 0, color: egui::Color32::from_black_alpha(110) });
     // The import review can be resized (its photo grid takes the room); it keeps a window id of its
@@ -318,10 +322,25 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         .vscroll(import)
         .resize(|r| if import { r.default_height(crate::import::DIALOG_SIZE[1]) } else { r })
         .frame(frame)
-        .anchor(if settings { egui::Align2::CENTER_TOP } else { egui::Align2::CENTER_CENTER }, [0.0, if settings { top } else { 0.0 }])
-        .min_width(widest)
-        .max_width(if export { (screen.width() - 2.0 * crate::dialog_frame::SCREEN_MARGIN).max(320.0) } else { f32::INFINITY })
-        .default_width(match dlg {
+        .anchor(
+            if sheet {
+                egui::Align2::CENTER_BOTTOM
+            } else if settings {
+                egui::Align2::CENTER_TOP
+            } else {
+                egui::Align2::CENTER_CENTER
+            },
+            [(insets.left - insets.right) / 2.0, if sheet { -insets.bottom } else if settings { top } else { 0.0 }],
+        )
+        .min_width(if sheet { sheet_w(screen, insets) } else { widest })
+        .max_width(if sheet {
+            sheet_w(screen, insets)
+        } else if export {
+            (screen.width() - 2.0 * crate::dialog_frame::SCREEN_MARGIN).max(320.0)
+        } else {
+            f32::INFINITY
+        })
+        .default_width(if sheet { sheet_w(screen, insets) } else { match dlg {
             Dialog::Import { .. } => crate::import::DIALOG_SIZE[0],
             Dialog::SmartRules { .. } => 680.0,
             Dialog::AllMetadata { .. } => 620.0,
@@ -335,9 +354,12 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             Dialog::Rename { .. } | Dialog::ContactSheet { .. } | Dialog::Timelapse { .. } | Dialog::SlideshowExport { .. } => 480.0,
             Dialog::CaptureTime { .. } | Dialog::LabelNames { .. } | Dialog::CreatePreset { .. } => 440.0,
             _ => 380.0,
-        })
+        } })
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
+            if sheet && crate::dialog_frame::grab_handle(ui) {
+                close = true;
+            }
             // the title, left-aligned at the card's top (no title bar)
             let h = ui.label(egui::RichText::new(&heading).font(t.semibold(16.0)).color(t.text));
             crate::widgets::register(ui.ctx(), "dialog:title", h.rect);
@@ -1342,13 +1364,16 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 // (each kind of dialog its own buttons: the keyboard's place doesn't carry from a
                 // dialog to the one it opens)
                 let kind = std::mem::discriminant(&dlg);
-                let cancel_button = Button::new(cancel).widget("button:dialogCancel").id_salt(kind).min_width(72.0);
+                // (finger-sized on a phone's bottom sheet)
+                let (min_w, min_h) = if sheet { (110.0, 44.0) } else { (72.0, 0.0) };
+                let cancel_button = Button::new(cancel).widget("button:dialogCancel").id_salt(kind).min_width(min_w).min_height(min_h);
                 let ok_button = Button::new(ok)
                     .kind(if primary { Kind::Primary } else { Kind::Secondary })
                     .enabled(can_confirm)
                     .widget("button:dialogOk")
                     .id_salt(kind)
-                    .min_width(72.0);
+                    .min_width(min_w)
+                    .min_height(min_h);
                 // (Cancel first, then the confirm: the keyboard goes through them as the eye does)
                 let gap = ui.spacing().item_spacing.x;
                 let mut buttons_w = 0.0;
@@ -1909,6 +1934,11 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
             Ok(serde_json::Value::Null)
         }
     }
+}
+
+/// A bottom sheet's width: the window's, inside its side insets.
+fn sheet_w(screen: egui::Rect, insets: crate::modern::Insets) -> f32 {
+    (screen.width() - insets.left - insets.right).max(200.0)
 }
 
 /// Open a one-field dialog that runs `command` with `params` + `{key: typed value}`.

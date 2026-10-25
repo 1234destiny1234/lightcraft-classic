@@ -249,6 +249,8 @@ pub struct SliderOut {
     pub drag_started: bool,
     pub drag_stopped: bool,
     pub reset: bool,
+    /// A pill with more settings behind it was long-pressed or right-clicked ([`pill`]).
+    pub more: bool,
 }
 
 /// What a value typed into a slider asks for (issue #322): a number such as `0.5`, `+12`, `-1,5`
@@ -314,7 +316,7 @@ pub fn form_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool) -
 
 fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>, form_label: Option<f32>) -> SliderOut {
     if form_label.is_none() && crate::theme::slider_layout(ui.ctx()) == crate::theme::SliderLayout::Pill {
-        return pill_slider(ui, spec, value, enabled, label_override);
+        return pill_slider(ui, spec, value, enabled, label_override, false);
     }
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
@@ -725,7 +727,16 @@ pub(crate) const PILL_H: f32 = 40.0;
 /// it; the colour grows from the default (the middle of a ± slider). Double-click resets, a click on
 /// the value types one, sideways scrolling and the arrow keys nudge it. Registers the same ids as
 /// [`slider`] (`slider:`, `sliderLabel:`, `sliderValue:`). Own design.
-fn pill_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>) -> SliderOut {
+/// A [`pill_slider`] that says it has more settings behind it (`more`): a small mark after its name,
+/// and a long press or right-click sets [`SliderOut::more`].
+pub fn pill(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, more: bool) -> SliderOut {
+    pill_slider(ui, spec, value, enabled, None, more)
+}
+
+/// How long a still press on a pill waits before it opens its settings (s).
+const PILL_HOLD: f64 = 0.5;
+
+fn pill_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>, more: bool) -> SliderOut {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let (row, _) = ui.allocate_exact_size(vec2(w, PILL_H + 4.0), Sense::hover());
@@ -762,6 +773,29 @@ fn pill_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label
         resp.request_focus();
     }
     let mut out = SliderOut::default();
+    if more && enabled {
+        // a right-click, or a still press held a moment, opens the settings behind it (once a press)
+        let held_id = id.with("more-held");
+        let held = ui.input(|i| i.pointer.press_start_time().map(|t| i.time - t).unwrap_or(0.0));
+        let still = ui.input(|i| match (i.pointer.press_origin(), i.pointer.interact_pos()) {
+            (Some(a), Some(b)) => a.distance(b) < 8.0,
+            _ => true,
+        });
+        let fired: bool = ui.data(|m| m.get_temp(held_id)).unwrap_or(false);
+        if resp.is_pointer_button_down_on() && !resp.dragged() {
+            if !fired && held >= PILL_HOLD && still {
+                out.more = true;
+                ui.data_mut(|m| m.insert_temp(held_id, true));
+            } else if !fired {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        } else if fired && !resp.is_pointer_button_down_on() {
+            ui.data_mut(|m| m.remove::<bool>(held_id));
+        }
+        if resp.secondary_clicked() {
+            out.more = true;
+        }
+    }
     let step = spec.step.max(1e-9);
     let snap = |v: f64| ((v / step).round() * step).clamp(spec.min, spec.max);
     let mut v = value;
@@ -918,9 +952,17 @@ fn pill_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label
     let galley = p.layout_job(job);
     let gw = galley.size().x;
     p.galley(pos2(label_rect.left(), label_rect.center().y - galley.size().y / 2.0), galley, text_c);
+    let mut after = label_rect.left() + gw;
     if (v - spec.default).abs() > 1e-9 && !spec.id.starts_with("wb.") {
         // changed from its default: a small dot after the name
-        p.circle_filled(pos2(label_rect.left() + gw + 7.0, label_rect.center().y), 2.5, t.pick);
+        p.circle_filled(pos2(after + 7.0, label_rect.center().y), 2.5, t.pick);
+        after += 10.0;
+    }
+    if more {
+        // more settings behind it: a small "more" mark (long press or right-click)
+        let m = Rect::from_center_size(pos2(after + 12.0, label_rect.center().y), egui::Vec2::splat(12.0));
+        crate::icons::paint(p, m, crate::icons::Icon::More, t.text_dim);
+        register(ui.ctx(), format!("sliderMore:{}", spec.id), m);
     }
     if typing.is_none() {
         p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), value_font, text_c);

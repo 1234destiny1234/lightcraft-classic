@@ -22,6 +22,7 @@ pub(super) fn commands() -> impl Iterator<Item = &'static UiCommand> {
         .chain(crate::panels::filterbar::COMMANDS)
         .chain(crate::import_report::COMMANDS)
         .chain(crate::modern::COMMANDS)
+        .chain(crate::modern_library::COMMANDS)
         .chain(crate::modern_sheets::COMMANDS)
 }
 
@@ -55,6 +56,9 @@ pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
         return Some(r);
     }
     if let Some(r) = crate::modern::run(app, id, p) {
+        return Some(r);
+    }
+    if let Some(r) = crate::modern_library::run(app, id, p) {
         return Some(r);
     }
     if let Some(r) = crate::modern_sheets::run(app, id, p) {

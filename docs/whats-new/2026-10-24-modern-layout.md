@@ -11,3 +11,10 @@
 - **Export** is a full-window screen: every setting on one page in cards, a rail that jumps to each group, the presets beside it, the destination at the top and a bar that always says what will be written.
 - Every dialog now has the same look: rounded cards with the title inside, segmented choices, and the main action in the accent colour. Menus and submenus are see-through in the Modern layout.
 - While Crop, Masks, Heal, Dodge or Burn is open, its card sits at the right and the photo makes room, so a crop frame's handles are never under the dock.
+- Every develop setting is reachable in Modern. Each group's card has buttons for its full sections (Basic and Profile, Color Mixer and Point Color, Color Grading, Calibration, Tone Curve, Detail, Lens Corrections, Transform, Effects, Plug-in Filters). A slider with more settings behind it shows a small mark: long-press or right-click it to open them (for example Vignette's style, midpoint, feather, roundness and highlights). ‹ or Back returns to the sliders.
+- The "library is open elsewhere" window has the new card look, with its buttons wrapping on a narrow window.
+- While you drag a slider, a colour wheel or the tone curve in Modern, everything over the photo fades away except that control and the histogram, so you see the whole photo as it changes; it fades back when you let go.
+- In Modern's Library, a search pill floats over the grid (with ★ 3+ and Picks), and the Info card (the ⓘ button) shows the selected photos' details and edits their title, caption, keywords, creator, copyright, rating, flag and label at once; values that differ show as < mixed > and are only changed when you edit them.
+- The dock down the side starts below the ☰ button and its menu bar, so it never covers them.
+- Window ▸ Panels ▸ Info (I) shows and hides Modern's Info card; on a phone the card is a sheet along the bottom with a ✕.
+- The activity card ("Finding faces"…) sits centred under the top bar in Classic too, clear of windows that open at the top left; buttons in every window are softly rounded.

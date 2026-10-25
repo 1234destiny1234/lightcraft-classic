@@ -41,6 +41,8 @@ pub struct ModernUi {
     pub filmstrip: bool,
     /// Library's filter bar shows over the grid.
     pub filters: bool,
+    /// Library's Info card shows at the right of the grid ([`crate::modern_library`]).
+    pub info: bool,
     /// The histogram over the photo in Develop: off, small or large. (Saved under a new name: the
     /// touch layout's `histogram` was off by default, and Modern shows it.)
     #[serde(rename = "histogramSize")]
@@ -51,6 +53,9 @@ pub struct ModernUi {
     /// The menu bar is open on this menu ([`crate::modern_menu`]).
     #[serde(skip)]
     pub menu: Option<String>,
+    /// The open group's card shows one of its sections in full (`modern_dock::Group::sections`).
+    #[serde(skip)]
+    pub more: Option<String>,
     /// The histogram's own menu is open, at this point.
     #[serde(skip)]
     histogram_menu: Option<Pos2>,
@@ -157,9 +162,11 @@ impl Default for ModernUi {
             dock_side: false,
             filmstrip: false,
             filters: false,
+            info: false,
             histogram: HistogramPlace::Small,
             histogram_at: [1.0, 0.0],
             menu: None,
+            more: None,
             histogram_menu: None,
             histogram_held: false,
             holding: false,
@@ -391,6 +398,9 @@ pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
         let _ = app.run("library.select", json!({"ids": keep}));
         return Some("selection");
     }
+    if app.ui.modern.more.take().is_some() {
+        return Some("section");
+    }
     if app.ui.modern.group.is_some() && app.ui.module != ModuleId::Library {
         crate::modern_dock::close(app);
         return Some("card");
@@ -413,6 +423,9 @@ pub(crate) fn escape(app: &mut LccApp) -> bool {
         return false;
     }
     if app.ui.modern.menu.take().is_some() || app.ui.modern.histogram_menu.take().is_some() {
+        return true;
+    }
+    if app.ui.modern.more.take().is_some() {
         return true;
     }
     if app.ui.modern.group.is_some() && app.ui.module != ModuleId::Library {
@@ -494,6 +507,7 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
         if !app.ui.modern.selecting && app.ui.modern.menu.is_none() {
             open_tapped(app, ui, area, before);
         }
+        crate::modern_library::show(app, ui, area);
         let bar_top = area.top() - BAR_H;
         crate::modern_menu::show(app, ui, area, area.left() + MARGIN + BUTTON + 8.0, bar_top + (BAR_H - 40.0) / 2.0);
         return;
@@ -533,6 +547,68 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
     crate::modern_dock::card(app, ui, room, dock);
     develop_top(app, ui, area);
     crate::modern_menu::show(app, ui, area, area.left() + MARGIN + BUTTON + 8.0, area.top() + MARGIN + 2.0);
+    focus_fade(app, ui.ctx());
+}
+
+/// Modern's floating layers that fade while an adjustment is dragged (the histogram stays).
+const FADE_LAYERS: [(egui::Order, &str); 8] = [
+    (egui::Order::Middle, "modern-dock"),
+    (egui::Order::Middle, "modern-card"),
+    (egui::Order::Middle, "modern-top"),
+    (egui::Order::Middle, "modern-top-right"),
+    (egui::Order::Middle, "modern-switch"),
+    (egui::Order::Middle, "activity-stack"),
+    (egui::Order::Foreground, "modern-menubar"),
+    (egui::Order::Foreground, "modern-menu-drop"),
+];
+const CHROME_ALPHA: &str = "modern-chrome-alpha";
+
+/// How opaque the floating chrome is (1: shown; 0: faded while an adjustment is dragged).
+#[cfg(test)]
+pub(crate) fn chrome_alpha(ctx: &egui::Context) -> f32 {
+    ctx.data(|d| d.get_temp::<f32>(Id::new(CHROME_ALPHA))).unwrap_or(1.0)
+}
+
+/// How long the chrome takes to fade out and back (s).
+const FADE_SECS: f32 = 0.2;
+
+/// While a slider, a colour wheel or the tone curve is dragged, everything floating over the photo
+/// fades away (over [`FADE_SECS`]) except that one control and the histogram, so the photo can be
+/// seen whole; it fades back when the finger lifts. Done after drawing: each shape outside the
+/// dragged control's rectangle has its colours faded. Own design.
+fn focus_fade(app: &LccApp, ctx: &egui::Context) {
+    let adjusting = app.ui.dragging_control.is_some() || app.session.interaction.is_some();
+    let t = ctx.animate_bool_with_time(Id::new("modern-focus-fade"), adjusting, FADE_SECS);
+    let alpha = (1.0 - t).clamp(0.0, 1.0);
+    ctx.data_mut(|d| d.insert_temp(Id::new(CHROME_ALPHA), alpha));
+    if t <= 0.0 {
+        return;
+    }
+    // the control being dragged stays as it is (its place kept while the chrome fades back)
+    let key = Id::new("modern-focus-rect");
+    let now = ctx.dragged_id().and_then(|id| ctx.read_response(id)).map(|r| r.rect);
+    if let Some(r) = now {
+        ctx.data_mut(|d| d.insert_temp(key, r));
+    }
+    let keep = now.or_else(|| ctx.data(|d| d.get_temp::<Rect>(key))).map(|r| r.expand(2.0));
+    ctx.graphics_mut(|g| {
+        for (order, name) in FADE_LAYERS {
+            let list = g.entry(egui::LayerId::new(order, Id::new(name)));
+            for i in 0..list.next_idx().0 {
+                list.mutate_shape(egui::layers::ShapeIdx(i), |c| {
+                    let bounds = c.shape.visual_bounding_rect();
+                    if keep.is_some_and(|k| bounds.is_finite() && k.contains_rect(bounds)) {
+                        return;
+                    }
+                    egui::epaint::shape_transform::adjust_colors(&mut c.shape, move |col| {
+                        if *col != Color32::PLACEHOLDER {
+                            *col = col.gamma_multiply(alpha);
+                        }
+                    });
+                });
+            }
+        }
+    });
 }
 
 // ------------------------------------------------------------------------ Library
@@ -562,7 +638,9 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
                 crate::modern_menu::toggle(app);
             }
             if app.ui.modern.menu.is_none() {
-                switch(app, ui, r);
+                // on a narrow window beside ☰, clear of the buttons at the right
+                let at = if r.width() < 560.0 { Rect::from_min_size(pos2(menu.right() + 4.0, r.top()), vec2(170.0, r.height())) } else { r };
+                switch(app, ui, at);
             }
         }
         if app.ui.modern.menu.is_some() {
@@ -581,6 +659,9 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
         let square = app.ui.view == ViewMode::SquareGrid;
         if button(if square { Icon::GridPhoto } else { Icon::GridSquare }, "modern:gridStyle", "Grid Style", false) {
             let _ = app.run(if square { "view.photoGrid" } else { "view.squareGrid" }, json!({}));
+        }
+        if button(Icon::Info, "modern:infoButton", "Info", app.ui.modern.info) {
+            app.ui.modern.info = !app.ui.modern.info;
         }
         if button(Icon::Filter, "modern:filters", "Filter", app.ui.modern.filters) {
             app.ui.modern.filters = !app.ui.modern.filters;
@@ -689,9 +770,12 @@ fn open_tapped(app: &mut LccApp, ui: &egui::Ui, area: Rect, before: Option<lcc_c
     if !matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid) || ui.ctx().any_popup_open() {
         return;
     }
+    // (a tap on a card floating over the grid, the search pill or the Info card, is the card's)
+    let at = ui.input(|i| i.pointer.interact_pos());
+    let on_grid = at.is_some_and(|p| area.contains(p) && ui.ctx().layer_id_at(p).is_none_or(|l| l == ui.layer_id()));
     let tapped = ui.input(|i| {
         i.pointer.primary_released()
-            && i.pointer.interact_pos().is_some_and(|p| area.contains(p))
+            && on_grid
             && !i.pointer.is_decidedly_dragging()
             && i.pointer.button_clicked(egui::PointerButton::Primary)
             && !i.modifiers.any()

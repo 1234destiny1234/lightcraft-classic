@@ -139,13 +139,17 @@ pub fn show_setup(app: &mut crate::LccApp, ctx: &egui::Context) {
     let mut open = true;
     let shown = egui::Window::new(crate::i18n::tr("Identity Plate Editor"))
         .id(window_id)
-        .open(&mut open)
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
         .collapsible(false)
         .resizable(false)
         .default_width(560.0)
         .max_height(crate::dialog_frame::max_window_height(ctx))
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
         .show(ctx, |ui| {
+            if crate::dialog_frame::card_header(ui, crate::i18n::tr("Identity Plate Editor"), Some("identity-plate-setup:close")) {
+                open = false;
+            }
             let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
             ui.horizontal(|ui| {
                 ui.label(crate::i18n::tr("Identity Plate:"));

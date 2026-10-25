@@ -473,3 +473,19 @@ fn the_grid_shows_the_scopes_of_the_selected_photo() {
         }
     }
 }
+
+/// An RGB Parade with a Waveform as the second histogram: each draws its own picture (they once
+/// shared one texture per track, so the Parade's first track showed the Waveform).
+#[test]
+fn a_parade_beside_a_waveform_keeps_its_own_pictures() {
+    let mut h = edit_panel();
+    set(&mut h, "view.histogram.mode", "mode", "parade");
+    set(&mut h, "view.histogram.second", "mode", "waveform");
+    h.settle(SETTLE);
+    let tex = |h: &Headless, mode: &str| {
+        h.view.ctx.data_mut(|d| d.get_temp::<egui::TextureHandle>(egui::Id::new(("scope-waveform", mode, 0usize)))).map(|t| t.id())
+    };
+    let (parade, wave) = (tex(&h, "parade"), tex(&h, "waveform"));
+    assert!(parade.is_some() && wave.is_some(), "both scopes drew ({parade:?}, {wave:?})");
+    assert_ne!(parade, wave, "a texture each");
+}

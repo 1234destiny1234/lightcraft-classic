@@ -64,7 +64,9 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **`unsafe` lives only in `crates/sysmem`** (two FFI calls: `malloc_zone_pressure_relief`, that returns freed
   allocator pages to macOS after raw decodes, and `fsync`, for volumes such as SMB shares that refuse std's `F_FULLFSYNC`) **and `crates/hdrmeta`** (wgpu-hal calls on Linux / BSD: open the
   window's Vulkan device with `VK_EXT_hdr_metadata`, and `vkSetHdrMetadataEXT` on its swapchain, so the Wayland
-  compositor shows HDR; no-op elsewhere). **`crates/android-host`** (JNI: adopt the Java VM and activity handles
+  compositor shows HDR; no-op elsewhere). **`crates/gpumem`** (wgpu-hal calls: read how much memory the window's GPU offers — Vulkan
+  device-local heaps, the DXGI budget, Metal's working set — so the HDR zoom cache is only offered where it fits;
+  `None` elsewhere). **`crates/android-host`** (JNI: adopt the Java VM and activity handles
   android-activity gives the Android app, for its pickers and links) **`crates/winspool`** (Win32 GDI / winspool calls on Windows: list the system's printers and draw rendered pages on
   one, for printing through the Windows print spooler; reports unsupported elsewhere) **and `apps/android`'s `android_main`** (the
   `#[unsafe(no_mangle)]` entry point android-activity looks up; nothing else). Every other production crate root has `#![forbid(unsafe_code)]`. A new

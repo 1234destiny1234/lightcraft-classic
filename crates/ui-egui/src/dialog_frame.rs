@@ -359,6 +359,35 @@ pub fn group_begin(ui: &mut Ui, title: Option<&str>) {
     ui.add_space(4.0);
 }
 
+/// The card every dialog and tool window is drawn on: rounded, a faint light edge, a soft shadow
+/// (the title goes inside it: [`card_header`]; the window has no title bar).
+pub fn card_frame(ctx: &egui::Context) -> egui::Frame {
+    egui::Frame::window(&ctx.global_style())
+        .inner_margin(egui::Margin { left: 18, right: 18, top: 14, bottom: 14 })
+        .corner_radius(16.0)
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
+        .shadow(egui::epaint::Shadow { offset: [0, 10], blur: 32, spread: 0, color: egui::Color32::from_black_alpha(110) })
+}
+
+/// A card's title row: the (translated) `title` left-aligned and, with `close` (a widget id), a ✕
+/// on the right. True when the ✕ was clicked.
+pub fn card_header(ui: &mut Ui, title: &str, close: Option<&str>) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let mut closed = false;
+    ui.horizontal(|ui| {
+        let h = ui.label(RichText::new(title).font(t.semibold(16.5)).color(t.text));
+        crate::widgets::register(ui.ctx(), "dialog:title", h.rect);
+        if let Some(id) = close {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let b = crate::button::Button::icon_only(crate::icons::Icon::Close, "Close").kind(crate::button::Kind::Ghost).widget(id);
+                closed = b.show(ui).clicked();
+            });
+        }
+    });
+    ui.add_space(4.0);
+    closed
+}
+
 /// Esc for a tool window (Edit In Presets, Actions, Plug-ins): true, and the key taken, when it
 /// should close: no popup is open, no text is being typed and no dialog sits over it.
 pub fn esc_closes(app_dialog_open: bool, ctx: &egui::Context) -> bool {
@@ -527,4 +556,30 @@ pub fn footer_rule(ui: &mut Ui) {
     let w = ui.available_width().max(ui.min_rect().width());
     let (rect, _) = ui.allocate_exact_size(vec2(w, 1.0), egui::Sense::hover());
     ui.painter().hline(rect.x_range(), rect.center().y, egui::Stroke::new(1.0, t.divider));
+}
+
+/// Whether `dialog` is shown as a bottom sheet: on a phone (Android with the window's short side
+/// under 600 points, or any window under 600 points wide), every dialog but the full-window screens
+/// (Settings, Import, Export) and Print. A short, wide desktop window keeps centred cards.
+pub fn phone_sheet(ctx: &egui::Context, dialog: &crate::state::Dialog) -> bool {
+    use crate::state::Dialog;
+    let size = ctx.content_rect().size();
+    let phone = size.x < 600.0 || (cfg!(target_os = "android") && size.x.min(size.y) < 600.0);
+    phone && !matches!(dialog, Dialog::Settings { .. } | Dialog::Import { .. } | Dialog::Export { .. } | Dialog::Print)
+}
+
+/// A bottom sheet's grab handle across its top (`dialog:grab`): true when it was tapped or pulled
+/// down, which closes the sheet (as Cancel).
+pub fn grab_handle(ui: &mut Ui) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), egui::Sense::click_and_drag());
+    crate::widgets::register(ui.ctx(), "dialog:grab", r);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::i18n::tr("Close")));
+    ui.painter().rect_filled(Rect::from_center_size(r.center(), vec2(40.0, 5.0)), 2.5, t.text_dim.gamma_multiply(0.7));
+    let pulled = resp.drag_stopped()
+        && ui.input(|i| match (i.pointer.press_origin(), i.pointer.interact_pos()) {
+            (Some(a), Some(b)) => b.y - a.y > 40.0,
+            _ => false,
+        });
+    resp.clicked() || pulled
 }

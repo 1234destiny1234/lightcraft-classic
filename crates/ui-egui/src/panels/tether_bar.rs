@@ -217,13 +217,21 @@ fn live_view(app: &mut LccApp, ctx: &egui::Context, cam: &Value) {
     };
     ctx.request_repaint_after(std::time::Duration::from_secs_f64(LIVE_EVERY));
     let mut open = true;
-    egui::Window::new(crate::i18n::tr("Live View")).id(egui::Id::new("tether-live-window")).open(&mut open).default_width(520.0).show(ctx, |ui| {
-        if let Some(tex) = &tex {
-            let size = tex.size_vec2();
-            let w = ui.available_width().min(size.x.max(1.0) * 2.0);
-            ui.image((tex.id(), egui::vec2(w, w * size.y / size.x.max(1.0))));
-        }
-    });
+    egui::Window::new(crate::i18n::tr("Live View"))
+        .id(egui::Id::new("tether-live-window"))
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
+        .default_width(520.0)
+        .show(ctx, |ui| {
+            if crate::dialog_frame::card_header(ui, crate::i18n::tr("Live View"), Some("tether-live-window:close")) {
+                open = false;
+            }
+            if let Some(tex) = &tex {
+                let size = tex.size_vec2();
+                let w = ui.available_width().min(size.x.max(1.0) * 2.0);
+                ui.image((tex.id(), egui::vec2(w, w * size.y / size.x.max(1.0))));
+            }
+        });
     if !open {
         let _ = app.run("tether.liveView", json!({"stop": true}));
         ctx.data_mut(|d| d.insert_temp(live_id(), false));
@@ -301,10 +309,14 @@ fn settings_window(app: &mut LccApp, ctx: &egui::Context) {
     let window_id = egui::Id::new("tether-settings");
     let shown = egui::Window::new(crate::i18n::tr("Tethered Capture Settings"))
         .id(window_id)
-        .open(&mut open)
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
+            if crate::dialog_frame::card_header(ui, crate::i18n::tr("Tethered Capture Settings"), Some("tether-settings:close")) {
+                open = false;
+            }
             let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
             layout.body(ui, |ui| {
                 egui::Grid::new("tether-grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
@@ -389,10 +401,8 @@ fn settings_window(app: &mut LccApp, ctx: &egui::Context) {
             });
             layout.footer(ui, |ui| {
                 ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    let r = ui.button(crate::i18n::tr("Start"));
-                    register(ui.ctx(), "tetherStart", r.rect);
-                    start = r.clicked();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    start = crate::button::Button::new("Start").kind(crate::button::Kind::Primary).widget("tetherStart").show(ui).clicked();
                 });
             });
         });
