@@ -21,7 +21,7 @@ const THUMB_EDGE: usize = 256;
 const COLUMNS: usize = 2;
 
 /// The raw's camera profile: its camera's default, the built-in colour, or one of
-/// the imported `.dcp` files for its camera. Hidden for photos that aren't developed from raw data.
+/// the imported `.dcp` files for its camera, or one of its calibrated looks. Hidden for photos that aren't developed from raw data.
 fn camera_profile_row(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, id: PhotoId) {
     let Some(photo) = app.session.catalog.photo(id).cloned() else { return };
     if !photo.develops_raw() {
@@ -41,6 +41,10 @@ fn camera_profile_row(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, 
             let name = if p.name.is_empty() { pid.trim_start_matches("dcp:").to_string() } else { p.name.clone() };
             options.push((pid, name));
         }
+    }
+    // the camera's Lightroom-matched calibrated looks ("Adobe Color (matched)")
+    if let Some(cal) = lcc_raw::dcp::calibrated_for_camera(&camera) {
+        options.extend(cal.looks.iter().map(|(pid, p)| (pid.clone(), p.name.clone())));
     }
     let current = d.profile.camera.clone();
     let shown = options.iter().find(|(o, _)| *o == current).map(|(_, n)| n.clone()).unwrap_or_else(|| current.clone());

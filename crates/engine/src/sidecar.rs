@@ -391,7 +391,9 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
             if p.width > 0 && p.height > 0 {
                 crate::crs_masks::refit_radials(&mut v, crate::crs_masks::DEFAULT_ASPECT, p.width as f64 / p.height as f64);
             }
-            lcc_develop::apply_partial(&p.develop, &v, 1.0)
+            let mut out = lcc_develop::apply_partial(&p.develop, &v, 1.0);
+            crate::crs::keep_chosen_dcp(&p.develop, &mut out);
+            out
         }
         None if sc.plugin_filters.is_some() => (*p.develop).clone(),
         None => return false,
