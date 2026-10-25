@@ -74,11 +74,11 @@ fn hovering_alone_changes_nothing() {
 }
 
 /// How many stars `Rating::show` paints filled (in the star colour) after the pointer has moved to
-/// the centre of star `hover` (1 to 5), if given. A filled star is ten triangles of one colour.
+/// the centre of star `hover` (1 to 5), if given. A filled star is one mesh in the star colour.
 fn filled_stars(rating: u8, hover: Option<u8>) -> usize {
     fn count(shape: &egui::Shape, colour: egui::Color32) -> usize {
         match shape {
-            egui::Shape::Path(path) => usize::from(path.fill == colour),
+            egui::Shape::Mesh(mesh) => usize::from(mesh.vertices.first().is_some_and(|v| v.color == colour)),
             egui::Shape::Vec(shapes) => shapes.iter().map(|shape| count(shape, colour)).sum(),
             _ => 0,
         }
@@ -106,7 +106,7 @@ fn filled_stars(rating: u8, hover: Option<u8>) -> usize {
             at = seen.iter().find(|(id, _)| *id == want).map(|(_, r)| r.center());
             assert!(at.is_some(), "star {n} is registered");
         }
-        filled = out.shapes.iter().map(|clipped| count(&clipped.shape, colour)).sum::<usize>() / 10;
+        filled = out.shapes.iter().map(|clipped| count(&clipped.shape, colour)).sum::<usize>();
     }
     filled
 }
@@ -122,9 +122,10 @@ fn hovering_a_star_paints_the_rating_a_click_would_set() {
 #[test]
 fn a_screen_reader_hears_every_star_with_its_state() {
     let (_, nodes) = drive(None, &[], |ui| row(2).show(ui));
+    // each star is a radio button named for its rating (the row is one group, like a radio group)
     for n in 1..=5 {
-        let name = format!("{n} ★");
-        assert!(nodes.iter().any(|(role, label)| role == "Button" && *label == name), "{name}: {nodes:?}");
+        let name = format!("Rating {n}");
+        assert!(nodes.iter().any(|(role, label)| role == "RadioButton" && *label == name), "{name}: {nodes:?}");
     }
 }
 

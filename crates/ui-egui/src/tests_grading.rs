@@ -474,8 +474,8 @@ fn a_wheel_that_goes_away_mid_drag_gives_the_pointer_back() {
     let press = widget(&h, "wheel:midtones").unwrap().center() + egui::vec2(rad * 0.3, 0.0);
     start_wheel_drag(&mut h, press);
     assert_eq!(h.last_cursor, egui::CursorIcon::None);
-    // the flyout closes under the drag: no wheel is drawn to let go of the pointer itself
-    h.app.ui.toggle_flyout("grading");
+    // the Color Grading section closes under the drag: no wheel is drawn to let go of the pointer itself
+    h.app.ui.toggle_section("grading");
     h.step();
     h.step();
     assert!(widget(&h, "wheel:midtones").is_none());

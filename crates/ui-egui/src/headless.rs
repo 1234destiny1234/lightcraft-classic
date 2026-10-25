@@ -2208,7 +2208,9 @@ mod tests {
         use lcc_catalog::ColorLabel;
         let mut h = demo([1400.0, 800.0]);
         let t = Duration::from_secs(10);
-        h.request("engine.execute", json!({"command": "view.filterBar"}), t);
+        // (the filter bar shows from the start: `view.filterBar` would hide it)
+        h.app.ui.filter_bar = true;
+        h.settle(SETTLE);
         h.app.session.execute("library.filter", &json!({"label": "red", "labels": ["red", "yellow"]})).unwrap();
         // a frame so the bar is laid out for the new filter before the click
         h.step();
