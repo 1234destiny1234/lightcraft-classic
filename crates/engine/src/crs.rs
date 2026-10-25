@@ -426,8 +426,16 @@ pub fn to_partial(props: &Props, target: Target) -> Value {
     // ---- Camera profile: Lightroom's profile name picks the camera's calibrated look of that name
     // (`cal:<slug>`); a camera without one falls back to its default (`lcc_raw::dcp::resolve`). Photos only: a
     // preset (`Target::Any`) leaves each photo's camera profile as it is, and reports the field
-    if let Some(name) = (target != Target::Any).then(|| first(props, "crs:CameraProfile")).flatten() {
-        put(o, "profile.camera", json!(lcc_camdb::calibration::look_id(name)));
+    // Lightroom keeps the camera profile and the creative profile apart: with "Adobe Color" chosen it writes
+    // `CameraProfile="Adobe Standard"` and a `Look` named "Adobe Color". Calibrated looks are named after
+    // what the person picked, so the Look's name wins ([`lightroom_profile_name`]); presets only ever name
+    // a look through `profile.look` (`crate::profile_refs`), never through here
+    if target != Target::Any {
+        note("crs:CameraProfile");
+        note("crs:Look");
+        if let Some(name) = lightroom_profile_name(props) {
+            put(o, "profile.camera", json!(lcc_camdb::calibration::look_id(name)));
+        }
     }
 
     // ---- Optics (manual corrections; lens profiles are ours, only the switch carries over).
@@ -579,6 +587,13 @@ pub fn camera_profile_name(props: &Props) -> Option<&str> {
     first(props, "crs:CameraProfile")
 }
 
+/// The profile the person picked in Lightroom: the creative profile's name (`crs:Look/crs:Name`) when the
+/// packet has one, else the camera profile's (`crs:CameraProfile`). This is the name a calibrated look
+/// (`cal:<slug>`, `lcc_camdb::calibration::look_id`) is made under.
+pub fn lightroom_profile_name(props: &Props) -> Option<&str> {
+    first(props, "crs:Look/crs:Name").or_else(|| first(props, "crs:CameraProfile"))
+}
+
 /// Keep a photo's explicitly chosen imported `.dcp` (`dcp:…`) when Lightroom's settings are applied over it
 /// (`base` the settings before, `out` after): a Lightroom profile name maps to a calibrated look, never to a
 /// person's own profile.
@@ -663,6 +678,22 @@ mod tests {
         let mut out = apply_partial(&base, &partial, 1.0);
         keep_chosen_dcp(&base, &mut out);
         assert_eq!(out.profile.camera, "dcp:mine");
+    }
+
+    #[test]
+    fn the_look_name_picks_the_calibrated_look_over_the_camera_profile() {
+        // Lightroom with "Adobe Color" chosen: the camera profile is Adobe Standard, the look Adobe Color
+        let mut p = Props::new();
+        p.insert("crs:CameraProfile".into(), vec!["Adobe Standard".into()]);
+        p.insert("crs:Look/crs:Name".into(), vec!["Adobe Color".into()]);
+        p.insert("crs:Look/crs:Amount".into(), vec!["1".into()]);
+        let (partial, unmapped) = to_partial_report(&p, None, Target::RawAbsolute, 1.5);
+        assert!(!unmapped.iter().any(|k| k == "Look" || k == "CameraProfile"), "{unmapped:?}");
+        assert_eq!(apply_partial(&DevelopSettings::default(), &partial, 1.0).profile.camera, "cal:adobe-color");
+        // no look: the camera profile names it
+        p.retain(|k, _| !k.starts_with("crs:Look"));
+        let (partial, _) = to_partial_report(&p, None, Target::RawAbsolute, 1.5);
+        assert_eq!(apply_partial(&DevelopSettings::default(), &partial, 1.0).profile.camera, "cal:adobe-standard");
     }
 
     fn props(x: &str) -> Props {
