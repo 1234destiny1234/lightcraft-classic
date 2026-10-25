@@ -139,7 +139,12 @@ fn list(_s: &mut Session, _p: &Value) -> Result<Value> {
         }
     }
     let in_use: Vec<Value> = lcc_raw::dcp::installed().iter().map(|d| json!({"model": d.model, "name": d.name})).collect();
-    Ok(json!({"profiles": out, "inUse": in_use}))
+    // the bundled Lightroom-matched calibrations, chosen per photo as `cal:<id>`
+    let calibrated: Vec<Value> = lcc_raw::dcp::calibrated()
+        .iter()
+        .flat_map(|c| c.looks.iter().map(|(id, d)| json!({"id": id, "model": d.model, "name": d.name})).collect::<Vec<_>>())
+        .collect();
+    Ok(json!({"profiles": out, "inUse": in_use, "calibrated": calibrated}))
 }
 
 fn use_dcp(_s: &mut Session, p: &Value) -> Result<Value> {
@@ -178,7 +183,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             import
         ),
-        cmd!(query "camera.listDcp", "Camera Profiles (.dcp)", [], None, "{} → {profiles: [{id, model, name, copyright, file, active}], inUse: [{model, name}]}", always, list),
+        cmd!(query "camera.listDcp", "Camera Profiles (.dcp)", [], None, "{} → {profiles: [{id, model, name, copyright, file, active}], inUse: [{model, name}], calibrated: [{id (cal:…), model, name}]}", always, list),
         cmd!(
             "camera.useDcp",
             "Use Camera Profile",

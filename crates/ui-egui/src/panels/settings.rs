@@ -688,6 +688,36 @@ pub fn lens_db_folder(app: &mut LccApp, p: &Value) -> Result<Value, String> {
 
 // --------------------------------------------------------------------------------- Performance
 
+/// Keep recent zoomed HDR views: offered only where the GPU has room for them on this screen;
+/// elsewhere greyed out, with why (an HDR display only: SDR windows keep no HDR textures).
+fn hdr_zoom_cache(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
+    const LABEL: &str = "Keep recent zoomed HDR views in graphics memory";
+    let Some(fit) = app.hdr_cache_fit(ui.ctx()) else { return };
+    let mb = |b: u64| b.div_ceil(1 << 20);
+    if fit.fits() {
+        check(ui, "settings.hdrZoomCache", &mut app.ui.settings.hdr_zoom_cache, LABEL);
+        hint(
+            ui,
+            t,
+            &crate::i18n::tr_format!(
+                "Panning back or zooming in again on an HDR edit shows it at once instead of rendering it again. Uses up to {need} MB of graphics memory on this screen.",
+                need = mb(fit.need)
+            ),
+        );
+        return;
+    }
+    let mut off = false;
+    ui.add_enabled_ui(false, |ui| check(ui, "settings.hdrZoomCache", &mut off, LABEL));
+    let why = crate::i18n::tr_format!(
+        "Not available on this computer: keeping them needs about {need} MB of graphics memory on this screen, and the graphics card has {have} MB. The app uses at most a quarter of it for them, so the rest stays free for the photo itself and other apps. Zoomed HDR views still work; going back to one renders it again.",
+        need = mb(fit.need),
+        have = fit.have.map_or(0, mb)
+    );
+    crate::dialog_frame::in_control_column(ui, |ui| {
+        ui.label(RichText::new(why).size(11.0).color(t.caution));
+    });
+}
+
 fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use lcc_engine::gpu;
     heading(ui, t, crate::i18n::tr("Rendering"));
@@ -709,6 +739,7 @@ fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     crate::dialog_frame::in_control_column(ui, |ui| {
         ui.add(egui::Label::new(RichText::new(crate::i18n::tr(&status)).size(11.0).color(t.text_dim)).truncate()).on_hover_text(&status);
     });
+    hdr_zoom_cache(app, ui, t);
     row(ui, t, crate::i18n::tr("Preview size"), |ui| {
         let opts: Vec<(u32, String)> =
             PREVIEW_LIMITS.iter().map(|e| (*e, if *e == 0 { crate::i18n::tr("Automatic").to_string() } else { format!("{e} px") })).collect();

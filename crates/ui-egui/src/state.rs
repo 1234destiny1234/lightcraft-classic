@@ -398,6 +398,10 @@ pub struct AppSettings {
     pub preview_limit: u32,
     /// Keep settled rendering quality during adjustments instead of adaptive drafts.
     pub high_quality_adjustment_previews: bool,
+    /// Zoomed HDR views keep their last few windows in GPU memory, so panning back or zooming in
+    /// again shows them at once. Used only where the GPU has room for them
+    /// ([`crate::render::hdr_cache_fit`]); the Settings dialog says when it hasn't.
+    pub hdr_zoom_cache: bool,
     /// Edit in Other Editor: the application ("" = the system's default for the file type).
     pub external_editor: String,
     /// The file Edit in Other Editor hands over.
@@ -477,6 +481,7 @@ impl Default for AppSettings {
             hdr_display: true,
             preview_limit: 0,
             high_quality_adjustment_previews: false,
+            hdr_zoom_cache: true,
             external_editor: String::new(),
             external_file: EditFile::default(),
             photocraft_path: String::new(),

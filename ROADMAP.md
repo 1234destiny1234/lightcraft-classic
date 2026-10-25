@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated 2026-10-21 (version 0.8.2). Revision history: [Log](#log).*
+*Last updated 2026-10-25 (version 0.8.2). Revision history: [Log](#log).*
 
 Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
 Print, Web, publish) and Immich integration as Chromaforge's own focus on top of the upstream engine. Estimates are for
@@ -215,7 +215,7 @@ Not decoded yet — preview only (no permissively licensed description; black-bo
 **Camera colour matrices:** ARW, NEF, RW2, RAF, CR3, CR2, PEF, Samsung SRW and Olympus ORF files can use guarded, separate chromaticity and tone estimates from their own embedded JPEG (see `docs/camera-preview-colour.md`); this is a per-file camera-look estimate with relative WB, not measured calibration or absolute-Kelvin WB. 52 models whose fit is rejected (or that have no usable JPEG) start from matrices fitted to their measured spectral sensitivities instead (rawtoaces-data, Apache-2.0; `crates/raw/src/spectral.rs`). Other non-DNG raws and rejected fits use the documented neutral fallback (camera RGB ≈ linear sRGB, flagged
 `matrix_is_fallback`) with the file's as-shot white-balance multipliers. Clean sources to evaluate next: manufacturer
 matrices stored in the files themselves (Olympus ImageProcessing `ColorMatrix`, Pentax equivalents; Panasonic RW2 files carry none) and our
-own chart-based calibration (M11.4). Adobe matrices are never used.
+own calibration (M11.4): `<cli> calibrate-lightroom` fits a camera's colour model and looks black-box to Lightroom's exports of a contributor's own photos (maintainer decision 2026-10-25; [docs/calibrate-lightroom.md](docs/calibrate-lightroom.md)); no camera is calibrated yet. Adobe DCP/LCP files and matrices from Adobe-converted DNGs are never used.
 
 ## Lightroom Classic catalog migration
 
@@ -230,6 +230,8 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-25: M11.4: `<cli> calibrate-lightroom` (preset, fit, add, list): camera calibrations matched to Lightroom
+  by black-box fits to its exports of contributors' own photos; data rules amended (gaps 1 and 3; 0 cameras so far).
 - 2026-10-21: M7: the Enhance Preview dialog (Photo ▸ Enhance…, Ctrl+Alt+I): Raw Details / Super Resolution with a
   before/after preview, output size, estimated time and Create Stack (LR-ENH-DIALOG ✅).
 - 2026-10-21: gap 14 closed: HDR renders (HDR views, HDR exports, gain maps) run on the GPU with the CPU as oracle

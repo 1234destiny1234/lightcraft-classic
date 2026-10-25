@@ -517,12 +517,12 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Camera Profile",
             [],
             None,
-            "{id: \"\" (the camera's default), \"lc\" (the app's own colour) or \"dcp:…\" (an imported .dcp, see camera.listDcp)} — how the raw is decoded",
+            "{id: \"\" (the camera's default), \"lc\" (the app's own colour), \"dcp:…\" (an imported .dcp) or \"cal:…\" (a Lightroom-matched calibrated look; both listed by camera.listDcp)} — how the raw is decoded",
             has_active,
             |s, p| {
                 const C: &str = "develop.cameraProfile";
                 let id = str_param(p, "id").unwrap_or("").trim().to_string();
-                if !(id.is_empty() || id == "lc" || lcc_raw::dcp::library_get(&id).is_some()) {
+                if !(id.is_empty() || id == "lc" || lcc_raw::dcp::library_get(&id).is_some() || lcc_raw::dcp::calibrated_look_exists(&id)) {
                     return Err(bad(C, format!("unknown camera profile `{id}`")));
                 }
                 edit(s, C, "Camera Profile", |d| {

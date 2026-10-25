@@ -5,7 +5,6 @@
 use egui::{Align2, RichText, vec2};
 
 use crate::theme::Tokens;
-use crate::widgets::register;
 use crate::{LccApp, QuitPrompt};
 
 /// Collect the library's settings-file warnings (each is shown once), and the no-GPU notice once the GPU device has
@@ -96,10 +95,11 @@ fn window(ctx: &egui::Context, id: &str, title: &str, text: &str, buttons: &[(&s
         ui.painter().rect_filled(screen, 0.0, egui::Color32::from_black_alpha(140));
     });
     let mut chosen = None;
-    let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(18, 14));
+    let frame = crate::dialog_frame::card_frame(ctx);
     let window_id = egui::Id::new(id);
     let shown = egui::Window::new(crate::i18n::tr(title))
         .id(window_id)
+        .title_bar(false)
         .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(false)
@@ -110,15 +110,16 @@ fn window(ctx: &egui::Context, id: &str, title: &str, text: &str, buttons: &[(&s
             // a fixed width: a wrapped label in an auto-sized, centred window would move it every frame
             ui.set_width(420.0);
             ui.spacing_mut().item_spacing.y = 8.0;
+            crate::dialog_frame::card_header(ui, crate::i18n::tr(title), None);
             let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
             layout.body(ui, |ui| ui.add(egui::Label::new(RichText::new(text).color(t.text_label)).wrap()));
             layout.footer(ui, |ui| {
                 ui.add_space(4.0);
-                ui.horizontal(|ui| {
+                // (wrapping on a narrow window)
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
                     for (i, (bid, label, _)) in buttons.iter().enumerate() {
-                        let r = ui.add(egui::Button::new(crate::i18n::tr(label)).min_size(vec2(0.0, 26.0)));
-                        register(ui.ctx(), format!("button:{bid}"), r.rect);
-                        if r.clicked() {
+                        if crate::button::Button::new(label).widget(format!("button:{bid}")).show(ui).clicked() {
                             chosen = Some(i);
                         }
                     }

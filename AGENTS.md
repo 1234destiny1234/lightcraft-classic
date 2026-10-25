@@ -95,6 +95,11 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   `colormatrices.c`, basecurves.
 - Camera matrices are **never harvested from Adobe-converted DNGs**: check the DNG's `Software` tag (Adobe DNG
   Converter, Lightroom, Camera Raw) and reject those. Camera-native DNGs (written by the camera itself) are fine.
+- **Black-box fits to Lightroom output images may ship** (maintainer decision 2026-10-25): a contributor runs
+  `<cli> calibrate-lightroom fit` on their own raws and Lightroom's exports of them, and the resulting aggregate
+  numbers (`crates/camdb/data/calibrations/*.json`, added with `<cli> calibrate-lightroom add`) may be committed and
+  bundled. Adobe DCP/LCP files, matrices from Adobe-converted DNGs and Adobe-rendered pixels never ship; no image,
+  file name, date, serial, location or lens enters a calibration (allow-listed fields only).
 - Every PR that adds an algorithm has a **"Sources:"** line naming what it was built from: a paper, a prose spec, or
   "own design".
 - No GPL/LGPL/AGPL/MPL dependency may enter the build; `cargo deny` enforces the licence allow-list.

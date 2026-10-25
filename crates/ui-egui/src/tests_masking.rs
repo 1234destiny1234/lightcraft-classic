@@ -1134,11 +1134,11 @@ fn local_folder_listed_twice_opens_and_closes_each_row() {
 fn geometry_slider_drag_marks_the_grid() {
     let mut h = detail("panel.crop");
     let spec = lcc_develop::controls::find("geometry.vertical").unwrap();
-    let start = crate::widgets::SliderOut { value: None, drag_started: true, drag_stopped: false, reset: false };
+    let start = crate::widgets::SliderOut { value: None, drag_started: true, drag_stopped: false, reset: false, more: false };
     crate::panels::edit::apply_slider_out(&mut h.app, spec, start, |_, _| Ok(serde_json::Value::Null));
     assert_eq!(h.app.ui.dragging_control.as_deref(), Some("geometry.vertical"));
     h.step();
-    let stop = crate::widgets::SliderOut { value: None, drag_started: false, drag_stopped: true, reset: false };
+    let stop = crate::widgets::SliderOut { value: None, drag_started: false, drag_stopped: true, reset: false, more: false };
     crate::panels::edit::apply_slider_out(&mut h.app, spec, stop, |_, _| Ok(serde_json::Value::Null));
     assert!(h.app.ui.dragging_control.is_none());
     h.settle(SETTLE);
@@ -1280,10 +1280,14 @@ fn open_original_in_external_editor_hands_over_the_raw_itself() {
     assert_eq!(std::fs::read(&a_path).unwrap(), b"raw sensor data", "the original is left as it is");
     assert!(std::fs::read_dir(&dir).unwrap().count() == 2, "nothing is written next to the originals");
 
-    // the editor can be named per call; the active photo must have a file for the menu
-    let r = exec(&mut h, "photo.openOriginalInExternal", json!({"ids": [a.0], "app": "/opt/dxo"}));
+    // the app can name the editor per call, an agent over the control channel can't; the active
+    // photo must have a file for the menu
+    let r = h.app.run("photo.openOriginalInExternal", json!({"ids": [a.0], "app": "/opt/dxo"})).unwrap();
     assert_eq!(r["opened"][0]["path"], a_path.as_str());
     assert_eq!(opened.lock().unwrap().last().unwrap().1, "/opt/dxo");
+    let r = h.request("engine.execute", json!({"command": "photo.openOriginalInExternal", "params": {"ids": [a.0], "app": "/bin/sh"}}), T);
+    assert_eq!(r["ok"], false, "{r}");
+    assert_eq!(opened.lock().unwrap().last().unwrap().1, "/opt/dxo", "nothing more opened");
     exec(&mut h, "library.select", json!({"ids": [a.0]}));
     assert!(crate::menus::ui_enabled(&h.app, "photo.openOriginalInExternal"));
     exec(&mut h, "library.select", json!({"ids": [demo.0]}));

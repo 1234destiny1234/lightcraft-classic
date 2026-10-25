@@ -4462,11 +4462,11 @@ dependencies = [
  "eframe",
  "egui",
  "getrandom 0.3.4",
- "half",
  "lcc-brand",
  "lcc-codecs",
  "lcc-engine",
  "lcc-gpu",
+ "lcc-gpumem",
  "lcc-hdrmeta",
  "lcc-pipeline",
  "lcc-raster",
@@ -4531,6 +4531,7 @@ dependencies = [
  "lcc-color",
  "lcc-raw",
  "serde",
+ "serde_json",
  "toml",
 ]
 
@@ -4586,15 +4587,18 @@ dependencies = [
 name = "lcc-cli"
 version = "26.43.6"
 dependencies = [
+ "chrono",
  "dhat",
  "lcc-brand",
  "lcc-camdb",
  "lcc-codecs",
+ "lcc-colourfit",
  "lcc-denoise",
  "lcc-engine",
  "lcc-mcp",
  "lcc-merge",
  "lcc-raster",
+ "lcc-raw",
  "lcc-scenes",
  "lcc-sysmem",
  "lcc-testkit",
@@ -4646,6 +4650,27 @@ dependencies = [
  "lcc-geom",
  "proptest",
  "serde",
+]
+
+[[package]]
+name = "lcc-colourfit"
+version = "26.43.6"
+dependencies = [
+ "lcc-brand",
+ "lcc-camdb",
+ "lcc-codecs",
+ "lcc-color",
+ "lcc-develop",
+ "lcc-engine",
+ "lcc-meta",
+ "lcc-pipeline",
+ "lcc-raster",
+ "lcc-raw",
+ "lcc-scenes",
+ "lcc-testkit",
+ "rayon",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4723,6 +4748,7 @@ dependencies = [
  "filmcraft-h264enc",
  "filmcraft-isobmff",
  "fs4",
+ "half",
  "harfrust",
  "jxl-oxide",
  "lcc-actions",
@@ -4885,6 +4911,19 @@ dependencies = [
  "log",
  "pollster 1.0.1",
  "wgpu",
+]
+
+[[package]]
+name = "lcc-gpumem"
+version = "26.43.6"
+dependencies = [
+ "ash",
+ "lcc-testkit",
+ "objc2-metal 0.3.2",
+ "pollster 1.0.1",
+ "wgpu",
+ "wgpu-hal",
+ "windows 0.62.2",
 ]
 
 [[package]]

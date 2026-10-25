@@ -191,6 +191,7 @@ pub struct Button<'a> {
     widget: Option<String>,
     tooltip: Option<&'a str>,
     min_width: f32,
+    min_height: f32,
     id_salt: Option<egui::Id>,
 }
 
@@ -207,6 +208,7 @@ impl<'a> Button<'a> {
             widget: None,
             tooltip: None,
             min_width: 0.0,
+            min_height: 0.0,
             id_salt: None,
         }
     }
@@ -283,6 +285,12 @@ impl<'a> Button<'a> {
         self
     }
 
+    /// At least this tall (finger-sized footers on a phone's bottom sheets).
+    pub fn min_height(mut self, height: f32) -> Self {
+        self.min_height = height;
+        self
+    }
+
     fn font(&self, t: &Tokens) -> egui::FontId {
         // the loud kinds speak a little bolder
         match self.kind {
@@ -306,7 +314,7 @@ impl<'a> Button<'a> {
             (true, true) => self.size.padding() * 2.0 + self.size.icon() + self.size.gap() + text_w,
             (false, _) => self.size.padding() * 2.0 + text_w,
         };
-        vec2(w.max(self.min_width), h)
+        vec2(w.max(self.min_width), h.max(self.min_height))
     }
 
     /// Show it where the layout puts it.
