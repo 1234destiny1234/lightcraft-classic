@@ -151,34 +151,40 @@ pub fn probe(bytes: &[u8]) -> Result<Info, Error> {
 
 fn probe_unguarded(bytes: &[u8]) -> Result<Info, Error> {
     census::cap(bytes)?;
-    let info = heic_rs::probe(bytes).map_err(|e| match e {
-        // No `meta` box: no still image, only a `moov` image sequence (a video track).
+    // No `meta` box: no still image, only a `moov` image sequence (a video track).
+    let open_error = |e| match e {
         heic_rs::Error::MissingBox("meta") => Error::Unsupported(SEQUENCE),
         e => err(e),
-    })?;
-    let ctx = Context::open(bytes).map_err(err)?;
+    };
+    let ctx = Context::open(bytes).map_err(open_error)?;
     let id = ctx.meta.primary;
+    // heic-rs 0.1.4 caps the size of what it assembles, not the work: an item built from other
+    // items (`iloc` construction method 2) is rebuilt once per extent, so a chain of such items
+    // multiplies at every level while each result stays small. Count those visits from the
+    // `iloc` table before reconstructing anything: the primary item first (`heic_rs::probe` and
+    // `Context::grid` both rebuild its descriptor), then its alpha plane, then every tile
+    // reference, repeats included.
+    let mut visits = 0_usize;
+    item_visits(&ctx, id, 0, &mut visits)?;
+    let info = heic_rs::probe(bytes).map_err(open_error)?;
+    if let Some(alpha) = ctx.alpha_item(id).map_err(err)? {
+        item_visits(&ctx, alpha, 0, &mut visits)?;
+    }
     let mut coded = match ctx.grid(id).map_err(err)? {
         Some((_, tiles)) => tiles,
         None => vec![id],
     };
-    // A `dimg` listing may name the same tile more than once; reconstrutable (`iloc`
-    // construction method 2) items are moreover rebuilt for every extent that references
-    // them in heic-rs 0.1.4, so our probe would pay the reconstruction again per tile. Each
-    // unique item only once, then the total reconstruction (all of it assembled from `bytes`
-    // by heic-rs) is held below one copy of the file — above that a repeat or chain wants
-    // more bytes than exist (CodeRabbit #21/#50 on this sweep). Order doesn't matter here:
-    // this only checks that every tile's bytes lie in the file.
-    coded.sort_unstable();
-    coded.dedup();
-    // heic-rs 0.1.4 caps the size of what it assembles, not the work: an item built from other
-    // items (`iloc` construction method 2) is rebuilt once per extent, so a chain of such items
-    // multiplies at every level while each result stays small. Count those visits from the
-    // `iloc` table before reconstructing anything.
-    let mut visits = 0_usize;
-    for &item in &coded {
+    for &item in coded.iter().filter(|&&item| item != id) {
         item_visits(&ctx, item, 0, &mut visits)?;
     }
+    // A `dimg` listing may name the same tile more than once, and reconstructable items are
+    // moreover rebuilt for every extent that references them in heic-rs 0.1.4. For the size
+    // check each unique item counts once: the total reconstruction (all of it assembled from
+    // `bytes` by heic-rs) is held below one copy of the file, above which a repeat or chain
+    // wants more bytes than exist. Order doesn't matter here: this only checks that every
+    // tile's bytes lie in the file.
+    coded.sort_unstable();
+    coded.dedup();
     let mut reconstructed = 0_usize;
     for item in coded {
         reconstructed = reconstructed.saturating_add(ctx.item_data(item).map_err(err)?.len());
@@ -243,7 +249,13 @@ pub fn decode_thumbnail(bytes: &[u8], min_edge: u32, options: &Options) -> Resul
         let ctx = Context::open(bytes).map_err(err)?;
         let primary = ctx.meta.primary;
         let mut best: Option<(u32, u32)> = None;
+        // A thumbnail whose own reconstruction would cost too much is not a candidate; the visits
+        // of all the candidates share one budget.
+        let mut candidate_visits = 0_usize;
         for r in ctx.meta.refs.iter().filter(|r| r.kind == heic_rs::meta::iref::RefKind::Thmb && r.to.contains(&primary)) {
+            if item_visits(&ctx, r.from, 0, &mut candidate_visits).is_err() {
+                continue;
+            }
             let Ok(p) = ctx.props(r.from) else { continue };
             let Ok((w, h)) = ctx.coded_size(r.from, &p) else { continue };
             let edge = w.max(h);
@@ -252,6 +264,15 @@ pub fn decode_thumbnail(bytes: &[u8], min_edge: u32, options: &Options) -> Resul
             }
         }
         let Some((id, _)) = best else { return Ok(None) };
+        // The same pre-scan as `probe`: the thumbnail's own descriptor and every tile reference
+        // are counted before heic-rs rebuilds any of them.
+        let mut visits = 0_usize;
+        item_visits(&ctx, id, 0, &mut visits)?;
+        if let Some((_, tiles)) = ctx.grid(id).map_err(err)? {
+            for &tile in &tiles {
+                item_visits(&ctx, tile, 0, &mut visits)?;
+            }
+        }
         let mut decoded = decode_item(&ctx, id, options, false)?;
         if decoded.icc.is_none() {
             decoded.icc = item_icc(&ctx, primary);
@@ -444,8 +465,12 @@ fn colour(p: &ItemProps<'_>, coded: &ItemProps<'_>) -> Colour {
 /// metadata item never fails a decode whose pixels came out fine.
 fn metadata(ctx: &Context<'_>) -> (Option<Vec<u8>>, Option<String>) {
     let id = ctx.meta.primary;
-    let exif = ctx.exif(id).ok().flatten().map(<[u8]>::to_vec);
-    let xmp = ctx.xmp_item(id).and_then(|x| ctx.item_data(x).ok()).and_then(|d| match d {
+    // Metadata is best effort, so an item that would cost too much to rebuild is skipped, not an error.
+    let mut visits = 0_usize;
+    let cheap = |item: Option<u32>, visits: &mut usize| item.is_none_or(|item| item_visits(ctx, item, 0, visits).is_ok());
+    let exif = if cheap(ctx.exif_item(id), &mut visits) { ctx.exif(id).ok().flatten().map(<[u8]>::to_vec) } else { None };
+    let xmp_item = ctx.xmp_item(id).filter(|&x| cheap(Some(x), &mut visits));
+    let xmp = xmp_item.and_then(|x| ctx.item_data(x).ok()).and_then(|d| match d {
         Cow::Borrowed(b) => String::from_utf8(b.to_vec()).ok(),
         Cow::Owned(b) => String::from_utf8(b).ok(),
     });

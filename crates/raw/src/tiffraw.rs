@@ -124,6 +124,12 @@ pub fn read_image(data: &[u8], info: &ImageInfo, order: ByteOrder, packing: Pack
     // a few times the output buffer's: everything decoded at once would retain the whole image twice, and
     // a hostile tile table's chosen padding could stretch that much further (issue #1517). One group
     // still decodes in parallel; the grid order groups make, the copies stay disjoint.
+    // The tile grid decides how much is decoded, whatever the file's bytes: the nominal sizes of all
+    // the chunks stay within a few times the image (edge tiles pad it) before any is decoded.
+    let nominal = chunks.iter().fold(0usize, |sum, c| sum.saturating_add(chunk_samples(c, ccpp)));
+    if nominal > total.saturating_mul(4).saturating_add(1 << 24) {
+        return Err(RawError::Corrupt("the tile grid is much larger than the image".into()));
+    }
     let group_samples = (total / 4).max(1 << 20);
     let mut out_u16 = if float { Vec::new() } else { vec![0u16; total] };
     let mut out_f32 = if float { vec![0f32; total] } else { Vec::new() };
@@ -133,7 +139,7 @@ pub fn read_image(data: &[u8], info: &ImageInfo, order: ByteOrder, packing: Pack
         let mut taken = 0usize;
         for (k, c) in chunks[decode_from..].iter().enumerate() {
             let n = chunk_samples(c, ccpp);
-            if taken > 0 && taken + n > group_samples {
+            if taken > 0 && taken.saturating_add(n) > group_samples {
                 break;
             }
             taken = taken.saturating_add(n);
@@ -179,6 +185,21 @@ pub fn read_image(data: &[u8], info: &ImageInfo, order: ByteOrder, packing: Pack
         decode_from = to;
     }
     Ok(if float { RawData::F32(out_f32) } else { RawData::U16(out_u16) })
+}
+
+/// Bytes that `n` samples take in a row of an uncompressed or inflated chunk, laid out as
+/// [`unpack_chunk`] reads them: whole bytes or 16-bit words, or 32-bit words for `Words32Msb`.
+fn packed_row_bytes(n: u64, bits: u32, packing: Packing, float: bool) -> u64 {
+    if float {
+        return n.saturating_mul(u64::from(bits.div_ceil(8)));
+    }
+    let bit_len = n.saturating_mul(u64::from(bits));
+    match (bits, packing) {
+        (8, _) => n,
+        (16, _) | (_, Packing::Word16) => n.saturating_mul(2),
+        (_, Packing::Msb | Packing::Lsb) => bit_len.div_ceil(8),
+        (_, Packing::Words32Msb) => bit_len.div_ceil(32).saturating_mul(4),
+    }
 }
 
 /// A chunk's nominal decoded size in samples (per plane, as the decoder builds it).
@@ -238,24 +259,22 @@ fn decode_chunk(data: &[u8], info: &ImageInfo, c: &Chunk, order: ByteOrder, pack
             Ok(ChunkPx::U16(v))
         }
         comp::ADOBE_DEFLATE | comp::DEFLATE => {
-            let bytes_per = if float { bits.div_ceil(8) as usize } else { 0 };
-            let row_bytes = if float {
-                crate::checked_samples(&[cw, cpp, bytes_per])?
-            } else {
-                crate::checked_samples(&[cw, cpp])?.checked_mul(bits as usize).ok_or(RawError::Limit("image too large"))?.div_ceil(8)
-            };
-            let inflate_len = row_bytes.checked_mul(ch).ok_or(RawError::Limit("image too large"))?;
+            // row bytes in u64: a wrapping `cw · cpp · …` in usize could come out small on 32-bit targets and slip past the gate
+            let row_bytes = packed_row_bytes(cw as u64 * cpp as u64, bits, packing, float);
+            // the gate caps at MAX_SAMPLES (≤ 2^30), so the `usize` cast below is lossless on 32-bit targets too
+            let inflate_len =
+                crate::checked_pixel_count(row_bytes, ch as u64).ok_or_else(|| RawError::Corrupt("bad TIFF chunk dimensions".into()))?;
             // Deflate compresses at most about 1:1032, so a source this far under half of its
             // nominal length cannot reconstruct the chunk: refused before the nominal buffer is
             // inflated and predicted, which padding-only work would make gigabytes.
-            if (src.len() as u64).saturating_mul(2048) < inflate_len as u64 {
+            if (src.len() as u64).saturating_mul(2048) < inflate_len {
                 return Err(RawError::Corrupt(format!("a deflated chunk of {inflate_len} bytes is packed into only {} bytes", src.len())));
             }
-            let raw = inflate(src, inflate_len)?;
+            let raw = inflate(src, inflate_len as usize)?;
             // The stream has to reach the last row inside the image (edge strips may stop there);
             // it is laid out in nominal rows, so shorter is a truncated chunk, not a picture.
-            let last = if float { vw as u64 * cpp as u64 * bytes_per as u64 } else { (vw as u64 * cpp as u64 * bits as u64).div_ceil(8) };
-            let visible = (row_bytes as u64).saturating_mul(vh.saturating_sub(1) as u64).saturating_add(last);
+            let last = packed_row_bytes(vw as u64 * cpp as u64, bits, packing, float);
+            let visible = row_bytes.saturating_mul(vh.saturating_sub(1) as u64).saturating_add(last);
             if (raw.len() as u64) < visible {
                 return Err(RawError::Corrupt(format!(
                     "a deflated chunk holds {} bytes, fewer than the {visible} bytes its in-image samples span",
