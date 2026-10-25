@@ -27,6 +27,29 @@ fn catalog(code: &str, formats: bool) -> BTreeMap<String, String> {
 /// their overlays. A language leaves this list once its overlay catches up.
 const PARTIAL: &[Locale] = &[Locale::Pl, Locale::Cs, Locale::It, Locale::Ka, Locale::Sv, Locale::Fi, Locale::Id, Locale::Vi];
 
+/// Every message a fork overlay (`locales/fork/`) carries, in any language.
+fn fork_keys(formats: bool) -> BTreeSet<String> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales").join("fork");
+    translated()
+        .filter_map(|l| {
+            let name = if formats { format!("{}-formats.json", l.code()) } else { format!("{}.json", l.code()) };
+            std::fs::read_to_string(dir.join(name)).ok()
+        })
+        .filter_map(|text| serde_json::from_str::<BTreeMap<String, String>>(&text).ok())
+        .flat_map(BTreeMap::into_keys)
+        .collect()
+}
+
+/// Help ▸ What's New, line by line as the dialog looks each one up.
+fn whats_new_lines() -> BTreeSet<&'static str> {
+    crate::panels::dialogs::WHATS_NEW
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("# "))
+        .map(|line| line.strip_prefix("### ").or_else(|| line.strip_prefix("## ")).or_else(|| line.strip_prefix("- ")).unwrap_or(line))
+        .collect()
+}
+
 fn translated() -> impl Iterator<Item = Locale> {
     Locale::ALL.iter().copied().filter(|l| *l != Locale::En)
 }
@@ -50,16 +73,26 @@ fn report(what: &str, gaps: &[String]) {
 fn every_catalog_carries_every_message() {
     for formats in [false, true] {
         let all: Vec<(Locale, BTreeMap<String, String>)> = complete().map(|l| (l, catalog(l.code(), formats))).collect();
-        let union: BTreeSet<&String> = all.iter().flat_map(|(_, c)| c.keys()).collect();
+        // Help ▸ What's New's lines are upstream's release notes, translated as each language gets
+        // to them (a language with them all, another with none): the translation gap report counts
+        // them (`i18n`), they don't fail here
+        let notes = whats_new_lines();
+        let union: BTreeSet<&String> = all.iter().flat_map(|(_, c)| c.keys()).filter(|k| !notes.contains(k.as_str())).collect();
+        // a message only upstream's catalogs carry, in some languages, is upstream's translation
+        // gap (its own report counts it): reported here; the fork's messages must be everywhere
+        let fork = fork_keys(formats);
         let mut missing = Vec::new();
+        let mut upstream_gaps = Vec::new();
         for (l, c) in &all {
             for key in &union {
                 if !c.contains_key(*key) {
-                    missing.push(format!("{} lacks {key:?}", l.code()));
+                    let line = format!("{} lacks {key:?}", l.code());
+                    if fork.contains(key.as_str()) { missing.push(line) } else { upstream_gaps.push(line) }
                 }
             }
         }
         assert!(missing.is_empty(), "{} message(s) missing (formats: {formats}):\n{}", missing.len(), missing.join("\n"));
+        report("upstream messages missing", &upstream_gaps);
         // the partial languages: every runtime format (a missing one would show English text with
         // values in it), the rest reported
         let mut gaps = Vec::new();

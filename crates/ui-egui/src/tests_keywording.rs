@@ -196,6 +196,27 @@ fn the_active_photo_alone_is_the_selection() {
     assert!(has(&h, "keywordCheck:beach"));
 }
 
+/// Given a selection with a keyword that is inside others, then every keyword above it shows the
+/// dash (also folded, where the keyword itself is out of sight; clicking it adds that keyword
+/// itself) and says which applied keywords it holds, while its own box is the one that is ticked;
+/// a keyword with nothing applied inside shows neither.
+#[test]
+fn a_keyword_shows_that_one_inside_it_is_applied() {
+    use crate::panels::keyword_list::{Tick, Ticks};
+    let (mut h, ids) = two_selected();
+    ask(&mut h, "engine.execute", json!({"command": "photo.setMeta", "params": {"ids": ids, "addKeywords": ["travel|Italy|Rome"]}}));
+    h.settle(SETTLE);
+    // folded: `travel` is the only row of the three
+    assert!(has(&h, "keywordRow:travel") && !has(&h, "keywordRow:travel|Italy"), "folded");
+    let sel: Vec<lcc_catalog::PhotoId> = ids.iter().map(|i| lcc_catalog::PhotoId(*i)).collect();
+    let ticks = Ticks::of(&h.app.session.catalog, &sel);
+    assert_eq!(ticks.tick("travel"), Tick::Some, "a dash above what is applied");
+    assert_eq!(ticks.tick("travel|Italy"), Tick::Some);
+    assert_eq!(ticks.tick("travel|Italy|Rome"), Tick::All, "the keyword itself is ticked");
+    assert_eq!(ticks.inside("travel"), ["Rome"], "and it says what it holds");
+    assert!(ticks.inside("beach").is_empty() && ticks.inside("Weddings").is_empty(), "nothing is inside these");
+}
+
 /// Esc in the Add keyword box gives back what it held before this edit, as every text field does:
 /// text left there by an earlier edit stays.
 #[test]

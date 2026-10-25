@@ -232,6 +232,9 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
 ## Log
 - 2026-10-25: M11.4: `<cli> calibrate-lightroom` (preset, fit, add, list): camera calibrations matched to Lightroom
   by black-box fits to its exports of contributors' own photos; data rules amended (gaps 1 and 3; 0 cameras so far).
+- 2026-10-22 (upstream): Print page setup and PDF output gain the Japanese photo and postcard papers (L判, 2L判,
+  KG判, はがき, 往復はがき, 六切, 四切, 名刺) at their exact metric sizes, by their customary names in the Print dialog
+  and `print.set`.
 - 2026-10-21: M7: the Enhance Preview dialog (Photo ▸ Enhance…, Ctrl+Alt+I): Raw Details / Super Resolution with a
   before/after preview, output size, estimated time and Create Stack (LR-ENH-DIALOG ✅).
 - 2026-10-21: gap 14 closed: HDR renders (HDR views, HDR exports, gain maps) run on the GPU with the CPU as oracle

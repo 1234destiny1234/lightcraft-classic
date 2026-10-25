@@ -6,6 +6,7 @@ use egui::{Align2, Color32, Pos2, Rect, RichText, Sense, Stroke, pos2, vec2};
 use lcc_catalog::PhotoId;
 use lcc_develop::{ControlSpec, DevelopSettings, Section, ToneCurve, Track, WbMode, controls};
 use lcc_geom::Point;
+use lcc_pipeline::{PARAM_AMOUNTS, ParametricCurve};
 use lcc_raster::{Clipped, Histogram, HistogramMode, HistogramScale};
 use serde_json::{Value, json};
 
@@ -855,15 +856,13 @@ pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let mut clicked = resp.clicked();
     // the panel's floating scroll bar widens over the right edge when hovered: both buttons keep
     // clear of it, the left one too so they stay symmetric (#1640)
-    let scroll = ui.spacing().scroll;
-    let inset = 20.0 + scroll.bar_width + scroll.bar_outer_margin;
+    let [shadow_rect, highlight_rect] = super::histogram::clipping_rects(ui, plot);
     // the clipping mask the pointer is resting on, previewed on the photo this frame
     let mut preview = false;
-    for (name, x, out, label, clipped) in [
-        ("shadows", plot.left() + inset, -1.0, "Shadow clipping", clipping.map(|c| c.shadow_channels())),
-        ("highlights", plot.right() - inset, 1.0, "Highlight clipping", clipping.map(|c| c.highlight_channels())),
+    for (name, rect, out, label, clipped) in [
+        ("shadows", shadow_rect, -1.0, "Shadow clipping", clipping.map(|c| c.shadow_channels())),
+        ("highlights", highlight_rect, 1.0, "Highlight clipping", clipping.map(|c| c.highlight_channels())),
     ] {
-        let rect = Rect::from_center_size(pos2(x, plot.top() + 14.0), vec2(24.0, 22.0));
         let response = ui.interact(rect, ui.id().with(("histogram-clipping", name)), Sense::click());
         register(ui.ctx(), format!("histogram:{name}"), rect);
         response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), app.ui.show_clipping, crate::i18n::tr(label)));
@@ -1202,148 +1201,8 @@ fn draw_curve_histogram(p: &egui::Painter, r: Rect, h: &lcc_raster::Histogram, c
     p.add(mesh);
 }
 
-/// The four shape controls of the parametric curve, in graph order: region 0 is the darkest.
-pub(crate) const PARAM_AMOUNTS: [&str; 4] = ["curve.shadows", "curve.darks", "curve.lights", "curve.highlights"];
-/// Resolution the parametric curve is sampled at, matching `lcc_pipeline::finish`'s table.
-const PARAM_LUT: usize = 1024;
 /// Segments the graph's curve line is drawn with.
 pub(crate) const CURVE_SAMPLES: i32 = 96;
-
-/// The parametric (region) curve of a [`ToneCurve`]: the four region amounts, each a cosine bump
-/// over its window between two splits, summed and then forced monotone.
-///
-/// This is the renderer's curve, not an approximation of it — `lcc_pipeline::finish::curve_luts`
-/// builds the same shape (its own table, whose `x` is the encoded level the curve sees). The graph
-/// draws this curve, so the line and the sliders can never disagree: both come from the settings,
-/// recomputed every frame, with no state of their own.
-///
-/// The running maximum is what makes the curve monotone. Two neighbouring regions pushed opposite
-/// ways can otherwise fold it back on itself, and a fold is exactly what a drawn line used to show
-/// while the renderer straightened it out.
-pub(crate) struct ParametricCurve {
-    /// The curve, sampled and already forced monotone.
-    lut: [f32; PARAM_LUT],
-    /// The three region boundaries as fractions of the graph.
-    pub(crate) splits: [f64; 3],
-    /// The four region amounts, in graph order (0 = the darkest).
-    pub(crate) amounts: [f64; 4],
-}
-
-impl ParametricCurve {
-    pub(crate) fn new(c: &ToneCurve) -> ParametricCurve {
-        let splits = [c.split_shadows / 100.0, c.split_mid / 100.0, c.split_highlights / 100.0];
-        let amounts = [c.shadows, c.darks, c.lights, c.highlights];
-        let s = [splits[0] as f32, splits[1] as f32, splits[2] as f32];
-        let regions = [(0.0, s[0], amounts[0]), (s[0], s[1], amounts[1]), (s[1], s[2], amounts[2]), (s[2], 1.0, amounts[3])];
-        let mut lut = [0.0_f32; PARAM_LUT];
-        let mut prev = 0.0_f32;
-        for i in 0..PARAM_LUT {
-            let x = i as f32 / (PARAM_LUT - 1) as f32;
-            let mut d = 0.0_f32;
-            for (a, b, amt) in regions {
-                if amt == 0.0 {
-                    continue;
-                }
-                let (ctr, half) = ((a + b) / 2.0, (b - a) * 0.75 + 0.05);
-                let t = ((x - ctr) / half).clamp(-1.0, 1.0);
-                d += (amt / 100.0) as f32 * 0.22 * (0.5 + 0.5 * (t * std::f32::consts::PI).cos());
-            }
-            let y = (x + d * 4.0 * x * (1.0 - x)).clamp(0.0, 1.0);
-            // the running maximum: the renderer's own monotone pass
-            prev = prev.max(y);
-            lut[i] = prev;
-        }
-        ParametricCurve { lut, splits, amounts }
-    }
-
-    /// The curve at `x` (0 = black, 1 = white), read off the table (so it never overshoots the ends).
-    pub(crate) fn at(&self, x: f64) -> f64 {
-        let x = x.clamp(0.0, 1.0) as f32;
-        let at = x * (PARAM_LUT - 1) as f32;
-        let i = at.floor().clamp(0.0, (PARAM_LUT - 1) as f32) as usize;
-        let next = self.lut.get(i + 1).copied().unwrap_or(self.lut[i]);
-        let f = at - i as f32;
-        (self.lut[i] + (next - self.lut[i]) * f) as f64
-    }
-
-    /// Where region `region`'s handle sits on the input axis: the middle of its own window, so a
-    /// handle never has to cross a split to be grabbed.
-    pub(crate) fn region_x(&self, region: usize) -> f64 {
-        let (a, b) = self.region_window(region);
-        (a + b) / 2.0
-    }
-
-    /// The window (two splits, as fractions of the graph) region `region` owns.
-    fn region_window(&self, region: usize) -> (f64, f64) {
-        let s = [self.splits[0], self.splits[1], self.splits[2]];
-        match region {
-            0 => (0.0, s[0]),
-            1 => (s[0], s[1]),
-            2 => (s[1], s[2]),
-            _ => (s[2], 1.0),
-        }
-    }
-
-    /// The half-width of region `region`'s own bump, as fraction of the graph.
-    fn region_half(&self, region: usize) -> f64 {
-        let (a, b) = self.region_window(region);
-        (b - a) * 0.75 + 0.05
-    }
-
-    /// The cosine window region `region` applies at `x` (1 at its centre, 0 at the window edges).
-    fn region_window_at(&self, region: usize, x: f64) -> f64 {
-        let ctr = self.region_x(region);
-        let t = ((x - ctr) / self.region_half(region)).clamp(-1.0, 1.0);
-        0.5 + 0.5 * (t * std::f64::consts::PI).cos()
-    }
-
-    /// The region that owns graph position `x`: the one whose own window contains it. The four
-    /// windows tile 0..1, so this is always defined and a drag anywhere on the curve moves exactly
-    /// one slider — the region under the pointer.
-    pub(crate) fn region_at(&self, x: f64) -> usize {
-        let x = x.clamp(0.0, 1.0);
-        // the bands are black..split0, split0..split1, split1..split2, split2..white
-        let (s0, s1, s2) = (self.split_x(0), self.split_x(1), self.split_x(2));
-        if x <= s0 {
-            0
-        } else if x <= s1 {
-            1
-        } else if x <= s2 {
-            2
-        } else {
-            3
-        }
-    }
-
-    /// How much output level region `region`'s bump gains at `x` per unit of its slider: the bump is
-    /// linear in the amount, so this is a constant for a given `x`. A drag converts the pointer's
-    /// vertical motion into a slider change through it.
-    pub(crate) fn level_per_unit(&self, region: usize, x: f64) -> f64 {
-        let x = x.clamp(0.0, 1.0);
-        0.22 / 100.0 * self.region_window_at(region, x) * 4.0 * x * (1.0 - x)
-    }
-
-    /// The curve level region `region` sits at when its slider holds `amount`, at graph position `x`
-    /// — where the curve is at the point a drag grabbed, which is what that drag starts from.
-    pub(crate) fn handle_level_at(&self, region: usize, amount: f64, x: f64) -> f64 {
-        (x.clamp(0.0, 1.0) + amount * self.level_per_unit(region, x)).clamp(0.0, 1.0)
-    }
-
-    /// The amount that puts region `region`'s curve at `level` at `x` — the inverse of
-    /// [`Self::handle_level_at`]. A level the region cannot reach saturates rather than jumping.
-    pub(crate) fn amount_at_level(&self, region: usize, level: f64, x: f64) -> f64 {
-        let per_unit = self.level_per_unit(region, x);
-        if per_unit.abs() <= f64::EPSILON {
-            return 0.0;
-        }
-        ((level.clamp(0.0, 1.0) - x.clamp(0.0, 1.0)) / per_unit).clamp(-100.0, 100.0).round()
-    }
-
-    /// The graph position split `split` (0..3) sits at, 0..1.
-    pub(crate) fn split_x(&self, split: usize) -> f64 {
-        self.splits.get(split).copied().unwrap_or(0.5)
-    }
-}
 
 /// What the parametric graph draws and drags: the region curve with the master point curve on top
 /// of it, stacked as `lcc_pipeline::finish::curve_luts` stacks them. A Point Curve preset such as
@@ -1420,6 +1279,9 @@ const PARAM_GRAB: f32 = 14.0;
 /// gesture back, not the last frame of it), and every write goes through `develop.set`, so the
 /// slider, the curve and what is drawn are the same state rather than three things kept in step.
 fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Response, d: &DevelopSettings) {
+    if r.width() <= 1.0 || r.height() <= 1.0 {
+        return;
+    }
     let t = Tokens::get(ui.ctx());
     let stacked = StackedCurve::new(&d.curve);
     let model = &stacked.param;
@@ -1432,9 +1294,10 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
     };
     let drag_id = egui::Id::new("curve-param-drag");
     let cursor_id = egui::Id::new("curve-param-cursor");
-    // the region being dragged, and the graph x the drag is anchored at (stored as an `Option` so a
-    // stale value can be cleared, as the point-curve editor's drag state is)
-    let mut dragged: Option<(usize, f64)> = ui.data(|dd| dd.get_temp::<Option<(usize, f64)>>(drag_id)).flatten();
+    // (region, x, initial_amount, start_y): the region being dragged, the graph x the drag is anchored
+    // at, the region's starting amount, and the starting screen Y position (stored as an `Option` so
+    // a stale value can be cleared, as the point-curve editor's drag state is)
+    let mut dragged: Option<(usize, f64, f64, f32)> = ui.data(|dd| dd.get_temp::<Option<(usize, f64, f64, f32)>>(drag_id)).flatten();
     let hovered = dragged.is_none() && resp.hover_pos().is_some_and(|q| near_curve(q) <= PARAM_GRAB);
     let mut set: Option<(&'static str, f64)> = None;
     // the press, not where the pointer is once the drag threshold has passed: a press slightly off
@@ -1446,10 +1309,13 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
     {
         let x = from_screen_x(q);
         let _ = app.run("develop.beginInteraction", json!({"label": "Parametric Curve"}));
-        dragged = Some((model.region_at(x), x));
-        ui.data_mut(|dd| dd.insert_temp(cursor_id, to_screen(x, stacked.at(x))));
+        let region = model.region_at(x);
+        let initial_amount = model.amounts.get(region).copied().unwrap_or(0.0);
+        let start_pos = to_screen(x, stacked.at(x));
+        dragged = Some((region, x, initial_amount, start_pos.y));
+        ui.data_mut(|dd| dd.insert_temp(cursor_id, start_pos));
     }
-    if let Some((region, x)) = dragged
+    if let Some((region, x, initial_amount, start_y)) = dragged
         && resp.dragged()
     {
         // Follow the pointer's motion from where the curve was grabbed, so the press itself moves
@@ -1457,13 +1323,19 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
         let alt = ui.input(|i| i.modifiers.alt);
         let dd = ui.input(|i| i.pointer.delta());
         let step = if alt { vec2(dd.x * 0.1, dd.y * 0.1) } else { vec2(dd.x, dd.y) };
-        let start = to_screen(x, stacked.master_at(model.handle_level_at(region, model.amounts[region], x)));
-        let cursor = ui.data(|d| d.get_temp::<Pos2>(cursor_id)).unwrap_or(start) + step;
+        let cursor = ui.data(|d| d.get_temp::<Pos2>(cursor_id)).unwrap_or(pos2(0.0, start_y)) + step;
         ui.data_mut(|d| d.insert_temp(cursor_id, cursor));
-        // the pointer is on the drawn (stacked) line: the region curve has to reach what the
-        // master curve takes to that level
-        let level = ((r.bottom() - cursor.y) / r.height()).clamp(0.0, 1.0) as f64;
-        set = Some((PARAM_AMOUNTS[region], model.amount_at_level(region, stacked.param_level(level), x)));
+        // Only the vertical motion since the grab counts (a horizontal drag changes nothing, however
+        // much the neighbouring regions lift the curve there). The pointer is on the drawn (stacked)
+        // line, so the motion is measured in region-curve levels: what the master curve takes to it.
+        let level_of = |y: f32| ((r.bottom() - y) / r.height()).clamp(0.0, 1.0) as f64;
+        let delta_level = stacked.param_level(level_of(cursor.y)) - stacked.param_level(level_of(start_y));
+        let per_unit = model.level_per_unit(region, x);
+        let new_amount =
+            if per_unit.abs() > f64::EPSILON { (initial_amount + delta_level / per_unit).clamp(-100.0, 100.0).round() } else { initial_amount };
+        if let Some(&id) = PARAM_AMOUNTS.get(region) {
+            set = Some((id, new_amount));
+        }
     }
     if let Some((id, v)) = set {
         let _ = app.run("develop.set", json!({"control": id, "value": v}));
@@ -1473,7 +1345,7 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
         dragged = None;
         ui.data_mut(|d| {
             d.remove::<Pos2>(cursor_id);
-            d.remove::<Option<(usize, f64)>>(drag_id);
+            d.remove::<Option<(usize, f64, f64, f32)>>(drag_id);
         });
     }
     ui.data_mut(|dd| dd.insert_temp(drag_id, dragged));
@@ -1483,13 +1355,13 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
     // the region under the pointer (or the one in hand), named as its slider below reads it
-    let shown = dragged.map(|(region, _)| region).or_else(|| hovered.then(|| resp.hover_pos()).flatten().map(|q| model.region_at(from_screen_x(q))));
-    if let Some(region) = shown {
-        let id = PARAM_AMOUNTS[region];
-        if let Some(v) = controls::get(d, id) {
-            let name = controls::find(id).map_or("", |s| s.label);
-            ui.painter().text(r.left_top() + vec2(6.0, 4.0), Align2::LEFT_TOP, format!("{name} {v:.0}"), t.font(11.0), t.text_dim);
-        }
+    let shown = dragged.map(|(region, ..)| region).or_else(|| hovered.then(|| resp.hover_pos()).flatten().map(|q| model.region_at(from_screen_x(q))));
+    if let Some(region) = shown
+        && let Some(&id) = PARAM_AMOUNTS.get(region)
+        && let Some(v) = set.and_then(|(s_id, v)| (s_id == id).then_some(v)).or_else(|| controls::get(d, id))
+    {
+        let name = controls::find(id).map_or("", |s| s.label);
+        ui.painter().text(r.left_top() + vec2(6.0, 4.0), Align2::LEFT_TOP, format!("{name} {v:.0}"), t.font(11.0), t.text_dim);
     }
 }
 
@@ -2337,7 +2209,8 @@ fn grading_wheel(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo
     // puck as it is at that moment.
     let grab_id = egui::Id::new(("wheelGrab", key));
     let mods = ui.input(|i| WheelMods::from_modifiers(i.modifiers));
-    let grab = match resp.interact_pointer_pos() {
+    let pointer = wheel_pointer(ui, &resp);
+    let grab = match pointer {
         Some(q) if resp.dragged() || resp.clicked() => {
             let held = ui.data(|m| m.get_temp::<WheelGrab>(grab_id)).filter(|g| g.mods == mods && !resp.drag_started());
             Some(held.unwrap_or_else(|| {
@@ -2376,13 +2249,20 @@ fn grading_wheel(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo
         let _ = app.run("develop.beginInteraction", json!({"label": crate::i18n::tr_format!("{label} Grading", label = label)}));
     }
     if (resp.dragged() || resp.clicked())
-        && let Some(q) = resp.interact_pointer_pos()
+        && let Some(q) = pointer
     {
         let (hue, sat) = grab.map_or_else(|| wheel_pick(q - c, rad, None), |g| g.pick(q - c, rad));
         let _ = app.run("develop.set", json!({"values": {format!("grading.{key}.hue"): hue.round(), format!("grading.{key}.sat"): sat.round()}}));
     }
     if resp.drag_stopped() || resp.clicked() {
         let _ = app.run("develop.endInteraction", json!({}));
+    }
+    // released, or Esc (egui ends a drag on it)
+    if resp.drag_stopped()
+        && let Some(held) = ui.ctx().data_mut(|m| m.remove_temp::<WheelCapture>(egui::Id::new(WHEEL_CAPTURE)))
+        && !held.dropped
+    {
+        give_pointer_back(ui.ctx(), held.origin);
     }
     if resp.double_clicked() {
         let _ = app.run("develop.set", json!({"values": {format!("grading.{key}.hue"): 0, format!("grading.{key}.sat"): 0}}));
@@ -2484,6 +2364,99 @@ impl WheelGrab {
             v
         };
         wheel_pick(v, rad, self.lock())
+    }
+}
+
+/// A wheel drag holds the pointer, as in Lightroom (issue #1899): it is hidden for the drag, the
+/// puck follows the mouse's own travel, and on release the pointer is back where the button went
+/// down, so a long (Alt) drag doesn't leave it far from the wheels. On macOS the pointer is locked
+/// in place for the drag; elsewhere it moves unseen and is put back. The browser can't move it
+/// (eframe's web host ignores the command), so there it only shows again where the drag ended.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct WheelCapture {
+    /// Where the button went down: the pointer goes back there.
+    origin: Pos2,
+    /// Where the pointer would be had it been free: where the drag began plus the travel since.
+    pos: Pos2,
+    /// Let go early (the window lost focus): the rest of this drag leaves the wheel alone.
+    dropped: bool,
+    /// The pass that last drew the dragged wheel.
+    pass: u64,
+}
+
+/// One wheel is dragged at a time, so one capture for them all.
+const WHEEL_CAPTURE: &str = "wheelCapture";
+
+/// The mouse's travel this frame: the pointer's, or, while the pointer stands still (locked, or
+/// against a screen edge), the raw motion the host reports.
+fn wheel_travel(delta: egui::Vec2, motion: Option<egui::Vec2>) -> egui::Vec2 {
+    if delta != egui::Vec2::ZERO {
+        return delta;
+    }
+    motion.filter(|m| m.x.is_finite() && m.y.is_finite()).unwrap_or(egui::Vec2::ZERO)
+}
+
+/// Where the wheel `resp` reads the pointer this frame: where it clicked, or for a drag the held
+/// pointer ([`WheelCapture`]), `None` once a lost focus let go of it (Esc ends the drag itself:
+/// egui stops a drag on Esc).
+fn wheel_pointer(ui: &egui::Ui, resp: &egui::Response) -> Option<Pos2> {
+    let q = resp.interact_pointer_pos()?;
+    if !resp.dragged() {
+        return Some(q);
+    }
+    let ctx = ui.ctx();
+    let id = egui::Id::new(WHEEL_CAPTURE);
+    let held = ctx.data(|m| m.get_temp::<WheelCapture>(id)).filter(|_| !resp.drag_started());
+    let mut cap = held.unwrap_or_else(|| {
+        if cfg!(target_os = "macos") {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::Locked));
+        }
+        WheelCapture { origin: ui.input(|i| i.pointer.press_origin()).unwrap_or(q), pos: q, ..Default::default() }
+    });
+    cap.pass = ctx.cumulative_pass_nr();
+    if !cap.dropped {
+        let (travel, unfocused) = ui.input(|i| {
+            // the event, not `focused`: a click that activates the window may land before its focus
+            let unfocused = i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false)));
+            (wheel_travel(i.pointer.delta(), i.pointer.motion()), unfocused)
+        });
+        if !resp.drag_started() {
+            cap.pos += travel;
+        }
+        if unfocused {
+            give_pointer_back(ctx, cap.origin);
+            cap.dropped = true;
+        } else {
+            ctx.set_cursor_icon(egui::CursorIcon::None);
+        }
+    }
+    ctx.data_mut(|m| m.insert_temp(id, cap));
+    (!cap.dropped).then_some(cap.pos)
+}
+
+/// Unlock and show the pointer a wheel drag held, back at `origin`.
+fn give_pointer_back(ctx: &egui::Context, origin: Pos2) {
+    if cfg!(target_os = "macos") {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
+    }
+    if cfg!(not(target_arch = "wasm32")) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(origin));
+    }
+}
+
+/// Once a frame, after the panels: a held pointer stays hidden over whatever set its own cursor,
+/// and is given back if no wheel drew this pass (the flyout closed or the view changed under the
+/// drag), so it is never left locked or hidden.
+pub(crate) fn wheel_pointer_frame_end(ctx: &egui::Context) {
+    let id = egui::Id::new(WHEEL_CAPTURE);
+    let Some(cap) = ctx.data(|m| m.get_temp::<WheelCapture>(id)) else { return };
+    if cap.pass != ctx.cumulative_pass_nr() {
+        ctx.data_mut(|m| m.remove::<WheelCapture>(id));
+        if !cap.dropped {
+            give_pointer_back(ctx, cap.origin);
+        }
+    } else if !cap.dropped {
+        ctx.set_cursor_icon(egui::CursorIcon::None);
     }
 }
 
