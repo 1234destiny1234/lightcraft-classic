@@ -180,8 +180,24 @@ Before committing, try a contribution in a debug build without adding it: point
 `LIGHTCRAFT_CLASSIC_CAMERA_CALIBRATIONS` at a folder holding the JSON and open that camera's raws. `lightcraft-classic-cli calibrate-lightroom
 list` prints the calibrations built into a binary, their looks (`cal:<id>`) and their held-out ΔE00.
 
-`lightcraft-classic-cli calibrate-lightroom verify --catalog X.lrcat --exports DIR` (whole-pipeline error between the app's render of
-an *edited* catalogue and its edited exports) is planned and not available yet.
+### Checking edited photos: `verify`
+
+`lightcraft-classic-cli calibrate-lightroom verify --raws DIR… --exports DIR…` answers "will my edited photos look the same
+after the move?". Export your *edited* photos from Lightroom as 16-bit TIFFs (any profile, crop or slider settings,
+**Include: All Metadata** so the export carries its develop settings). Point `verify` at the raws and at those
+exports. For each pair (matched by camera model and capture time, else by file name) it does three things:
+
+1. Imports the raw as the app would: it reads the raw's XMP sidecar, or, when the export carries its own `crs:`
+   settings, uses those instead, since they are exactly what was exported.
+2. Renders it in the colour space the export was written in (sRGB, Adobe RGB, Display P3, ProPhoto…), so both are
+   clipped to the same gamut.
+3. Measures the render against the export with `compare` (CIEDE2000).
+
+It prints one line per photo, then a table by **group of controls** the edits used: light, tone curve, presence,
+colour mixer, colour grading, white balance, profile, effects, lens, crop, masks, black & white, or default. A group
+whose error stands out is the part of the import to look at. `--report DIR` writes `verify.json` and a ΔE00 map per
+photo; `--json` prints the report; `--max N` checks the first N pairs; `--size N` sets the long edge compared. The
+exports are only read, never changed or sent anywhere.
 
 ### Measuring a render against another editor: `compare`
 

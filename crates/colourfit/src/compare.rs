@@ -98,13 +98,10 @@ pub struct CompareReport {
     pub map: Vec<f32>,
 }
 
-/// Decode an image file to linear XYZ D50, oriented, area-reduced to fit `long` (or, with `width`, to that width).
-fn decode_xyz(path: &Path, long: usize, width: Option<usize>) -> Result<Grid<[f32; 3]>> {
-    let name = crate::dataset::file_name(path);
-    let bytes = crate::dataset::read_file(path).map_err(|e| Error(format!("{name}: {e}")))?;
+/// Decode an image to linear XYZ D50, oriented, area-reduced to fit `long` (or, with `width`, to that width).
+fn decode_xyz(name: &str, bytes: &[u8], long: usize, width: Option<usize>) -> Result<Grid<[f32; 3]>> {
     let edge = u32::try_from(long.saturating_mul(4)).unwrap_or(u32::MAX);
-    let d = lcc_codecs::decode(&bytes, lcc_codecs::DecodeOptions::fit(edge, edge)).map_err(|e| Error(format!("{name}: cannot decode: {e}")))?;
-    drop(bytes);
+    let d = lcc_codecs::decode(bytes, lcc_codecs::DecodeOptions::fit(edge, edge)).map_err(|e| Error(format!("{name}: cannot decode: {e}")))?;
     let m = d.space.to_xyz_d50;
     let img = d.image.into_oriented(lcc_raw::Orientation::from_exif(d.orientation));
     if img.width < 16 || img.height < 16 {
@@ -117,6 +114,12 @@ fn decode_xyz(path: &Path, long: usize, width: Option<usize>) -> Result<Grid<[f3
         None => fit_long(src.w, src.h, long.min(src.w.max(src.h))),
     };
     Ok(reduce_rgb(&src, w, h, |p| p[1]).0)
+}
+
+fn read(path: &Path) -> Result<(String, Vec<u8>)> {
+    let name = crate::dataset::file_name(path);
+    let bytes = crate::dataset::read_file(path).map_err(|e| Error(format!("{name}: {e}")))?;
+    Ok((name, bytes))
 }
 
 fn lab(xyz: [f32; 3]) -> [f64; 3] {
@@ -171,9 +174,16 @@ impl Acc {
 
 /// Compare `test` against `reference` (both image files: JPEG, TIFF, PNG, …).
 pub fn compare(reference: &Path, test: &Path, opts: &CompareOptions) -> Result<CompareReport> {
+    let (rn, rb) = read(reference)?;
+    let (tn, tb) = read(test)?;
+    compare_bytes((&rn, &rb), (&tn, &tb), opts)
+}
+
+/// [`compare`] on encoded images in memory, each given as `(name for messages, bytes)`.
+pub fn compare_bytes(reference: (&str, &[u8]), test: (&str, &[u8]), opts: &CompareOptions) -> Result<CompareReport> {
     let long = opts.long_edge.clamp(32, 4096);
-    let a = decode_xyz(reference, long, None)?;
-    let b = decode_xyz(test, long, Some(a.w))?;
+    let a = decode_xyz(reference.0, reference.1, long, None)?;
+    let b = decode_xyz(test.0, test.1, long, Some(a.w))?;
     let (ra, rb) = (a.h as f64 / a.w as f64, b.h as f64 / b.w as f64);
     if (ra / rb - 1.0).abs() > MAX_ASPECT {
         return Err(Error(format!(

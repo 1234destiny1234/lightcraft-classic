@@ -8,6 +8,7 @@
 //!   the real pipeline ([`fit::fit`]).
 //! - [`preset`]: the baseline Lightroom preset contributors apply before exporting.
 //! - [`report`]: held-out ΔE00 and the local HTML report (contains images: never sent).
+//! - [`verify`]: the app's render of edited photos against their edited exports (migration check).
 //!
 //! Sources: own design; DNG specification 1.7 chapter 6 (profile model); CIEDE2000 (Sharma, Wu, Dalal 2005).
 #![forbid(unsafe_code)]
@@ -19,6 +20,7 @@ pub mod deltae;
 pub mod fit;
 pub mod preset;
 pub mod report;
+pub mod verify;
 
 /// Errors a contributor can act on.
 #[derive(Debug, Clone, PartialEq)]

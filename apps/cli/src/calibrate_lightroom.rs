@@ -7,7 +7,8 @@
 //! - `add FILE [--repo DIR] [--contributor NAME]`: validate a contribution and commit-ready write it into
 //!   `crates/camdb/data/calibrations/` with its `assets/ATTRIBUTION.md` row.
 //! - `list`: the calibrations built into this binary.
-//! - `verify`: whole-pipeline check against an edited catalogue (not available yet).
+//! - `verify --raws DIR… --exports DIR… [--report DIR] [--json] [--size N] [--max N]`: the app's render of edited
+//!   photos against their edited exports, ΔE00 per photo and per group of controls used (`lcc_colourfit::verify`).
 //!
 //! Sources: own design; DNG specification 1.7 chapter 6 (camera profile tags) for the `.dcp` writer.
 
@@ -19,8 +20,6 @@ use lcc_colourfit::fit::{self, FitOptions};
 use lcc_raw::ColorData;
 use lcc_raw::profile::HsvTable;
 
-const CLI: &str = lcc_brand::CLI_BINARY;
-
 /// Where `add` writes calibrations, relative to the repository root.
 const DATA_DIR: &str = "crates/camdb/data/calibrations";
 
@@ -31,9 +30,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         Some("fit") => fit_cmd(rest),
         Some("add") => add(rest),
         Some("list") => list(),
-        Some("verify") => Err(format!(
-            "calibrate-lightroom verify is not available yet: render your edited catalogue with `{CLI} run --library DIR library.importLightroom …` and compare by eye meanwhile"
-        )),
+        Some("verify") => verify_cmd(rest),
         _ => Err("calibrate-lightroom needs `preset`, `fit`, `add`, `list` or `verify` (see --help)".into()),
     }
 }
@@ -41,6 +38,81 @@ pub fn run(args: &[String]) -> Result<(), String> {
 fn take<'a>(args: &'a [String], i: &mut usize, flag: &str) -> Result<&'a str, String> {
     *i += 1;
     args.get(*i).map(String::as_str).ok_or_else(|| format!("{flag} needs a value"))
+}
+
+fn verify_cmd(args: &[String]) -> Result<(), String> {
+    use lcc_colourfit::verify::{self, VerifyOptions};
+    let (mut raw_dirs, mut export_dirs) = (Vec::new(), Vec::new());
+    let mut report_dir: Option<PathBuf> = None;
+    let mut json = false;
+    let mut opts = VerifyOptions::default();
+    let mut list: Option<bool> = None; // Some(true) = raws, Some(false) = exports
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--raws" => list = Some(true),
+            "--exports" => list = Some(false),
+            "--report" => report_dir = Some(take(args, &mut i, "--report")?.into()),
+            "--json" => json = true,
+            "--size" => {
+                let v = take(args, &mut i, "--size")?;
+                opts.compare.long_edge = v.parse().map_err(|_| format!("--size: `{v}` is not a number of pixels"))?;
+            }
+            "--max" => {
+                let v = take(args, &mut i, "--max")?;
+                opts.max_photos = v.parse().map_err(|_| format!("--max: `{v}` is not a number of photos"))?;
+            }
+            a if a.starts_with('-') => return Err(format!("unknown option `{a}`")),
+            a => match list {
+                Some(true) => raw_dirs.push(PathBuf::from(a)),
+                Some(false) => export_dirs.push(PathBuf::from(a)),
+                None => return Err(format!("`{a}`: put folders after --raws or --exports")),
+            },
+        }
+        i += 1;
+    }
+    if raw_dirs.is_empty() || export_dirs.is_empty() {
+        return Err("verify needs --raws DIR… and --exports DIR… (the edited exports, searched with their subfolders)".into());
+    }
+    let mut raws = Vec::new();
+    for d in &raw_dirs {
+        raws_in(d, &mut raws, 0);
+    }
+    raws.sort();
+    raws.dedup();
+    if raws.is_empty() {
+        return Err("no raw files found in the --raws folders".into());
+    }
+    let exports: Vec<ExportSet> = export_dirs.iter().map(|d| ExportSet { dir: d.clone() }).collect();
+    let mut progress = |done: usize, total: usize, name: &str| {
+        if done < total {
+            eprintln!("calibrate-lightroom verify: {}/{total} {name}", done + 1);
+        }
+    };
+    let report = verify::verify(&raws, &exports, &opts, &mut progress).map_err(|e| e.to_string())?;
+    if let Some(dir) = &report_dir {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        for p in &report.photos {
+            let Some(rep) = &p.report else { continue };
+            let rgb = lcc_colourfit::compare::map_rgb8(rep);
+            let (Ok(w), Ok(h)) = (u32::try_from(rep.width), u32::try_from(rep.height)) else { continue };
+            let img = lcc_codecs::EncodeImage::new(w, h, 3, lcc_codecs::Samples::U8(&rgb));
+            let png = lcc_codecs::encode_png(&img, &lcc_codecs::EncodeMeta::default()).map_err(|e| e.to_string())?;
+            let stem = Path::new(&p.raw).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| p.raw.clone());
+            let out = dir.join(format!("{stem}.de00.png"));
+            std::fs::write(&out, png).map_err(|e| format!("{}: {e}", out.display()))?;
+        }
+        let out = dir.join("verify.json");
+        let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+        std::fs::write(&out, text).map_err(|e| format!("{}: {e}", out.display()))?;
+        eprintln!("calibrate-lightroom verify: wrote {} (and a ΔE00 map per photo)", out.display());
+    }
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?);
+    } else {
+        print!("{}", verify::text(&report));
+    }
+    Ok(())
 }
 
 fn preset(args: &[String]) -> Result<(), String> {

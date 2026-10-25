@@ -145,8 +145,10 @@ USAGE:
       assets/ATTRIBUTION.md row (DIR: the repository root, default .).
   {cli} calibrate-lightroom list
       The calibrations built into this binary, with their looks and held-out colour error.
-  {cli} calibrate-lightroom verify --catalog X.lrcat --exports DIR
-      Whole-pipeline check against an edited catalogue (not available yet).
+  {cli} calibrate-lightroom verify --raws DIR… --exports DIR… [--report DIR] [--json] [--size N] [--max N]
+      Moving from another editor: render your edited raws the way {app} imports them (their XMP sidecars, or the
+      settings Lightroom embeds in its exports) and measure each against its edited export (CIEDE2000), per photo
+      and per group of controls the edits used. --report writes verify.json and a ΔE00 map per photo.
   {cli} compare REFERENCE TEST [--size N] [--no-align] [--diff OUT.png] [--json]
       How far TEST is from REFERENCE: two renders of the same photo from any editor or camera (JPEG, TIFF, PNG,
       …, read through their embedded colour profiles). Lines them up, then prints CIEDE2000 (mean, median, p95,
