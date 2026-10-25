@@ -1987,9 +1987,7 @@
   "Filename captions": "檔名說明",
   "150 dpi · sRGB · current edits · fit without cropping": "150 dpi · sRGB · 目前的編輯 · 完整符合，不裁切",
   "Choose a PDF destination after confirming. Print the PDF from your viewer.": "確認後選擇 PDF 的儲存位置。請在檢視器中列印 PDF。",
-  "HDR output": "HDR 輸出",
   "Photos edited in HDR: JPEG with an HDR gain map (looks right everywhere, brighter highlights on HDR displays), AVIF as 10-bit, PNG and JPEG XL as 16-bit Rec. 2020 PQ; TIFF needs 32-bit float": "以 HDR 編輯的照片：JPEG 附 HDR 增益圖（在任何地方都顯示正確，在 HDR 顯示器上亮部更亮），AVIF 為 10 位元，PNG 與 JPEG XL 為 16 位元 Rec. 2020 PQ；TIFF 需要 32 位元浮點",
-  "HDR TIFF needs 32-bit float.": "HDR TIFF 需要 32 位元浮點。",
   "Color space: Rec. 2020 PQ (HDR AVIF)": "色彩空間：Rec. 2020 PQ（HDR AVIF）",
   "Color space: Rec. 2020 PQ, 16-bit (HDR PNG)": "色彩空間：Rec. 2020 PQ，16 位元（HDR PNG）",
   "Color space: Rec. 2020 PQ (HDR JPEG XL)": "色彩空間：Rec. 2020 PQ（HDR JPEG XL）",
@@ -2161,7 +2159,6 @@
   "Human Eye Tracking": "人眼追蹤",
   "Read Focus Points": "讀取對焦點",
   "Reading focus points": "正在讀取對焦點",
-  "Click to type a value": "點擊以輸入數值",
   "Run face models on the CPU only": "僅在 CPU 上執行臉孔模型",
   "Detection": "偵測",
   "Recognition": "辨識",
@@ -2203,5 +2200,11 @@
   "Aesthetic": "審美",
   "Clipped (assisted culling)": "裁切（輔助挑選）",
   "Cull Score": "挑選分數",
-  "Eyes Open": "睜眼"
+  "Eyes Open": "睜眼",
+  "Meanwhile your raw photos use the standard noise reduction: Luminance and Color under Detail in the Edit panel. It works on every photo.": "在此之前，你的 RAW 照片使用標準降噪：編輯面板「細節」中的「明亮度」和「顏色」。它適用於每張照片。",
+  "Only if you were given a {app} denoise model (a folder with a .onnx file and denoise-model.json):": "僅當你拿到了 {app} 降噪模型（含 .onnx 檔案和 denoise-model.json 的資料夾）時：",
+  "Why?": "為什麼？",
+  "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "AI 降噪需要模型，但尚未安裝。在此之前，可用「細節」下的「明亮度」和「顏色」減少雜訊。",
+  "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "此版本不附帶 AI 降噪模型，目前也無法在這裡下載。",
+  "No AI Denoise model is installed": "未安裝 AI 降噪模型"
 }
