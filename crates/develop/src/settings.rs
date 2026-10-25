@@ -220,12 +220,17 @@ pub enum Process {
     /// Sharpening is an unsharp mask at the Radius (in source pixels) with Detail soft-clipping its
     /// halos, instead of a boost of the Texture band (upstream #757 / #762).
     V4,
+    /// Colours brighter than the output can show keep their hue and saturation: the brightest
+    /// channel is limited to white and the others keep their places between it and the darkest,
+    /// instead of the colour moving toward its luminance (which turned bright saturated reds pink).
+    /// Adapted from upstream #2262.
+    V5,
 }
 
 impl Process {
     /// Every process, oldest first.
-    pub const ALL: [Process; 4] = [Process::V1, Process::V2, Process::V3, Process::V4];
-    pub const LATEST: Process = Process::V4;
+    pub const ALL: [Process; 5] = [Process::V1, Process::V2, Process::V3, Process::V4, Process::V5];
+    pub const LATEST: Process = Process::V5;
 
     pub const fn version(self) -> ProcessVersion {
         match self {
@@ -233,6 +238,7 @@ impl Process {
             Process::V2 => ProcessVersion(2),
             Process::V3 => ProcessVersion(3),
             Process::V4 => ProcessVersion(4),
+            Process::V5 => ProcessVersion(5),
         }
     }
 }
