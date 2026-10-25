@@ -630,10 +630,20 @@ fn assemble(who: &Who, model: &Model, looks: &[FittedLook], prior_fm: [Mat3; 2],
         tool_version: env!("CARGO_PKG_VERSION").into(),
         contributor: who.contributor.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()),
         licence: LICENCE.into(),
-        camera: CameraModel { illuminants: [17, 21], color_matrix: model.cm, forward_matrix: model.fm.unwrap_or(prior_fm), hue_sat_map: model.hsm.clone() },
+        camera: CameraModel {
+            illuminants: [17, 21],
+            color_matrix: model.cm,
+            forward_matrix: model.fm.unwrap_or(prior_fm),
+            hue_sat_map: model.hsm.clone(),
+        },
         looks: looks
             .iter()
-            .map(|l| Look { name: l.name.clone(), baseline_exposure_offset: l.look.offset, look_table: l.look.table.clone(), tone_curve: l.tone.clone() })
+            .map(|l| Look {
+                name: l.name.clone(),
+                baseline_exposure_offset: l.look.offset,
+                look_table: l.look.table.clone(),
+                tone_curve: l.tone.clone(),
+            })
             .collect(),
         evidence,
     }

@@ -203,7 +203,10 @@ fn check_table(what: &str, t: &HsvTable) -> Result<(), Error> {
     if !dims || len.is_none_or(|n| n > MAX_TABLE || n != t.data.len()) {
         return Err(Error(format!("{what}: table dimensions don't match its data")));
     }
-    let ok = t.data.iter().all(|[h, s, v]| h.is_finite() && h.abs() <= 180.0 && s.is_finite() && (0.0..=8.0).contains(s) && v.is_finite() && (0.0..=8.0).contains(v));
+    let ok = t
+        .data
+        .iter()
+        .all(|[h, s, v]| h.is_finite() && h.abs() <= 180.0 && s.is_finite() && (0.0..=8.0).contains(s) && v.is_finite() && (0.0..=8.0).contains(v));
     if !ok {
         return Err(Error(format!("{what}: a table entry is out of range")));
     }
@@ -367,7 +370,8 @@ impl Calibration {
 
     /// The registry form: every name the camera goes by and each look's id and profile.
     pub fn calibrated(&self) -> lcc_raw::dcp::Calibrated {
-        let names: Vec<String> = std::iter::once(&self.model).chain(&self.aliases).map(|m| format!("{} {}", super::brand(&self.make), m.trim())).collect();
+        let names: Vec<String> =
+            std::iter::once(&self.model).chain(&self.aliases).map(|m| format!("{} {}", super::brand(&self.make), m.trim())).collect();
         let looks = self.looks.iter().map(|l| (look_id(&l.name), std::sync::Arc::new(self.look_dcp(l)))).collect();
         lcc_raw::dcp::Calibrated { make: super::brand(&self.make), names, looks }
     }
@@ -418,9 +422,19 @@ mod tests {
             tool_version: "26.43.4".into(),
             contributor: Some("A Contributor".into()),
             licence: LICENCE.into(),
-            camera: CameraModel { illuminants: [17, 21], color_matrix: [cm1, cm2], forward_matrix: [fm, fm], hue_sat_map: Some([table.clone(), table.clone()]) },
+            camera: CameraModel {
+                illuminants: [17, 21],
+                color_matrix: [cm1, cm2],
+                forward_matrix: [fm, fm],
+                hue_sat_map: Some([table.clone(), table.clone()]),
+            },
             looks: vec![
-                Look { name: "Adobe Color".into(), baseline_exposure_offset: 0.25, look_table: Some(table), tone_curve: vec![[0.0, 0.0], [0.18, 0.3], [1.0, 1.0]] },
+                Look {
+                    name: "Adobe Color".into(),
+                    baseline_exposure_offset: 0.25,
+                    look_table: Some(table),
+                    tone_curve: vec![[0.0, 0.0], [0.18, 0.3], [1.0, 1.0]],
+                },
                 Look { name: "Adobe Standard".into(), baseline_exposure_offset: 0.0, look_table: None, tone_curve: vec![] },
             ],
             evidence: Evidence {
