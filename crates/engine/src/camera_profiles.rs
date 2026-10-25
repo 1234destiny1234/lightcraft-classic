@@ -329,8 +329,9 @@ fn merge_calibrations(
     mut list: Vec<lcc_camdb::calibration::Calibration>,
     dev: Vec<lcc_camdb::calibration::Calibration>,
 ) -> Vec<lcc_camdb::calibration::Calibration> {
+    // a development calibration replaces the bundled one for the same camera and editor; other editors' stay
     for c in dev {
-        list.retain(|b| !b.matches(Some(&c.make), &c.model));
+        list.retain(|b| !(b.editor == c.editor && b.matches(Some(&c.make), &c.model)));
         list.push(c);
     }
     list
@@ -440,6 +441,7 @@ mod tests {
             make: "TESTMAKE".into(),
             model: model.into(),
             aliases: vec![],
+            editor: c::Editor::Lightroom,
             method: c::METHOD.into(),
             tool_version: "1".into(),
             contributor: None,

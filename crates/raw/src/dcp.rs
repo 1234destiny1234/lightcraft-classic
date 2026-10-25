@@ -137,8 +137,11 @@ pub struct Calibrated {
     pub make: String,
     /// Every name the camera goes by, as "make model" (profile-model form, see [`matches`]).
     pub names: Vec<String>,
-    /// `(cal:<id>, profile)`, the default first.
+    /// `(cal:<id>, profile)`.
     pub looks: Vec<(String, Arc<Dcp>)>,
+    /// The look photos of the camera start from when they choose none (a Lightroom calibration's first look);
+    /// `None`: the looks are only there to be chosen (calibrations matched to other editors).
+    pub default: Option<String>,
 }
 
 fn registry() -> &'static RwLock<Vec<Arc<Dcp>>> {
@@ -207,15 +210,33 @@ fn calibrated_registry() -> &'static RwLock<Vec<Arc<Calibrated>>> {
     R.get_or_init(Default::default)
 }
 
-/// Install the cameras calibrated against Lightroom (a later one for a camera with the same first name wins).
+/// Install the calibrated cameras. Calibrations for the same camera (fitted to different editors) pool their looks;
+/// a look id seen again is replaced by the later one, and the first default given stays the default.
 pub fn install_calibrated(list: Vec<Calibrated>) {
-    let mut out: Vec<Arc<Calibrated>> = Vec::new();
+    let mut out: Vec<Calibrated> = Vec::new();
     for c in list {
         let first = c.names.first().map(|n| key(n));
-        out.retain(|x| x.names.first().map(|n| key(n)) != first);
-        out.push(Arc::new(c));
+        match out.iter_mut().find(|x| x.names.first().map(|n| key(n)) == first) {
+            Some(x) => {
+                for name in c.names {
+                    if !x.names.iter().any(|n| key(n) == key(&name)) {
+                        x.names.push(name);
+                    }
+                }
+                if x.default.is_none() {
+                    x.default = c.default;
+                }
+                for (id, look) in c.looks {
+                    match x.looks.iter_mut().find(|(i, _)| *i == id) {
+                        Some(slot) => slot.1 = look,
+                        None => x.looks.push((id, look)),
+                    }
+                }
+            }
+            None => out.push(c),
+        }
     }
-    *calibrated_registry().write().unwrap_or_else(PoisonError::into_inner) = out;
+    *calibrated_registry().write().unwrap_or_else(PoisonError::into_inner) = out.into_iter().map(Arc::new).collect();
 }
 
 /// The installed calibrations.
@@ -244,9 +265,13 @@ pub fn calibrated_look_id(dcp: &Arc<Dcp>) -> Option<String> {
     reg.iter().flat_map(|c| c.looks.iter()).find(|(_, d)| Arc::ptr_eq(d, dcp)).map(|(id, _)| id.clone())
 }
 
-/// A camera's default profile: the person's own `.dcp` ([`for_camera`]), else its calibration's first look.
+/// A camera's default profile: the person's own `.dcp` ([`for_camera`]), else its calibration's default look.
 fn default_for(make: Option<&str>, model: &str) -> Option<Arc<Dcp>> {
-    for_camera(make, model).or_else(|| calibrated_for(make, model).and_then(|c| c.looks.first().map(|(_, d)| d.clone())))
+    for_camera(make, model).or_else(|| {
+        let c = calibrated_for(make, model)?;
+        let id = c.default.as_ref()?;
+        c.looks.iter().find(|(i, _)| i == id).map(|(_, d)| d.clone())
+    })
 }
 
 /// The profile a photo's camera-profile choice (`profile.camera`) gives a camera (Exif make and
@@ -378,7 +403,12 @@ mod tests {
             Arc::new(d)
         };
         let names = vec!["CALCAM ONE".into(), "CALCAM ONE II".into()];
-        install_calibrated(vec![Calibrated { make: "CALCAM".into(), names, looks: vec![("cal:a".into(), look("A")), ("cal:b".into(), look("B"))] }]);
+        install_calibrated(vec![Calibrated {
+            make: "CALCAM".into(),
+            names,
+            looks: vec![("cal:a".into(), look("A")), ("cal:b".into(), look("B"))],
+            default: Some("cal:a".into()),
+        }]);
         let cam = "CALCAM CORP CALCAM ONE";
         assert!(covers_camera(cam) && covers_camera("CALCAM CORP ONE II"));
         assert_eq!(resolve_camera("", cam).unwrap().name, "A", "the first look is the default");
@@ -396,6 +426,30 @@ mod tests {
         assert_eq!(resolve_camera("cal:b", cam).unwrap().name, "B");
         assert!(calibrated_look_id(&resolve_camera("", cam).unwrap()).is_none());
         install(Vec::new());
+        // a second calibration for the camera (another editor's: no default) pools its looks, the default stays;
+        // a camera with only such a calibration has no default look, its looks are there to be chosen
+        let other = |names: Vec<String>, id: &str, name: &str| Calibrated {
+            make: "CALCAM".into(),
+            names,
+            looks: vec![(id.into(), look(name))],
+            default: None,
+        };
+        install_calibrated(vec![
+            Calibrated {
+                make: "CALCAM".into(),
+                names: vec!["CALCAM ONE".into()],
+                looks: vec![("cal:a".into(), look("A"))],
+                default: Some("cal:a".into()),
+            },
+            other(vec!["CALCAM ONE".into(), "CALCAM ONE X".into()], "cal:capture-one-standard", "C1"),
+            other(vec!["CALCAM TWO".into()], "cal:darktable-default", "DT"),
+        ]);
+        assert_eq!(resolve_camera("", cam).unwrap().name, "A");
+        assert_eq!(resolve_camera("cal:capture-one-standard", cam).unwrap().name, "C1");
+        assert!(covers_camera("CALCAM CORP ONE X"), "names pool too");
+        let two = "CALCAM CORP CALCAM TWO";
+        assert!(resolve_camera("", two).is_none(), "another editor's look is never the default");
+        assert_eq!(resolve_camera("cal:darktable-default", two).unwrap().name, "DT");
         install_calibrated(Vec::new());
         assert!(!covers_camera(cam));
     }

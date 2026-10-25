@@ -1684,6 +1684,7 @@ mod tests {
             make: "LOOKTEST".into(),
             names: vec!["LOOKTEST ONE".into()],
             looks: vec![("cal:adobe-vivid".into(), dcp)],
+            default: Some("cal:adobe-vivid".into()),
         });
         lcc_raw::dcp::install_calibrated(list);
         let (calibrated, other_camera) = (warned("ONE"), warned("TWO"));

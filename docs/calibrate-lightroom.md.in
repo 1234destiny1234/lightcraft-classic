@@ -149,6 +149,30 @@ Every example below writes `{{cli_binary}}`: put the path or prefix you used her
    or an issue on the project's repository. `--contributor`
    is optional; leave it out to stay anonymous.
 
+## Other editors: Capture One, darktable, RawTherapee, DxO PhotoLab
+
+The same fit works against another editor's exports, so people moving from it can open their raws in its look:
+
+```
+{{cli_binary}} calibrate-lightroom fit --editor capture-one --raws RAWS --exports EXPORTS
+```
+
+`--editor` takes `capture-one`, `darktable`, `rawtherapee`, `dxo-photolab` or `lightroom` (the default). Prepare
+the exports as for Lightroom: the editor's default rendering of each raw with nothing adjusted, white balance As Shot,
+no crop, no lens correction, sharpening and noise reduction off where the editor allows. Export 16-bit TIFFs in a
+wide colour space with its ICC profile embedded, one folder per look (the folder's name names the look). Those other
+editors write no settings the fit could check, so it can't tell whether an export was adjusted: keep them at their
+defaults.
+
+What differs from a Lightroom calibration:
+
+- The file is `<Make>_<Model>_<editor>.json` and its looks are named after the editor ("Capture One Standard"), so
+  it sits beside a Lightroom calibration of the same camera without replacing it.
+- Only Lightroom gives its temperature and tint in the exports, so the white points come from the camera database's
+  matrices rather than from the editor.
+- Its looks are offered per photo (Profile ▸ Camera profile), never as the camera's default: only a Lightroom
+  calibration's first look starts every photo of the camera.
+
 ## Privacy: what the file holds
 
 Only aggregate numbers: camera make and model, two colour and two forward matrices, optional hue/saturation maps,
