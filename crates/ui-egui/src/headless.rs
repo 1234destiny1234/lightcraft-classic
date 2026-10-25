@@ -1789,6 +1789,27 @@ mod tests {
         h.request("engine.execute", json!({"command": "edit.undo"}), t);
         h.step();
         assert_eq!(named(&h, ids[1], 0), None);
+        // ignore the selected faces: they leave the list, and the People header offers to restore them
+        h.settle(SETTLE);
+        h.step();
+        let before = tiles(&mut h);
+        h.request("ui.clickWidget", json!({"id": "unnamed:selectAll"}), t);
+        h.step();
+        h.step();
+        let r = h.request("ui.clickWidget", json!({"id": "unnamed:ignore"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.step();
+        h.settle(SETTLE);
+        h.step();
+        h.step();
+        assert!(tiles(&mut h) < before, "ignored faces left the unnamed list");
+        let r = h.request("ui.clickWidget", json!({"id": "people:restoreIgnored"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.step();
+        h.settle(SETTLE);
+        h.step();
+        h.step();
+        assert_eq!(tiles(&mut h), before, "restored");
     }
 
     /// A double click on an unnamed face opens its photo in the loupe, as in the grid (#1664); a single click still only
