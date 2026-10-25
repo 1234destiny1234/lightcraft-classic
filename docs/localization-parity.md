@@ -18,7 +18,7 @@ go beyond the target.
 
 ## How the numbers are measured
 
-**Measured** (a Python count over `crates/ui-egui/locales/*.json` merged with the fork overlays in
+**Measured** (a Python count over `crates/ui-egui/locales/*.json` merged with Chromaforge's overlays in
 `crates/ui-egui/locales/fork/`, 2026-10-13; the 2026-10-10 figures counted upstream's catalogs only):
 
 - The denominator is every message any catalog knows: the union of the plain catalogs' keys (3,094

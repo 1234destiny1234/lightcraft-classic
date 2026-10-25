@@ -3,7 +3,7 @@
 *Last updated 2026-10-21 (version 0.8.2). Revision history: [Log](#log).*
 
 Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
-Print, Web, publish) and Immich integration as this fork's own focus on top of the upstream engine. Estimates are for
+Print, Web, publish) and Immich integration as Chromaforge's own focus on top of the upstream engine. Estimates are for
 continuous agent-driven development with 4–6 parallel agents and are revised as milestones land.
 
 ## Where we stand
