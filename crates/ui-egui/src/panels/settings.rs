@@ -841,7 +841,10 @@ fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     check(ui, "settings.gpu", &mut app.ui.settings.gpu, "Use the GPU for rendering");
     gpu_backend_row(app, ui, t);
     check(ui, "settings.hdrDisplay", &mut app.ui.settings.hdr_display, "HDR display where the screen supports it (applies at next launch)");
-    let status = if !gpu::available() {
+    // `available` waits for a device still being created: say so instead of blocking the frame
+    let status = if gpu::enabled() && !gpu::ready() {
+        "GPU: starting…".to_string()
+    } else if !gpu::available() {
         match gpu::unavailable_reason() {
             Some(why) => crate::i18n::tr_format!("Rendering on the CPU: {why}", why = why),
             None => "No usable GPU found: rendering on the CPU".to_string(),
