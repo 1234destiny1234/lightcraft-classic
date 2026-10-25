@@ -390,6 +390,7 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             }
             if lp {
                 lens_note(app, ui, id, has_lens);
+                lens_picker(app, ui, id, d);
             }
         });
         if d.optics.lens_profile {
@@ -2659,6 +2660,85 @@ fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId, has_
     };
     let r = ui.label(egui::RichText::new(text).size(11.0).color(t.text_dim));
     crate::widgets::register(ui.ctx(), "label:lensNote", r.rect);
+}
+
+/// Develop ▸ Lens Corrections' lens picker (issue #307): Make → Model dropdowns filled from the lens database
+/// (`lens.choose`; "Auto" goes back to the file's own correction or the match by name), and a focal-length field
+/// for a photo that records none (a manual lens). Raws only, with a lens database set up.
+fn lens_picker(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId, d: &lcc_develop::DevelopSettings) {
+    use crate::i18n::tr;
+    let Some(photo) = app.session.catalog.photo(id) else { return };
+    if !photo.develops_raw() {
+        return;
+    }
+    let photo_focal = photo.meta.focal_mm.is_some_and(|f| f.is_finite() && f > 0.0);
+    let Some(db) = lcc_engine::lens_profiles::database() else { return };
+    let picked = d.optics.lens.clone();
+    let t = Tokens::get(ui.ctx());
+    let make = picked.as_ref().and_then(|l| l.make.clone()).or_else(|| app.ui.lens_pick_make.clone());
+    let auto = tr("Auto").to_string();
+    let mut action: Option<serde_json::Value> = None;
+    egui::Grid::new("lens-picker").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
+        ui.label(egui::RichText::new(tr("Make")).size(11.5).color(t.text_dim));
+        let r = crate::widgets::combo_box("lens-make").width(150.0).selected_text(make.clone().unwrap_or_else(|| auto.clone())).show_ui(ui, |ui| {
+            if ui.selectable_label(picked.is_none() && make.is_none(), &auto).clicked() {
+                app.ui.lens_pick_make = None;
+                action = Some(serde_json::Value::Null);
+            }
+            let mut makers: Vec<&str> = db.lenses.iter().map(|l| l.maker.trim()).filter(|m| !m.is_empty()).collect();
+            makers.sort_unstable_by_key(|m| m.to_lowercase());
+            makers.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+            for m in makers {
+                if ui.selectable_label(make.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(m)), m).clicked() {
+                    app.ui.lens_pick_make = Some(m.to_string());
+                }
+            }
+        });
+        crate::widgets::register(ui.ctx(), "combo:lensMake", r.response.rect);
+        ui.end_row();
+        ui.label(egui::RichText::new(tr("Model")).size(11.5).color(t.text_dim));
+        let model_text = picked.as_ref().map(|l| l.model.clone()).unwrap_or_else(|| auto.clone());
+        let r = ui
+            .add_enabled_ui(make.is_some(), |ui| {
+                crate::widgets::combo_box("lens-model").width(150.0).selected_text(model_text).show_ui(ui, |ui| {
+                    let Some(mk) = make.as_deref() else { return };
+                    let mut models: Vec<&str> = db
+                        .lenses
+                        .iter()
+                        .filter(|l| l.maker.trim().eq_ignore_ascii_case(mk))
+                        .filter_map(|l| l.models.first().map(|m| m.trim()))
+                        .collect();
+                    models.sort_unstable_by_key(|m| m.to_lowercase());
+                    models.dedup();
+                    for m in models {
+                        let on = picked.as_ref().is_some_and(|l| l.model.eq_ignore_ascii_case(m));
+                        if ui.selectable_label(on, m).clicked() {
+                            let focal = picked.as_ref().and_then(|l| l.focal);
+                            action = Some(json!({"maker": mk, "model": m, "focal": focal}));
+                        }
+                    }
+                })
+            })
+            .inner;
+        crate::widgets::register(ui.ctx(), "combo:lensModel", r.response.rect);
+        ui.end_row();
+        // a manual lens records no focal length: the picked profile needs one
+        if let Some(l) = picked.as_ref().filter(|_| !photo_focal) {
+            ui.label(egui::RichText::new(tr("Focal length")).size(11.5).color(t.text_dim));
+            let mut f = l.focal.unwrap_or(50.0);
+            let r = ui.add(egui::DragValue::new(&mut f).range(1.0..=2000.0).speed(1.0).suffix(" mm"));
+            crate::widgets::register(ui.ctx(), "drag:lensFocal", r.rect);
+            if (r.changed() && !r.dragged()) || r.drag_stopped() || (l.focal.is_none() && r.changed()) {
+                action = Some(json!({"maker": l.make, "model": l.model, "focal": f}));
+            }
+            ui.end_row();
+        }
+    });
+    if let Some(lens) = action
+        && let Err(e) = app.run("lens.choose", json!({ "lens": lens }))
+    {
+        app.toast_error(ui.ctx(), e);
+    }
 }
 
 /// The preview-only notice's Reload from Disk: re-read the photo's file (a raw a newer version can

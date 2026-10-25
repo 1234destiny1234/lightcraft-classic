@@ -82,6 +82,23 @@ fn optics_names_the_lens_the_database_lacks() {
     assert_eq!(st["state"], json!("found"), "{st}");
     assert!(has(&h, "label:lensStatus"), "the applied profile is shown");
     assert!(!has(&h, "label:lensNote"));
+    // the lens picker: Make → Model from the database; a picked lens is named "(chosen)"
+    let manual = raw_in_develop(&mut h, "Oldglass 50mm");
+    assert!(has(&h, "combo:lensMake") && has(&h, "combo:lensModel"), "the lens picker is shown");
+    let st = h.app.session.execute("lens.choose", &json!({"lens": {"maker": "Testcam", "model": "Testcam 18-55mm f/3.5-5.6"}})).unwrap();
+    assert_eq!(st["state"], json!("chosen"), "{st}");
+    h.step();
+    h.step();
+    assert!(has(&h, "label:lensStatus"), "the picked profile is shown");
+    assert_eq!(h.app.session.develop_of(manual).unwrap().optics.lens.as_ref().map(|l| l.model.as_str()), Some("Testcam 18-55mm f/3.5-5.6"));
+    if let Some(p) = lcc_brand::env_os("TEST_SHOTS") {
+        h.app.services.png = Some(Box::new(|img: &lcc_raster::Rgba8| {
+            lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(img), &lcc_codecs::EncodeMeta::default()).unwrap_or_default()
+        }));
+        h.app.services.write = Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| e.to_string())));
+        let r = h.request("ui.screenshot", json!({"path": std::path::Path::new(&p).join("lens-picker.png").to_string_lossy(), "headless": true}), T);
+        assert_eq!(r["ok"], true, "{r}");
+    }
     lcc_engine::lens_profiles::set_dir(before);
     let _ = std::fs::remove_dir_all(&dir);
 }

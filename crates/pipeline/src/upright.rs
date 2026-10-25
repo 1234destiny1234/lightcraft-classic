@@ -551,7 +551,7 @@ pub fn analyze_source(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings) -> A
     base.geometry = Geometry::default();
     base.crop = Crop::default();
     let key = crate::optics::fingerprint(src)
-        ^ lcc_develop::DevelopSettings { optics: s.optics, orientation: s.orientation, ..Default::default() }.hash64().rotate_left(17);
+        ^ lcc_develop::DevelopSettings { optics: s.optics.clone(), orientation: s.orientation, ..Default::default() }.hash64().rotate_left(17);
     if let Ok(c) = CACHE.lock()
         && let Some((_, a)) = c.iter().find(|(k, _)| *k == key)
     {

@@ -957,7 +957,7 @@ impl Default for Detail {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Optics {
     pub remove_ca: bool,
@@ -977,6 +977,23 @@ pub struct Optics {
     /// automatic estimate when `remove_ca` is on.
     pub ca_red: f64,
     pub ca_blue: f64,
+    /// A lens profile the user picked from the lens database for this photo (an adapted or manual lens, one its
+    /// metadata misnames); `None`: the file's own correction, else the database's match by the lens name. Not
+    /// written to XMP.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens: Option<ChosenLens>,
+}
+
+/// A lens picked from the lens database ([`Optics::lens`]): its maker and model as the database names them, and the
+/// focal length to use when the photo records none.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChosenLens {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub make: Option<String>,
+    pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focal: Option<f64>,
 }
 
 impl Default for Optics {
@@ -997,6 +1014,7 @@ impl Default for Optics {
             vignetting_midpoint: 50.0,
             ca_red: 0.0,
             ca_blue: 0.0,
+            lens: None,
         }
     }
 }

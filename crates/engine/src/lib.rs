@@ -322,6 +322,8 @@ pub struct Session {
     pub(crate) lens_seen: std::collections::HashMap<PhotoId, u64>,
     /// Whether each photo looked up this session carries its file\'s own lens correction (not a database profile).
     pub(crate) lens_from_file: std::collections::HashMap<PhotoId, bool>,
+    /// The lens picked for each photo ([`lcc_develop::Optics::lens`]) when its lens data was last looked up.
+    pub(crate) lens_chosen_seen: std::collections::HashMap<PhotoId, Option<lcc_develop::ChosenLens>>,
     /// Reverse geocoding: the parsed place names and their download (`metadata.*PlaceNames`).
     pub place_names: cmd::geocode::PlaceNames,
     /// The user's own list of models to download (`catalog.json` in the models folder), as last read.
@@ -575,6 +577,7 @@ impl Session {
             lens_db: Default::default(),
             lens_seen: Default::default(),
             lens_from_file: Default::default(),
+            lens_chosen_seen: Default::default(),
             place_names: Default::default(),
             face_catalog: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
