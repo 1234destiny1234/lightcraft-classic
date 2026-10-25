@@ -1675,7 +1675,9 @@ impl LccApp {
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         if self.gpu_applied != Some(self.ui.settings.gpu) {
             self.gpu_applied = Some(self.ui.settings.gpu);
-            let _ = self.session.execute("app.gpu", &serde_json::json!({"enabled": self.ui.settings.gpu}));
+            // not the `app.gpu` command: its answer (`available`, `adapter`) waits for the device, and
+            // compiling the kernels takes seconds on DX12
+            lcc_engine::gpu::set_enabled(self.ui.settings.gpu);
             // GPU device + kernels off the UI thread, once the window is up and only when GPU
             // rendering is on: a broken driver must not keep the window from appearing (issue #136)
             if self.ui.settings.gpu {
