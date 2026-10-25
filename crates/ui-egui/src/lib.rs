@@ -1005,7 +1005,7 @@ impl LccApp {
                 self.ui.toast = Some((message, now + TOAST_SECONDS, None));
             }
         }
-        if r.is_ok() && id == "photo.label" {
+        if r.is_ok() && matches!(id, "photo.label" | "photo.clearLabel") {
             let label = if let Some(applied) = r.as_ref().ok().and_then(|v| v.get("label")).and_then(Value::as_str) {
                 if applied == "none" { None } else { lcc_catalog::ColorLabel::parse(applied) }
             } else {
