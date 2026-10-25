@@ -877,10 +877,11 @@ impl Catalog {
             _ => {}
         }
         Ok(match op {
-            Op::AddPhoto { photo } => {
+            Op::AddPhoto { mut photo } => {
                 if self.photos.contains_key(&photo.id) {
                     return Err(CatalogError::Invalid(format!("photo {:?} exists", photo.id)));
                 }
+                photo.trim_history();
                 let id = photo.id;
                 // the largest id would leave no next one (a damaged log or a hostile op)
                 let next = id.0.checked_add(1).ok_or_else(|| CatalogError::Invalid(format!("photo id {} is out of range", id.0)))?;
@@ -938,7 +939,14 @@ impl Catalog {
             }
             Op::SetHistory { id, history } => {
                 let p = self.photo_mut(id)?;
-                Op::SetHistory { id, history: std::mem::replace(&mut p.history, history) }
+                let old = std::mem::replace(&mut p.history, history);
+                let old_cursor = p.history_cursor;
+                p.trim_history();
+                if p.history_cursor == old_cursor {
+                    Op::SetHistory { id, history: old }
+                } else {
+                    Op::Batch { ops: vec![Op::SetHistory { id, history: old }, Op::SetHistoryCursor { id, cursor: old_cursor }] }
+                }
             }
             Op::PushHistory { id, step } => {
                 let p = self.photo_mut(id)?;
@@ -1376,14 +1384,19 @@ impl Catalog {
     /// finds in them, and walks folders up to the top): every photo, album and stack carries the
     /// id it is filed under; the id counters lie past every id in use; a stack keeps only photos
     /// in the catalog, once each, and goes when fewer than two are left; an album whose parent is
-    /// missing, not a folder or inside itself moves to the top level. Returns what was changed
-    /// (nothing, for a catalog this build wrote).
+    /// missing, not a folder or inside itself moves to the top level; a photo keeps its newest
+    /// [`HISTORY_LIMIT`] History steps. Returns what was changed (nothing, for a catalog this build
+    /// wrote).
     pub fn repair(&mut self) -> Vec<String> {
         let mut changed = Vec::new();
         for (id, p) in self.photos.iter_mut() {
             if p.id != *id {
                 changed.push(format!("photo {} was filed as {}", p.id.0, id.0));
                 Arc::make_mut(p).id = *id;
+            }
+            if p.history.len() > HISTORY_LIMIT {
+                let n = Arc::make_mut(p).trim_history();
+                changed.push(format!("photo {}: {n} History step(s) beyond the newest {HISTORY_LIMIT} dropped", id.0));
             }
         }
         for (id, a) in self.albums.iter_mut() {
