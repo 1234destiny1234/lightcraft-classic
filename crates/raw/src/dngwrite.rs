@@ -169,11 +169,14 @@ pub struct DngWriteOptions {
     pub order: ByteOrder,
     /// XMP packet to embed (tag 700); defaults to one generated from the image metadata.
     pub xmp: Option<String>,
+    /// `UniqueCameraModel` to write instead of the one made from Exif make and model (raw converters pick their
+    /// camera profiles by it).
+    pub unique_camera_model: Option<String>,
 }
 
 impl Default for DngWriteOptions {
     fn default() -> Self {
-        Self { compression: DngCompression::Lj92 { tile: 256 }, order: ByteOrder::Little, xmp: None }
+        Self { compression: DngCompression::Lj92 { tile: 256 }, order: ByteOrder::Little, xmp: None, unique_camera_model: None }
     }
 }
 
@@ -224,6 +227,7 @@ pub fn write_dng(raw: &RawImage, opts: &DngWriteOptions) -> Result<Vec<u8>> {
     } else {
         format!("{make} {model}")
     };
+    let unique = opts.unique_camera_model.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(str::to_owned).unwrap_or(unique);
     ifd.set(t::UNIQUE_CAMERA_MODEL, Value::Ascii(if unique.is_empty() { lcc_brand::DISPLAY_NAME.into() } else { unique }));
     ifd.set(t::ORIENTATION, Value::Short(vec![raw.orientation.to_exif()]));
     ifd.set(t::SOFTWARE, Value::Ascii(software()));
@@ -565,7 +569,7 @@ pub fn write_rendered_dng(
         lens_metadata: Default::default(),
     };
     let order = ByteOrder::Little;
-    write_dng(&raw, &DngWriteOptions { compression: DngCompression::Deflate { tile: 256, half: true }, order, xmp })
+    write_dng(&raw, &DngWriteOptions { compression: DngCompression::Deflate { tile: 256, half: true }, order, xmp, unique_camera_model: None })
 }
 
 #[cfg(test)]

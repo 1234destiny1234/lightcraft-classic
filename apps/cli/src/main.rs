@@ -154,6 +154,13 @@ USAGE:
       …, read through their embedded colour profiles). Lines them up, then prints CIEDE2000 (mean, median, p95,
       p99) overall, by tone band and by hue, with the lightness, saturation and hue bias. --size: long edge
       compared (default 512); --no-align: compare pixel for pixel; --diff: write a false-colour ΔE00 map.
+  {cli} calibrate-lightroom probe -o DIR (--like RAW | --make MAKE --model MODEL) [--unique-model NAME] [--base-only]
+      Write synthetic probe DNGs for a camera: colour patches spread through camera RGB, and one copy per
+      slider-sweep step with that Lightroom setting embedded (applied when Lightroom imports it). Export them all
+      from Lightroom as 16-bit ProPhoto TIFFs; probe_base's export can also go into `fit` with your raws.
+  {cli} calibrate-lightroom probe-check --probes DIR --exports DIR [--json] [-o FILE]
+      Read Lightroom's probe exports back by position: the default render's ΔE00 against {app}'s, and for each
+      slider step the {app} value whose change matches Lightroom's best, next to the value the import uses.
   {cli} camdb extract [--contributor NAME] NATIVE.dng…
       Print camera database entries (TOML, for data/cameras/<maker>.toml in the camdb crate) from DNGs the
       camera wrote itself. DNGs written by Adobe software or by {app}'s own export are refused.
