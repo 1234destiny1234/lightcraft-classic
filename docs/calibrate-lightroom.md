@@ -204,6 +204,42 @@ Before committing, try a contribution in a debug build without adding it: point
 `LIGHTCRAFT_CLASSIC_CAMERA_CALIBRATIONS` at a folder holding the JSON and open that camera's raws. `lightcraft-classic-cli calibrate-lightroom
 list` prints the calibrations built into a binary, their looks (`cal:<id>`) and their held-out ΔE00.
 
+### Probe DNGs and slider sweeps: `probe`, `probe-check`
+
+Natural photos rarely show a camera's most saturated colours, which is where profiles differ most. A **probe** fills
+that in, and its **slider sweeps** measure how Lightroom's sliders respond, so the import of Lightroom edits can be
+tuned to match.
+
+```
+lightcraft-classic-cli calibrate-lightroom probe -o probes --like IMG_0001.ARW
+```
+
+1. **Write the probes.** This writes `probe_base.dng`, a grid of 384 flat colour patches spread through the camera's
+   RGB (a cube, a grey ramp and saturated primaries and secondaries). It also writes one copy per sweep step with a
+   single Lightroom setting embedded in its XMP: Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Dehaze,
+   Vibrance, Saturation, and the eight colours' Hue, Saturation and Luminance, at a few values each. The probes
+   carry your camera's make and model (`--like` copies them from one of its raws; else `--make` and `--model`) and a
+   colour matrix from the camera database. They also set `UniqueCameraModel` (override with `--unique-model`), which
+   Lightroom uses to offer its own profiles for the camera.
+2. **Render them in Lightroom.** Import the folder; Lightroom applies each probe's embedded setting on import. If
+   the probes show unedited, select them all and choose Metadata ▸ Read Metadata from Files. Check that the base
+   probe's profile is the one you want calibrated (Adobe Color by default), then export every probe as a 16-bit
+   ProPhoto RGB TIFF, keeping the file names.
+3. **Check them:**
+   ```
+   lightcraft-classic-cli calibrate-lightroom probe-check --probes probes --exports probe-exports
+   ```
+   It prints the default render's ΔE00 between Lightroom and the app over the patches. For every sweep step it
+   prints the app control the import maps that setting to, the value the import uses, and the app value whose change
+   from the base probe matches Lightroom's change best, each with its error. It compares changes rather than colours,
+   so the difference between the two default looks doesn't bias the slider answer. `--json` and `-o FILE` give the
+   full report.
+4. **Feed the base probe to `fit`.** Add the probe folder to `fit --raws` and the folder holding `probe_base`'s
+   export to `--exports`, next to your own raws and exports. It pairs by name like any raw. The sweep exports aren't
+   at the baseline and are skipped.
+
+The probes are synthetic: they contain no photo of yours and no Adobe data, and Lightroom only renders them.
+
 ### Checking edited photos: `verify`
 
 `lightcraft-classic-cli calibrate-lightroom verify --raws DIR… --exports DIR…` answers "will my edited photos look the same

@@ -30,7 +30,7 @@ use lcc_raw::profile::ToneCurve;
 
 mod linalg;
 mod model;
-mod pipe;
+pub(crate) mod pipe;
 mod real;
 mod table;
 

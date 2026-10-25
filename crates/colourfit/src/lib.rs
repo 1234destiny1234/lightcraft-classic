@@ -7,6 +7,7 @@
 //! - [`fit`]: tone curve, colour and forward matrices, hue/saturation map, per-look look tables, closed loop through
 //!   the real pipeline ([`fit::fit`]).
 //! - [`preset`]: the baseline Lightroom preset contributors apply before exporting.
+//! - [`probe`]: synthetic probe DNGs and slider sweeps, read back by position.
 //! - [`report`]: held-out ΔE00 and the local HTML report (contains images: never sent).
 //! - [`verify`]: the app's render of edited photos against their edited exports (migration check).
 //!
@@ -19,6 +20,7 @@ pub mod dataset;
 pub mod deltae;
 pub mod fit;
 pub mod preset;
+pub mod probe;
 pub mod report;
 pub mod verify;
 

@@ -1989,9 +1989,7 @@
   "Filename captions": "ファイル名のキャプション",
   "150 dpi · sRGB · current edits · fit without cropping": "150 dpi · sRGB · 現在の編集 · トリミングせずに収める",
   "Choose a PDF destination after confirming. Print the PDF from your viewer.": "確定後に PDF の保存先を選びます。PDF はビューアから印刷してください。",
-  "HDR output": "HDR 出力",
   "Photos edited in HDR: JPEG with an HDR gain map (looks right everywhere, brighter highlights on HDR displays), AVIF as 10-bit, PNG and JPEG XL as 16-bit Rec. 2020 PQ; TIFF needs 32-bit float": "HDR で編集した写真：JPEG は HDR ゲインマップ付き（どこでも正しく表示され、HDR ディスプレイではハイライトがより明るい）、AVIF は 10 ビット、PNG と JPEG XL は 16 ビット Rec. 2020 PQ。TIFF には 32 ビット浮動小数点が必要です",
-  "HDR TIFF needs 32-bit float.": "HDR TIFF には 32 ビット浮動小数点が必要です。",
   "Color space: Rec. 2020 PQ (HDR AVIF)": "カラースペース：Rec. 2020 PQ（HDR AVIF）",
   "Color space: Rec. 2020 PQ, 16-bit (HDR PNG)": "カラースペース：Rec. 2020 PQ、16 ビット（HDR PNG）",
   "Color space: Rec. 2020 PQ (HDR JPEG XL)": "カラースペース：Rec. 2020 PQ（HDR JPEG XL）",
@@ -2357,7 +2355,6 @@
   "Human Eye Tracking": "人物瞳トラッキング",
   "Read Focus Points": "フォーカスポイントを読み込む",
   "Reading focus points": "フォーカスポイントを読み込み中",
-  "Click to type a value": "クリックして値を入力",
   "Run face models on the CPU only": "顔モデルを CPU だけで実行",
   "Detection": "検出",
   "Recognition": "認識",
@@ -2399,5 +2396,11 @@
   "Aesthetic": "審美",
   "Clipped (assisted culling)": "白飛び／黒つぶれ（選別補助）",
   "Cull Score": "選別スコア",
-  "Eyes Open": "開眼"
+  "Eyes Open": "開眼",
+  "Meanwhile your raw photos use the standard noise reduction: Luminance and Color under Detail in the Edit panel. It works on every photo.": "それまでは、RAW 写真には標準のノイズ軽減が使われます。編集パネルの「ディテール」にある「輝度」と「カラー」です。すべての写真で使えます。",
+  "Only if you were given a {app} denoise model (a folder with a .onnx file and denoise-model.json):": "{app} のノイズ除去モデル（.onnx ファイルと denoise-model.json を含むフォルダー）を受け取った場合のみ：",
+  "Why?": "理由は？",
+  "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "AI ノイズ除去にはモデルが必要ですが、インストールされていません。それまでは「ディテール」の「輝度」と「カラー」でノイズを軽減できます。",
+  "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "このバージョンには AI ノイズ除去モデルが含まれておらず、まだここからダウンロードすることもできません。",
+  "No AI Denoise model is installed": "AI ノイズ除去モデルはインストールされていません"
 }
