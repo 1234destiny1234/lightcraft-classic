@@ -1,6 +1,6 @@
-"""Train LightCraft's AI Denoise model on clean CC0 raws with synthetic, calibrated sensor noise.
+"""Train the AI Denoise model on clean CC0 raws with synthetic, calibrated sensor noise.
 
-Offline training tooling; not part of LightCraft (Python is never in the product).
+Offline training tooling; not part of the app (Python is never in the product).
 
 Data: the clean pictures `fetch_rpu.py` makes (each 2 x 2 Bayer cell of a low-ISO CC0 raw from raw.pixls.us became
 one camera-RGB pixel, so the reference is clean and needs no demosaicing). For each patch:

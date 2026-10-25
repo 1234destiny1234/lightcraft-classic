@@ -1,7 +1,7 @@
 # AI Denoise training tools
 
-Offline tooling for training LightCraft's own AI Denoise model. Nothing here is part of the product: Python and
-PyTorch are used only to train, and the result is an ONNX file that LightCraft's pure-Rust runners read
+Offline tooling for training the upstream project's own AI Denoise model. Nothing here is part of the product: Python and
+PyTorch are used only to train, and the result is an ONNX file that the app's pure-Rust runners read
 (`crates/denoise`). Weights and data are never committed; keep them in a scratch folder outside the repository.
 
 ## Data and licences
@@ -21,7 +21,7 @@ python -m venv <scratch>/venv
 <scratch>/venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128
 <scratch>/venv/Scripts/pip install numpy onnx onnxscript
 
-# LightCraft's own raw decoder, as a small helper (not a workspace member)
+# the app's own raw decoder, as a small helper (not a workspace member)
 CARGO_TARGET_DIR=<target> cargo build --release --manifest-path tools/denoise-train/rawdump/Cargo.toml
 
 python fetch_rpu.py --out <scratch>/data --rawdump <target>/release/lc-denoise-rawdump
@@ -31,14 +31,14 @@ python export.py --ckpt <scratch>/run1/final.pt --out <scratch>/model --rawdump 
 ```
 
 `export.py` writes `model.onnx` and `denoise-model.json` (with its SHA-256, size, licence and data credits) and runs
-LightCraft's installation self-test on them (`rawdump selftest`). Install the folder with Settings ▸ AI Denoise ▸
+the app's installation self-test on them (`rawdump selftest`). Install the folder with Settings ▸ AI Denoise ▸
 **Install from file…**.
 
 ## The model
 
 `model.py`: a U-Net (widths 32-64-128-256-512, about 7.8 M weights) for the `bayerToRgb` contract: RGGB planes
 `[1, 4, t, t]` → camera RGB `[1, 3, 2t, 2t]`, on the input's scale (gain `none`). It uses only the operators
-LightCraft reads: 3 × 3 and 1 × 1 convolutions with LeakyReLU, 2 × 2 max-pooling, 2 × 2 transposed convolutions,
+The app reads: 3 × 3 and 1 × 1 convolutions with LeakyReLU, 2 × 2 max-pooling, 2 × 2 transposed convolutions,
 channel concatenation into a convolution, and a final depth-to-space.
 
 The training target is the clean raw with every 2 × 2 cell binned into one RGB pixel, so the reference needs no

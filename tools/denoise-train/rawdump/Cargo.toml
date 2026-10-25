@@ -1,4 +1,4 @@
-# Offline training tool, not part of the product or the workspace: reads raw files with LightCraft's own decoder
+# Offline training tool, not part of the product or the workspace: reads raw files with the app's own decoder
 # so the training data is normalised exactly as the app normalises it before AI Denoise.
 [package]
 name = "lc-denoise-rawdump"
@@ -10,6 +10,6 @@ publish = false
 [workspace]
 
 [dependencies]
-lightcraft-raw = { path = "../../../crates/raw" }
+lcc-raw = { path = "../../../crates/raw" }
 serde_json = "1"
-lightcraft-denoise = { path = "../../../crates/denoise", features = ["runtime"] }
+lcc-denoise = { path = "../../../crates/denoise", features = ["runtime"] }

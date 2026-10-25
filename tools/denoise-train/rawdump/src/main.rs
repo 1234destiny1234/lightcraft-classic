@@ -1,6 +1,6 @@
-//! Offline helper for the AI Denoise training tools (`tools/denoise-train`). Not part of LightCraft.
+//! Offline helper for the AI Denoise training tools (`tools/denoise-train`). Not part of the app.
 //!
-//! It reads a raw file with LightCraft's own decoder and normalisation (black subtracted, white at 1, not white
+//! It reads a raw file with the app's own decoder and normalisation (black subtracted, white at 1, not white
 //! balanced), exactly what AI Denoise feeds its model, and writes one of:
 //!
 //! - `bin <raw> <out-prefix>`: a clean training picture. Every 2 × 2 Bayer cell (aligned to RGGB) becomes one camera
@@ -43,7 +43,7 @@ struct Mosaic {
 
 fn load(path: &str) -> Result<Mosaic, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-    let raw = lightcraft_raw::decode(&bytes).map_err(|e| e.to_string())?;
+    let raw = lcc_raw::decode(&bytes).map_err(|e| e.to_string())?;
     if raw.cpp != 1 || !raw.cfa.as_ref().is_some_and(|c| c.is_bayer()) {
         return Err("not a Bayer raw".into());
     }
@@ -162,11 +162,11 @@ fn noise(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Load a model with LightCraft's own ONNX reader and CPU runner and run the installation self-test.
+/// Load a model with the app's own ONNX reader and CPU runner and run the installation self-test.
 fn selftest(onnx: &str, manifest: &str) -> Result<(), String> {
     let bytes = std::fs::read(manifest).map_err(|e| format!("{manifest}: {e}"))?;
-    let m = lightcraft_denoise::manifest::parse(&bytes).map_err(|e| e.to_string())?;
-    let r = lightcraft_denoise::runtime::CpuRunner::load(std::path::Path::new(onnx), &m).map_err(|e| e.to_string())?;
+    let m = lcc_denoise::manifest::parse(&bytes).map_err(|e| e.to_string())?;
+    let r = lcc_denoise::runtime::CpuRunner::load(std::path::Path::new(onnx), &m).map_err(|e| e.to_string())?;
     let t = r.self_test();
     println!("ok={} load_ms={:.0} tile_ms={:.0} scale={:.4}", t.ok, t.load_ms, t.tile_ms, t.scale);
     for (text, ok) in &t.checks {
@@ -182,7 +182,7 @@ fn noisy(path: &str, out: &str, a: &str, b: &str, k: &str) -> Result<(), String>
     let num = |s: &str| s.parse::<f32>().map_err(|e| format!("{s}: {e}"));
     let (a, b, k) = (num(a)?, num(b)?, num(k)?);
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-    let mut raw = lightcraft_raw::decode(&bytes).map_err(|e| e.to_string())?;
+    let mut raw = lcc_raw::decode(&bytes).map_err(|e| e.to_string())?;
     if raw.cpp != 1 {
         return Err("not a mosaic".into());
     }
@@ -200,7 +200,7 @@ fn noisy(path: &str, out: &str, a: &str, b: &str, k: &str) -> Result<(), String>
         ((-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos()) as f32
     };
     let black: Vec<f32> = (0..area.height * area.width).map(|i| raw.black.at(i % area.width, i / area.width, 0, 1)).collect();
-    let lightcraft_raw::RawData::U16(data) = &mut raw.data else { return Err("float raws are not supported".into()) };
+    let lcc_raw::RawData::U16(data) = &mut raw.data else { return Err("float raws are not supported".into()) };
     for y in 0..area.height {
         for x in 0..area.width {
             let i = (area.y + y) * w + area.x + x;
@@ -211,7 +211,7 @@ fn noisy(path: &str, out: &str, a: &str, b: &str, k: &str) -> Result<(), String>
             data[i] = (bl + n.min(1.0) * range).round().clamp(0.0, 65535.0) as u16;
         }
     }
-    let dng = lightcraft_raw::write_dng(&raw, &lightcraft_raw::DngWriteOptions::default()).map_err(|e| e.to_string())?;
+    let dng = lcc_raw::write_dng(&raw, &lcc_raw::DngWriteOptions::default()).map_err(|e| e.to_string())?;
     std::fs::write(out, dng).map_err(|e| e.to_string())?;
     Ok(())
 }

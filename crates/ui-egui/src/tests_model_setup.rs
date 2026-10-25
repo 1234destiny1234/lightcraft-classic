@@ -233,7 +233,7 @@ fn ai_denoise_without_a_model_explains_instead_of_asking_for_a_file() {
     const T: Duration = Duration::from_secs(10);
     let dir = std::env::temp_dir().join(format!("lc-ui-denoise-none-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     app.ui.view = crate::state::ViewMode::PhotoGrid;
     let mut h = Headless::new(app, [1400.0, 1000.0], 1.0);
     h.app.session.set_denoise_models_dir(Some(dir.join("denoise-models")));

@@ -1,9 +1,9 @@
-"""Compare AI Denoise with LightCraft's manual noise reduction, end to end, on synthetic noisy/clean raw pairs.
+"""Compare AI Denoise with the app's manual noise reduction, end to end, on synthetic noisy/clean raw pairs.
 
-Offline tooling; not part of LightCraft.
+Offline tooling; not part of the app.
 
 For each clean source raw and noise level, `rawdump noisy` writes two DNGs: the raw darkened by `k` with
-calibrated Poisson-Gaussian noise, and the same without noise (the reference). `lightcraft-cli` develops them with
+calibrated Poisson-Gaussian noise, and the same without noise (the reference). `<cli>` develops them with
 the same settings (exposure brought back by log2(1/k), no sharpening):
 
 - reference: the clean DNG, no noise reduction;
@@ -14,7 +14,7 @@ the same settings (exposure brought back by log2(1/k), no sharpening):
 PSNR and SSIM are computed on the 8-bit sRGB exports against the reference, and same-place crops are saved
 side by side. Everything is written under `--out` (keep it out of the repository: the sources may be private).
 
-    python eval_lightcraft.py --cli <lightcraft-cli> --rawdump <rawdump> --model <folder> --out <dir> RAW [RAW ...]
+    python eval_app.py --cli <<cli>> --rawdump <rawdump> --model <folder> --out <dir> RAW [RAW ...]
 """
 
 import argparse
@@ -100,6 +100,14 @@ def crop_box(ref, side=384):
     return at[0], at[1], side
 
 
+def env_prefix():
+    """`env_prefix` from the repository's brand.toml (the app's environment variables start with it)."""
+    import tomllib
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "..", "..", "brand.toml"), "rb") as f:
+        return tomllib.load(f)["product"]["env_prefix"]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cli", required=True)
@@ -112,7 +120,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     env = dict(os.environ)
     models = os.path.join(a.out, "denoise-models")
-    env["LIGHTCRAFT_DENOISE_MODELS"] = models
+    env[env_prefix() + "_DENOISE_MODELS"] = models
     if os.path.exists(models):
         shutil.rmtree(models)
     print(run([a.cli, "run", "denoise.models.install", "path=" + os.path.join(a.model, "model.onnx"), "acknowledged=true",

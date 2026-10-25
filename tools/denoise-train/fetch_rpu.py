@@ -1,11 +1,11 @@
 """Fetch clean, low-ISO, CC0 Bayer raw samples from raw.pixls.us and turn each into a clean training picture.
 
-Offline training tooling for AI Denoise; not part of LightCraft.
+Offline training tooling for AI Denoise; not part of the app.
 
 Only rows whose licence on raw.pixls.us is CC0 (Creative Commons Zero, public domain) are used. Each file's
 sha256 from the site is checked. ISO comes from the site's EXIF dump; only ISO <= --max-iso is kept, so the
 pictures are close to noise-free (binning 2 x 2 cells halves the remaining noise again). The raw is turned into a
-picture with LightCraft's own decoder (`rawdump bin`) and then deleted; `sources.csv` records every file used
+picture with the app's own decoder (`rawdump bin`) and then deleted; `sources.csv` records every file used
 (URL, sha256, camera, ISO, licence) for the model's credits.
 
     python fetch_rpu.py --out <scratch>/data --rawdump <path to lc-denoise-rawdump> [--max-files 600]
@@ -31,7 +31,7 @@ SKIP_MAKES = {"sigma"}  # Foveon
 
 
 def get(url, timeout=120):
-    req = urllib.request.Request(url, headers={"User-Agent": "lightcraft-denoise-train/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "denoise-train/0.1"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 

@@ -1,7 +1,7 @@
-"""Export a trained checkpoint as LightCraft's AI Denoise model: `model.onnx` + `denoise-model.json`, then run
-LightCraft's own installation self-test on them.
+"""Export a trained checkpoint as the upstream project's AI Denoise model: `model.onnx` + `denoise-model.json`, then run
+the app's own installation self-test on them.
 
-Offline training tooling; not part of LightCraft.
+Offline training tooling; not part of the app.
 
     python export.py --ckpt <run>/final.pt --out <folder> --rawdump <lc-denoise-rawdump> [--version 0.1.0]
 """
@@ -20,15 +20,25 @@ import model as M
 
 TILE, OVERLAP = 512, 64
 
+
+def _upstream():
+    """`[upstream]` from the repository's brand.toml: the project this model was made by."""
+    import tomllib
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "brand.toml"), "rb") as f:
+        return tomllib.load(f)["upstream"]
+
+
+UP = _upstream()
+
 NOTICE = (
-    "LightCraft's own denoise model, trained by the LightCraft contributors. The weights are licensed MIT OR "
-    "Apache-2.0, like LightCraft: you may use them for any purpose, including commercial work, and pass them on with "
+    "{up}'s own denoise model, trained by the {up} contributors. The weights are licensed MIT OR "
+    "Apache-2.0, like {up}: you may use them for any purpose, including commercial work, and pass them on with "
     "this notice. Training pictures: {n} low-ISO raw samples from raw.pixls.us, each dedicated to the public domain "
     "(CC0) by its contributor; thank you."
 )
 
 PROVENANCE = (
-    "Trained by LightCraft contributors with LightCraft's open training tools (tools/denoise-train) on {n} clean "
+    "Trained by {up} contributors with {up}'s open training tools (tools/denoise-train) on {n} clean "
     "low-ISO raw photos from {cams} camera models published on raw.pixls.us under CC0, with synthetic sensor noise "
     "calibrated on real cameras (numbers only). No photos with other licences were used."
 )
@@ -57,19 +67,19 @@ def main():
         n, cams = len(rows), len({(r["make"], r["model"]) for r in rows})
 
     manifest = {
-        "id": "lightcraft-bayer",
-        "name": "LightCraft Denoise (Bayer)",
+        "id": UP["name"].lower() + "-bayer",
+        "name": UP["name"] + " Denoise (Bayer)",
         "version": a.version,
         "licence": {
             "name": "MIT OR Apache-2.0",
             "commercial": "yes",
-            "url": "https://github.com/storytold/lightcraft/blob/main/LICENSE-MIT",
-            "notice": NOTICE.format(n=n),
+            "url": UP["repository"] + "/blob/main/LICENSE-MIT",
+            "notice": NOTICE.format(n=n, up=UP["name"]),
         },
-        "source": "https://github.com/storytold/lightcraft/tree/main/tools/denoise-train",
+        "source": UP["repository"] + "/tree/main/tools/denoise-train",
         "sha256": hashlib.sha256(data).hexdigest(),
         "sizeBytes": len(data),
-        "provenance": PROVENANCE.format(n=n, cams=cams),
+        "provenance": PROVENANCE.format(n=n, cams=cams, up=UP["name"]),
         "domain": "bayerToRgb",
         "tile": TILE,
         "overlap": OVERLAP,

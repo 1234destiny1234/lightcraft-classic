@@ -1,10 +1,10 @@
-"""The AI Denoise network: a small U-Net for LightCraft's `bayerToRgb` contract.
+"""The AI Denoise network: a small U-Net for the app's `bayerToRgb` contract.
 
 Input: four planes [R, G1, G2, B] of a Bayer mosaic forced to RGGB, black subtracted, white at 1, not white
 balanced, `[1, 4, t, t]`. Output: camera RGB at the mosaic's resolution, `[1, 3, 2t, 2t]`, on the input's scale
 (the manifest's gain is `none`).
 
-Only what LightCraft's own pure-Rust runners read (`crates/denoise/src/onnx.rs`) is used: 3 x 3 / 1 x 1
+Only what the app's own pure-Rust runners read (`crates/denoise/src/onnx.rs`) is used: 3 x 3 / 1 x 1
 convolutions with stride 1 and "same" padding, each followed by a LeakyReLU, 2 x 2 max-pooling, 2 x 2 stride-2
 transposed convolutions, two-input channel concatenations that feed a convolution, and a final depth-to-space
 (PixelShuffle, which ONNX exports as DepthToSpace in CRD order). No additions, normalisation layers or other
@@ -69,7 +69,7 @@ class BayerUNet(nn.Module):
 
 
 def export_onnx(model, path, tile):
-    """Write `model` as an ONNX file LightCraft can read, with a fixed `[1, 4, tile, tile]` input."""
+    """Write `model` as an ONNX file the app can read, with a fixed `[1, 4, tile, tile]` input."""
     model = model.eval().float().cpu()
     x = torch.zeros(1, 4, tile, tile)
     torch.onnx.export(

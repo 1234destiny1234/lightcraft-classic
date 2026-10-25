@@ -1,6 +1,6 @@
 """Measure a camera's raw noise per ISO from ordinary photos, as numbers only.
 
-Offline training tooling for AI Denoise; not part of LightCraft.
+Offline training tooling for AI Denoise; not part of the app.
 
 `rawdump noise` measures 8 x 8 blocks of each Bayer plane (mean, variance of a high-pass residual) and reports, per
 brightness bin, low percentiles of the variance. Flat areas give the lowest variances, so the 10th percentile,
