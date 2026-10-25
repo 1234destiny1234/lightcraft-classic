@@ -1,4 +1,5 @@
-//! `<cli> calibrate-lightroom`: fit a camera's colour model and named looks to Lightroom's exports of the
+//! `<cli> calibrate-lightroom`: fit a camera's colour model and named looks to Lightroom's (or, with `--editor`,
+//! Capture One's, darktable's, RawTherapee's or DxO PhotoLab's) exports of the
 //! contributor's own raws (`lcc_colourfit`), and the developer step that adds a contributed file to the repository.
 //!
 //! - `preset -o FILE`: the baseline Lightroom preset contributors apply before exporting.
@@ -169,6 +170,7 @@ fn fit_cmd(args: &[String]) -> Result<(), String> {
     let mut out = PathBuf::from(".");
     let mut contributor = None;
     let mut dry_run = false;
+    let mut editor = calibration::Editor::Lightroom;
     // `--raws A B --exports C D`: plain arguments go to the list the last flag opened
     let mut list: Option<bool> = None; // Some(true) = raws, Some(false) = exports
     let mut i = 0;
@@ -179,6 +181,13 @@ fn fit_cmd(args: &[String]) -> Result<(), String> {
             "-o" | "--out" => out = take(args, &mut i, "-o")?.into(),
             "--contributor" => contributor = Some(take(args, &mut i, "--contributor")?.to_string()),
             "--dry-run" => dry_run = true,
+            "--editor" => {
+                let v = take(args, &mut i, "--editor")?;
+                editor = calibration::Editor::parse(v).ok_or_else(|| {
+                    let ids: Vec<&str> = calibration::Editor::ALL.iter().map(|e| e.id()).collect();
+                    format!("--editor: `{v}` is not one of {}", ids.join(", "))
+                })?;
+            }
             a if a.starts_with('-') => return Err(format!("unknown option `{a}`")),
             a => match list {
                 Some(true) => raw_dirs.push(PathBuf::from(a)),
@@ -189,7 +198,7 @@ fn fit_cmd(args: &[String]) -> Result<(), String> {
         i += 1;
     }
     if raw_dirs.is_empty() || export_dirs.is_empty() {
-        return Err("fit needs --raws DIR… and --exports DIR… (folders of Lightroom exports, searched with their subfolders)".into());
+        return Err(format!("fit needs --raws DIR… and --exports DIR… (folders of {} exports, searched with their subfolders)", editor.name()));
     }
     let mut raws = Vec::new();
     for d in &raw_dirs {
@@ -214,16 +223,19 @@ fn fit_cmd(args: &[String]) -> Result<(), String> {
             eprintln!("  narrow white-balance range: add tungsten-lit (indoor) and daylight photos for a better fit");
         }
     }
-    let mut looks: Vec<&str> = photos.iter().map(|p| p.look.as_str()).collect();
+    if editor != calibration::Editor::Lightroom && !ccts.is_empty() {
+        eprintln!("  (the exports carry Lightroom white-balance values; fitting to {} ignores them)", editor.name());
+    }
+    let mut looks: Vec<String> = photos.iter().map(|p| fit::look_name_for(editor, &p.look)).collect();
     looks.sort_unstable();
     looks.dedup();
-    eprintln!("calibrate-lightroom: looks: {}", looks.join(", "));
+    eprintln!("calibrate-lightroom: fitting to {} exports; looks: {}", editor.name(), looks.join(", "));
     if dry_run {
         eprintln!("calibrate-lightroom: dry run, nothing fitted or written");
         return Ok(());
     }
     eprintln!("calibrate-lightroom: fitting (this can take a few minutes)…");
-    let mut cal = fit::fit(&photos, &FitOptions { contributor, rounds: 0 }).map_err(|e| e.to_string())?;
+    let mut cal = fit::fit(&photos, &FitOptions { contributor, editor, rounds: 0 }).map_err(|e| e.to_string())?;
     cal.tool_version = env!("CARGO_PKG_VERSION").to_string();
     cal.validate().map_err(|e| format!("the fit produced an invalid calibration: {e}"))?;
     std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
@@ -263,7 +275,7 @@ fn fit_cmd(args: &[String]) -> Result<(), String> {
 
 /// Everything a calibration file holds, in words.
 fn print_contents(c: &Calibration) {
-    println!("{} {} — calibration matched to Lightroom", c.make, c.model);
+    println!("{} {} — calibration matched to {}", c.make, c.model, c.editor.name());
     if !c.aliases.is_empty() {
         println!("  also sold as: {}", c.aliases.join(", "));
     }
@@ -306,7 +318,7 @@ fn list() -> Result<(), String> {
     for c in all {
         let looks: Vec<String> =
             c.looks.iter().map(|l| format!("{} ({}{})", l.name, calibration::LOOK_PREFIX, calibration::look_id(&l.name))).collect();
-        println!("{} {}: {} photos; looks: {}", c.make, c.model, c.evidence.photos, looks.join(", "));
+        println!("{} {} ({}): {} photos; looks: {}", c.make, c.model, c.editor.name(), c.evidence.photos, looks.join(", "));
         for l in &c.evidence.looks {
             println!("  ΔE00 {}: median {:.2} → {:.2}, p95 {:.2} → {:.2}", l.name, l.before.median, l.after.median, l.before.p95, l.after.p95);
         }
@@ -363,7 +375,8 @@ fn with_attribution_row(table: &str, path: &str, c: &Calibration, today: &str) -
     let looks: Vec<&str> = c.looks.iter().map(|l| l.name.as_str()).collect();
     let by = c.contributor.as_deref().map(|n| format!(" by {}", n.replace('|', "/"))).unwrap_or_default();
     let row = format!(
-        "| `{path}` | {make} {model} camera calibration matched to Lightroom (colour model + looks: {looks}), built into the app | {who} | original work: black-box fit by `<cli> calibrate-lightroom` to {n} photos and their Lightroom exports{by}; aggregate statistics only, no image content; no Adobe profile data | {lic} | {today} | none |",
+        "| `{path}` | {make} {model} camera calibration matched to {editor} (colour model + looks: {looks}), built into the app | {who} | original work: black-box fit by `<cli> calibrate-lightroom` to {n} photos and their {editor} exports{by}; aggregate statistics only, no image content; no profile data of the editor's | {lic} | {today} | none |",
+        editor = c.editor.name(),
         make = c.make.replace('|', "/"),
         model = c.model.replace('|', "/"),
         looks = looks.join(", ").replace('|', "/"),
@@ -566,6 +579,7 @@ mod tests {
             make: "SONY".into(),
             model: "ILCE-7M4".into(),
             aliases: vec![],
+            editor: Default::default(),
             method: calibration::METHOD.into(),
             tool_version: "0".into(),
             contributor: Some("A Contributor".into()),
