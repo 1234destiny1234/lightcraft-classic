@@ -812,12 +812,34 @@ fn hdr_zoom_cache(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     });
 }
 
+/// The graphics interface GPU rendering uses: a choice on Windows only (DirectX 12 by default,
+/// whose shader compiler can make the start slow on some machines; Vulkan there is opt-in, issue
+/// #136). Elsewhere there is one sensible interface.
+fn gpu_backend_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
+    use crate::state::GpuBackend;
+    if !cfg!(target_os = "windows") {
+        return;
+    }
+    let opts = [(GpuBackend::Auto, crate::i18n::tr("Automatic")), (GpuBackend::Dx12, "DirectX 12"), (GpuBackend::Vulkan, "Vulkan")];
+    row(ui, t, crate::i18n::tr("Graphics interface"), |ui| {
+        choices(ui, "settingsGpuBackend", &opts, &mut app.ui.settings.gpu_backend);
+    });
+    hint(
+        ui,
+        t,
+        crate::i18n::tr(
+            "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.",
+        ),
+    );
+}
+
 fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use lcc_engine::gpu;
     heading(ui, t, crate::i18n::tr("Rendering"));
     #[cfg(target_os = "windows")]
     check(ui, "settings.composeWindow", &mut app.ui.settings.compose_window, "Prevent G-SYNC/FreeSync flicker (applies at next launch)");
     check(ui, "settings.gpu", &mut app.ui.settings.gpu, "Use the GPU for rendering");
+    gpu_backend_row(app, ui, t);
     check(ui, "settings.hdrDisplay", &mut app.ui.settings.hdr_display, "HDR display where the screen supports it (applies at next launch)");
     let status = if !gpu::available() {
         match gpu::unavailable_reason() {

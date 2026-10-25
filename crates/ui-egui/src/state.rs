@@ -410,6 +410,9 @@ pub struct AppSettings {
     pub close_dialogs_outside: bool,
     /// GPU rendering allowed (`app.gpu`).
     pub gpu: bool,
+    /// The graphics interface GPU rendering uses (Settings ▸ Performance; applies at next launch).
+    /// The window keeps the platform's own; `<PREFIX>_GPU_BACKEND` / `WGPU_BACKEND` win over it.
+    pub gpu_backend: GpuBackend,
     /// Windows DirectComposition to prevent VRR flicker; opt-in, applies at next launch.
     pub compose_window: bool,
     /// An HDR (extended-range) window where the display offers one; off: always an SDR window.
@@ -508,6 +511,30 @@ pub enum LightroomImport {
     AlwaysMerge,
 }
 
+/// The graphics interface for GPU rendering (`AppSettings::gpu_backend`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GpuBackend {
+    /// The platform default (DirectX 12 on Windows, Metal on macOS, Vulkan elsewhere).
+    #[default]
+    Auto,
+    /// DirectX 12 (Windows).
+    Dx12,
+    /// Vulkan: on Windows it builds the GPU's shaders much faster than DirectX 12 on some machines.
+    Vulkan,
+}
+
+impl GpuBackend {
+    /// The name `lcc_gpu::backend::set_compute_preference` takes.
+    pub fn name(self) -> &'static str {
+        match self {
+            GpuBackend::Auto => "auto",
+            GpuBackend::Dx12 => "dx12",
+            GpuBackend::Vulkan => "vulkan",
+        }
+    }
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         AppSettings {
@@ -520,6 +547,7 @@ impl Default for AppSettings {
             ask_before_move: true,
             close_dialogs_outside: false,
             gpu: true,
+            gpu_backend: GpuBackend::Auto,
             compose_window: false,
             hdr_display: true,
             preview_limit: 0,
