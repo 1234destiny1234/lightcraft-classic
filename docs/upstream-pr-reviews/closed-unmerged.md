@@ -15,7 +15,7 @@ Summary: 7 adopted, 6 to learn from, 161 skipped, of 174 reviewed.
 | #2528 | Control port: close gracefully so the peer reads the last reply (Windows reset) | SKIP | duplicate: already upstream via #2377, so in the fork |  |
 | #2480 | Local: no freeze on a slow share; list subfolders in parallel (4/4 of #2001) | SKIP | duplicate: folded into #2459 upstream (parallel subfolder listing) |  |
 | #2426 | test: fix folder-drop tests on Windows (widget ids use forward slashes) | SKIP | duplicate: folder-drop widget ids fixed by #1975 |  |
-| #2416 | Persistently ignore and restore face detections (catalog format 10) | LEARN | persistent Ignore Faces (catalog format 10): not in the fork; needs catalog-format work on the fork's catalog || [#526](https://github.com/emmertex/lightcraft-classic/pull/526) |
+| #2416 | Persistently ignore and restore face detections (catalog format 10) | LEARN | persistent Ignore Faces (catalog format 10): not in the fork; needs catalog-format work on the fork's catalog || fork #526 |
 | #2377 | Ci/cross platform tests | SKIP | duplicate: already upstream via #2667, so in the fork |  |
 | #2364 | Convert Negative: film-negative conversion from the Photo menu | LEARN | Convert Negative: not in the fork; upstream re-split it as the still-open #2490 chain || not ported: ~4000 lines and a new film crate that overlaps the fork's film-lab negative filter; the open re-split #2490 belongs to the open-PR review |
 | #2348 | Withdrawn: in-app CLIP/YOLO tagging | SKIP | withdrawn by its author; C++ ONNX models |  |
@@ -23,7 +23,7 @@ Summary: 7 adopted, 6 to learn from, 161 skipped, of 174 reviewed.
 | #2335 | fix(ci): cfg(unix) the staging-test import so Windows clippy passes | SKIP | split or folded upstream into #2334 (reviewed there) |  |
 | #2333 | feat: Lightroom-style straighten band, lock-aspect on A and press-started Guided Upright guides | SKIP | split or folded upstream into #2334 (reviewed there) |  |
 | #2292 | ui: scrollable profile menu | SKIP | duplicate: already upstream via #2069, so in the fork |  |
-| #2262 | LRC-DEV-PROCESS: process V3, over-range colors keep their hue and saturation | LEARN | over-range colours keep hue and saturation: not in the fork; needs its own process-version bump || [#523](https://github.com/emmertex/lightcraft-classic/pull/523) (as process V5) |
+| #2262 | LRC-DEV-PROCESS: process V3, over-range colors keep their hue and saturation | LEARN | over-range colours keep hue and saturation: not in the fork; needs its own process-version bump || fork #523 (as process V5) |
 | #2229 | engine: refuse malformed mask and spot targets | SKIP | duplicate: already upstream via #2101, so in the fork |  |
 | #2228 | engine: refuse fractional command indices | SKIP | duplicate: already upstream via #2100, so in the fork |  |
 | #2214 | Web: List every importable raw in the Import Photos picker (#2212) | SKIP | duplicate: #2430 merged the same picker change |  |
@@ -37,7 +37,7 @@ Summary: 7 adopted, 6 to learn from, 161 skipped, of 174 reviewed.
 | #2186 | Imported profiles: read and delete only the library's own copies in Profiles/ (#2123) | ADOPT | author abandoned it; imported profiles read/deleted only inside Profiles/ | fork #515 |
 | #2185 | Edit In: start only the editor set in Settings, never one a client names (#2115) | SKIP | duplicate: the fork fixed #2115 itself (b34d09c20, #479: Edit In starts only editors set in Settings) |  |
 | #2183 | engine: stop the export batch's lane queue on every scope exit (#2132) | SKIP | duplicate: already upstream via #2145, so in the fork |  |
-| #2182 | Decoder memory budgets: header-only GIF/BMP/JXL sizes, byte budgets, tile and lossy-JPEG limits (#2116, #2117, #2118, #2125) | LEARN | decoder byte budgets (GIF/BMP/JXL headers, tile budget, lossy JPEG): conflicts with fork codecs/raw throughout; re-implement as a follow-up || [#527](https://github.com/emmertex/lightcraft-classic/pull/527) (codecs side; raw batching/lossy JPEG on the upstream-learn2 branch) |
+| #2182 | Decoder memory budgets: header-only GIF/BMP/JXL sizes, byte budgets, tile and lossy-JPEG limits (#2116, #2117, #2118, #2125) | LEARN | decoder byte budgets (GIF/BMP/JXL headers, tile budget, lossy JPEG): conflicts with fork codecs/raw throughout; re-implement as a follow-up || fork #527 (codecs side; raw batching/lossy JPEG on the upstream-learn2 branch) |
 | #2171 | mcp: file-writing helpers report destructiveHint: true (#2139) | SKIP | duplicate: already upstream via #2152, so in the fork |  |
 | #2167 | M12: SAM 3 on the GPU outside macOS (wgpu): a photo's analysis ~33 → ~0.6 s, a description ~5 → ~0.5–0.7 s | SKIP | split or folded upstream into #2533 (reviewed there) |  |
 | #2163 | LR-PREF-INTERFACE: grid badges on Stars on hover keep flags and labels on every tile, stars only on hover or selection | SKIP | split or folded upstream into #2164 (reviewed there) |  |
