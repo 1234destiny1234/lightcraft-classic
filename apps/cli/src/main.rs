@@ -13,6 +13,7 @@
 //! <cli> commands [--json]
 //! <cli> controls [--json]
 //! <cli> calibrate [--max N] [--out DIR] FOLDERS/FILES…
+//! <cli> calibrate-lightroom preset|fit|add|list|verify …
 //! <cli> camdb extract [--contributor NAME] NATIVE.dng…
 //! <cli> camdb show MAKE MODEL
 //! ```
@@ -20,6 +21,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod alloc_release;
+mod calibrate_lightroom;
 mod catalog_migrate;
 mod run_action;
 mod sync_folder;
@@ -130,6 +132,19 @@ USAGE:
       model, written as <model>.json to DIR (default: the profiles folder {app} reads,
       <config>/camera-profiles, or ${P}_CAMERA_PROFILES). Raws of a profiled model then
       take their colour from the profile and only their tone from their own JPEG.
+  {cli} calibrate-lightroom preset -o FILE.xmp
+      Write the baseline Lightroom preset to apply (on virtual copies) before exporting for a fit.
+  {cli} calibrate-lightroom fit --raws DIR… --exports DIR… [-o OUTDIR] [--contributor NAME] [--dry-run]
+      Fit a camera's colour model and looks to Lightroom's exports of your own raws (16-bit TIFF, one export
+      folder per Lightroom profile). Writes <Make>_<Model>.json (the file to send: numbers only, no images) and
+      one .dcp per look for your own testing. --dry-run pairs and reports coverage without fitting.
+  {cli} calibrate-lightroom add FILE [--repo DIR] [--contributor NAME]
+      Developers: validate a contributed calibration, write it to crates/camdb/data/calibrations/ and add its
+      assets/ATTRIBUTION.md row (DIR: the repository root, default .).
+  {cli} calibrate-lightroom list
+      The calibrations built into this binary, with their looks and held-out colour error.
+  {cli} calibrate-lightroom verify --catalog X.lrcat --exports DIR
+      Whole-pipeline check against an edited catalogue (not available yet).
   {cli} camdb extract [--contributor NAME] NATIVE.dng…
       Print camera database entries (TOML, for data/cameras/<maker>.toml in the camdb crate) from DNGs the
       camera wrote itself. DNGs written by Adobe software or by {app}'s own export are refused.
@@ -218,6 +233,7 @@ fn main() -> ExitCode {
         Some("denoise-serve") => denoise_serve(&args[1..]),
         Some("calibrate") => calibrate(&args[1..]),
         Some("camdb") => camdb(&args[1..]),
+        Some("calibrate-lightroom") => calibrate_lightroom::run(&args[1..]),
         Some("--version" | "-V" | "version") => {
             println!("{CLI} {}", env!("CARGO_PKG_VERSION"));
             Ok(())

@@ -277,12 +277,16 @@ into its DNG colour data, so the input transform interpolates them by the invers
 Measured entries (`native-dng`, `chart`, `manufacturer-doc`) come before the JPEG fit (step 2); spectral ones keep
 their place (step 5); level overrides apply in every case.
 
-Data rules: no Adobe DCP/LCP data, no matrices from Adobe-converted DNGs, no tables from GPL projects (dcraw's
+Data rules: no Adobe DCP/LCP data, no matrices from Adobe-converted DNGs, no Adobe-rendered pixels, no tables from GPL projects (dcraw's
 `adobe_coeff` and its descendants, darktable, RawTherapee). `<cli> camdb extract NATIVE.dng…` prints entries from DNGs
 a camera wrote itself and refuses DNGs whose `Software` tag names Adobe software (DNG Converter, Lightroom, Camera Raw,
 Photoshop), the app's own DNG export, or is missing. `<cli> camdb show MAKE MODEL` prints the entry a camera resolves
 to. A native DNG's matrices help that model's other raw format (a Pentax body's PEF files, say), whose files carry
 none. The database has no TOML entries yet.
+
+Calibrations matched to Lightroom (`crates/camdb/data/calibrations/`, maintainer decision 2026-10-25) are the one
+place Lightroom informs the numbers: black-box fits to Lightroom's *output images* of a contributor's own photos,
+shipped as aggregate statistics only ([calibrate-lightroom.md](calibrate-lightroom.md)). None is bundled yet.
 ### Calibrated camera colour (the photo's choice)
 
 The order above is the photo's **Auto** Camera colour. For a raw without matrices of its own whose model has spectral

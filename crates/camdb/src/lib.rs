@@ -18,7 +18,9 @@
 //!
 //! **Data rules.** No Adobe DCP/LCP profile data, no matrices taken from Adobe-converted DNGs (the `Software` tag is
 //! checked by [`extract`]), no data from GPL projects (dcraw's `adobe_coeff` table and its descendants, darktable,
-//! RawTherapee). Every entry names its source.
+//! RawTherapee). Every entry names its source. The one place Lightroom informs numbers is [`calibration`]:
+//! black-box fits to Lightroom's *output images* of a contributor's own photos, shipped as aggregate statistics only
+//! (maintainer decision 2026-10-25); Adobe-rendered pixels never ship.
 //!
 //! ```toml
 //! [[camera]]

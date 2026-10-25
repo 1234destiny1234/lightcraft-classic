@@ -1,6 +1,6 @@
 # Roadmap: milestones, current focus and what's next
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-21 · **Change:** minor (M15 status: CMYK won't do, publish keys and tethering hardware blocking) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-25 · **Change:** minor (item 1: Lightroom-matched calibration tool, data rule amended); minor (M15 status: CMYK won't do, publish keys and tethering hardware blocking) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Forward-looking plan. The summary with the headline numbers is [ROADMAP.md](../ROADMAP.md); the
 ranked shortfalls are [gaps.md](gaps.md); the numbers come from [target-app-parity.md](target-app-parity.md).
@@ -11,9 +11,10 @@ The app has no `cargo xtask scorecard`; the measured checklist is
 
 Toward **beta** (~340–600 Opus 5.5 agent hours; ranked, each a gap in [gaps.md](gaps.md)):
 
-1. **Camera colour of our own** (gap 1, 50–90 h): chart-based calibration for the most-used models,
-   building on the per-file JPEG fits and pooled profiles (`lcc-cli calibrate`); never Adobe
-   data.
+1. **Camera colour of our own** (gap 1, 50–90 h): calibration for the most-used models, building on
+   the per-file JPEG fits and pooled profiles (`<cli> calibrate`) and on black-box fits to Lightroom's exports of
+   contributors' own photos (`<cli> calibrate-lightroom`, maintainer decision 2026-10-25); never Adobe profile files,
+   matrices or pixels.
 2. **CR3 for every Canon body** (gap 2, 25–45 h): the remaining CRX variants, sRAW / mRAW, HEIF CR3;
    clean-room from prose descriptions (decided 2026-10-05; compressed NEF is the template).
 3. **Render-fidelity suite** (gap 3, 30–60 h): score our output against Lightroom's on the same CC0
@@ -84,7 +85,8 @@ calibration: M0–M13 took ≈ 25 active hours against an estimate of ≈ 110–
 - **AI features** (subject / sky / people masks, generative remove) need model weights with
   licences we can ship; classical fallbacks first. No permissively licensed sky-segmentation or
   raw-denoise model was found; we may need to train our own.
-- **Camera colour and lens data** is a data problem: we never use Adobe's matrices, DCPs or LCPs.
+- **Camera colour and lens data** is a data problem: we never use Adobe's matrices, DCPs or LCPs
+  (aggregate fits to Lightroom's output images of contributors' own photos are allowed, 2026-10-25).
   DNG-embedded data first, then our own calibration; long-tail coverage grows over time and needs
   people with cameras, lenses and charts.
 - **Raw-format sources:** decoders are written from prose format descriptions (even ones published

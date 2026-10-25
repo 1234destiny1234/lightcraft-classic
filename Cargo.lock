@@ -4587,15 +4587,18 @@ dependencies = [
 name = "lcc-cli"
 version = "26.43.6"
 dependencies = [
+ "chrono",
  "dhat",
  "lcc-brand",
  "lcc-camdb",
  "lcc-codecs",
+ "lcc-colourfit",
  "lcc-denoise",
  "lcc-engine",
  "lcc-mcp",
  "lcc-merge",
  "lcc-raster",
+ "lcc-raw",
  "lcc-scenes",
  "lcc-sysmem",
  "lcc-testkit",
