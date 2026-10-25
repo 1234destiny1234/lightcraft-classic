@@ -855,12 +855,9 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(json!({"infoOverlay": app.ui.info_overlay}))
         }
         "view.viewOptions" => {
-<<<<<<< HEAD
-            // `info1` / `info2` set the lines, and `briefly` sets the Info that Show Briefly When Photo
-            // Changes shows, for an agent; without them the window opens
-=======
-            // `info1`, `info2` and `loupeMessages` set the options for an agent; without any of them the window opens
->>>>>>> a4ddb9198 (LRC-DEV-VIEWOPTIONS: View Options can turn off the loupe's "Rendering…" message)
+            // `info1` / `info2` set the lines, `briefly` the Info that Show Briefly When Photo Changes
+            // shows, and `loupeMessages` the loading / rendering message, for an agent; without any of
+            // them the window opens
             let mut info = app.ui.settings.loupe_info;
             let mut set = false;
             // `loupeMessages` sets Show message when loading or rendering photos
