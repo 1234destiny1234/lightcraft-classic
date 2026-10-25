@@ -266,6 +266,8 @@ pub struct Updater {
     job: Option<Job>,
     /// Whether this copy runs from an AppImage, the only kind an AppImage update can replace.
     appimage: bool,
+    /// Whether this copy was installed by a package manager (a .deb, .rpm, …), which owns its updates.
+    package_managed: bool,
 }
 
 impl Default for Updater {
@@ -296,6 +298,7 @@ impl Updater {
             error: None,
             job: None,
             appimage: lcc_updater::runs_from_appimage(),
+            package_managed: package_managed(std::env::var_os("APPIMAGE").as_deref(), std::env::current_exe().ok().as_deref()),
         }
     }
 
@@ -453,6 +456,12 @@ impl Updater {
         }
         if let Check::Found(a) = &self.check {
             v["available"] = available_json(a, self.key.is_some());
+            // an AppImage can't replace a copy installed another way: the dialog sends people to
+            // their package manager (or the release page) instead of offering a download that fails
+            if a.kind == Kind::AppImage && !self.appimage {
+                v["available"]["selfUpdate"] = json!(false);
+                v["available"]["packageManaged"] = json!(self.package_managed);
+            }
         }
         match &self.progress {
             Progress::Running { bytes, total } => v["progress"] = json!({"bytes": bytes, "total": total}),
@@ -660,10 +669,17 @@ impl Updater {
             return Err("that release offers no file for this system".into());
         }
         if available.kind == Kind::AppImage && !self.appimage {
-            let why = format!(
-                "this copy of the app was not installed from an AppImage, so version {} can't replace it; update it the way it was installed (your package manager, or the releases page)",
-                available.version
-            );
+            let why = if self.package_managed {
+                format!(
+                    "this copy of the app was installed by a package manager, so version {} can't replace it from here; install it through your package manager (or from the releases page)",
+                    available.version
+                )
+            } else {
+                format!(
+                    "this copy of the app was not installed from an AppImage, so version {} can't replace it; update it the way it was installed (your package manager, or the releases page)",
+                    available.version
+                )
+            };
             // the dialog shows why, instead of fetching a file it can't install
             self.progress = Progress::Failed(why.clone());
             return Err(why);
@@ -862,6 +878,24 @@ fn available_json(a: &Available, verified: bool) -> Value {
         "page": release_page(&a.tag),
         "kind": a.kind.text(),
     })
+}
+
+/// Whether a Linux copy was installed by a package manager: it does not run from an AppImage
+/// (`appimage`, the runtime's `$APPIMAGE`, is unset or empty) and its executable lives in a
+/// system prefix a package owns (`/usr/`, `/opt/`, Flatpak's `/app/`, a Nix store). Inputs are
+/// passed in so tests don't depend on how the test binary was installed.
+pub fn package_managed(appimage: Option<&std::ffi::OsStr>, exe: Option<&Path>) -> bool {
+    if appimage.is_some_and(|v| !v.is_empty()) {
+        return false;
+    }
+    let Some(exe) = exe else {
+        return false;
+    };
+    // `/usr/local` is where hand installs (`make install`, `cargo install --root`) go
+    if exe.starts_with("/usr/local") {
+        return false;
+    }
+    ["/usr", "/opt", "/app", "/nix/store", "/snap"].iter().any(|prefix| exe.starts_with(prefix))
 }
 
 /// `<repository>/releases/tag/<tag>`: where the release can be downloaded by hand. A tag that is

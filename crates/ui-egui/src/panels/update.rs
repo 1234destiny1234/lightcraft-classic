@@ -133,7 +133,18 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui) {
             if let Some(action) = a["action"].as_str() {
                 ui.label(egui::RichText::new(tr_format!("Installing it will {action}.", action = action)).color(t.text_label));
             }
-            if a["verified"].as_bool().unwrap_or(false) {
+            let self_update = a["selfUpdate"].as_bool().unwrap_or(true);
+            if !self_update {
+                // installed by a package manager or by hand: this copy can't replace itself
+                let how = if a["packageManaged"].as_bool().unwrap_or(false) {
+                    tr("{app} was installed by your package manager: install the update through it, or get it from the release page.")
+                } else {
+                    tr(
+                        "This copy of {app} wasn't installed from an AppImage, so it can't update itself: install the update the way you installed {app}, or get it from the release page.",
+                    )
+                };
+                ui.label(egui::RichText::new(how).color(t.text_label));
+            } else if a["verified"].as_bool().unwrap_or(false) {
                 ui.label(
                     egui::RichText::new(tr("The download is checked against the release's SHA-256 before anything is installed."))
                         .font(t.font(11.0))
@@ -236,7 +247,8 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui) {
         if button(ui, "button:updateCheck", tr("Check Again")) && !checking {
             let _ = app.session.execute("update.check", &json!({}));
         }
-        let can_verify = status["available"]["verified"].as_bool().unwrap_or(false);
+        // a copy that can't replace itself is sent to the release page, never offered a download
+        let can_verify = status["available"]["verified"].as_bool().unwrap_or(false) && status["available"]["selfUpdate"].as_bool().unwrap_or(true);
         if check == "found"
             && !can_verify
             && button(ui, "button:updateReleasePage", tr("Open the Release Page"))
