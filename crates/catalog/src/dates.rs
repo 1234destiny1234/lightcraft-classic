@@ -108,6 +108,10 @@ fn tail_start(iso: &str) -> Option<usize> {
 /// Normalize user input to `YYYY-MM-DDTHH:MM:SS` (accepts a space instead of `T`, missing
 /// seconds or time). `None` if it isn't a valid date.
 pub fn normalize_iso(s: &str) -> Option<String> {
+    // longer than the bare date means a full `HH:MM`: a truncated time is not a date (iso_seconds stays lenient)
+    if (11..16).contains(&s.trim().len()) {
+        return None;
+    }
     let t = iso_seconds(s)?;
     let out = civil(t);
     // reject impossible dates that the arithmetic silently rolls over (2026-02-30)
