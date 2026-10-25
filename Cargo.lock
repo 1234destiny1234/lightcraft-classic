@@ -4558,6 +4558,7 @@ dependencies = [
  "chrono",
  "crc32fast",
  "lcc-brand",
+ "lcc-camdb",
  "lcc-develop",
  "lcc-fuzzkit",
  "lcc-geo",

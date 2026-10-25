@@ -461,7 +461,8 @@ pub fn relative_wb_format(format: &str) -> bool {
 /// white-balance presets to read Kelvin from. A camera with matrices in `lcc_raw::spectral` edits in Kelvin:
 /// the matrices turn its as-shot multipliers into a temperature, and the slider back, while its colour look stays
 /// whatever the file's fit gives (upstream #730). A camera in `lcc_raw::kelvin_presets` does the same through
-/// its own presets. The engine's render path (`files.rs`) decides the same way from the file; both must agree.
+/// its own presets, and a camera with matrices in the camera database (`lcc_camdb`: dcraw's table and others)
+/// through those. The engine's render path (`files.rs`) decides the same way from the file; both must agree.
 pub fn relative_wb_camera(format: &str, camera: &str) -> bool {
     relative_wb_camera_as(format, camera, "")
 }
@@ -473,6 +474,7 @@ pub fn relative_wb_camera_as(format: &str, camera: &str, choice: &str) -> bool {
         && lcc_raw::dcp::resolve_camera(choice, camera).is_none()
         && lcc_raw::spectral::find_camera(camera).is_none()
         && !lcc_raw::kelvin_presets::covers_camera(camera)
+        && !lcc_camdb::has_matrices_camera(camera)
 }
 
 /// This build's version: what a photo's [`Photo::preview_checked`] stamp is compared with. Every
@@ -846,11 +848,12 @@ mod edited_tests {
             ("Canon Canon EOS R6m2", "CR3", false),
             ("Canon Canon EOS R6 Mark II", "CR3", false),
             ("Canon Canon EOS R7", "CR3", false),
-            ("Canon Canon EOS 20D", "CR2", true),
+            ("Canon Canon EOS 20D", "CR2", false),
+            ("Canon Canon EOS 2Z", "CR2", true),
             ("Panasonic DMC-GX85", "RW2", false),
             ("LEICA CAMERA AG D-LUX 7", "RWL", false),
             ("RICOH PENTAX K-3 Mark III", "PEF", false),
-            ("SONY DSC-R1", "ARW", true),
+            ("SONY DSC-R1", "ARW", false),
             ("FUJIFILM X-T4", "RAF", false),
             ("ILCE-7M3", "ARW", false),
             ("SONY ILCE-7M2", "ARW", false),
@@ -859,8 +862,10 @@ mod edited_tests {
             ("SONY ILCE-1", "ARW", false),
             ("SONY ILCE-1M2", "ARW", false),
             ("SONY ZV-E10M2", "ARW", false),
-            // the Sony bodies without presets, and a Sony sensor sold under another name
-            ("SONY DSLR-A100", "ARW", true),
+            // a Sony body only dcraw's matrix table covers: Kelvin through it
+            ("SONY DSLR-A100", "ARW", false),
+            ("Canon Canon EOS 350D DIGITAL", "CR2", false),
+            // a body no table covers, and a Sony sensor sold under another name
             ("HASSELBLAD Lunar", "ARW", true),
             ("", "ARW", true),
             ("SONY ILCE-7M3", "DNG", false),

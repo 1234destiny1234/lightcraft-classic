@@ -233,6 +233,34 @@ impl Entry {
         lcc_raw::color::camera_to_xyz_d50(&self.color_data(), white)
     }
 
+    /// Write this entry's matrices into `color` when it has none of its own (levels untouched); whether it did.
+    pub fn fill(&self, color: &mut ColorData) -> bool {
+        if lcc_raw::color::has_matrix(color) || !lcc_raw::color::has_matrix(&self.color_data()) {
+            return false;
+        }
+        color.illuminant = self.illuminants;
+        color.color_matrix = self.color_matrix;
+        color.forward_matrix = self.forward_matrix;
+        true
+    }
+
+    /// The as-shot white of a file through this entry's matrices instead of the file's own colour tags, as
+    /// [`lcc_raw::spectral::as_shot_white_through`] reads it: `None` when the file names no white (no
+    /// `AsShotNeutral`, no usable multipliers) or the entry has no matrices.
+    pub fn as_shot_white_through(&self, color: &ColorData, wb_multipliers: Option<[f32; 3]>) -> Option<Xy> {
+        if color.as_shot_white_xy.is_none()
+            && color.as_shot_neutral.is_none()
+            && wb_multipliers.is_none_or(|m| m.iter().any(|v| !(*v > 0.0 && v.is_finite())))
+        {
+            return None;
+        }
+        let mut c = ColorData { profile: Default::default(), ..color.clone() };
+        if !self.fill(&mut c) && !lcc_raw::color::has_matrix(&c) {
+            return None;
+        }
+        Some(lcc_raw::color::as_shot_white_of(&c, wb_multipliers))
+    }
+
     /// Give `raw` this entry's data: the matrices when the file has none of its own, and the level overrides.
     pub fn apply(&self, raw: &mut RawImage) -> Applied {
         let mut applied = Applied::default();
@@ -362,6 +390,23 @@ pub fn find(make: Option<&str>, model: &str) -> Option<Entry> {
     }
 }
 
+/// [`find`] for a camera written as one string, Exif make and model joined by a space (the catalog keeps
+/// `"SONY ILCE-7M3"`, `"NIKON CORPORATION NIKON D850"`): every split into make and model is tried, then the whole
+/// string as a model alone, as [`lcc_raw::spectral::find_camera`] does.
+pub fn find_camera(camera: &str) -> Option<Entry> {
+    let words: Vec<&str> = camera.split_whitespace().collect();
+    if words.is_empty() {
+        return None;
+    }
+    (1..words.len()).find_map(|i| find(Some(&words[..i].join(" ")), &words[i..].join(" "))).or_else(|| find(None, camera))
+}
+
+/// Whether the best entry for a camera (one string, as [`find_camera`] takes it) has colour matrices: then a raw of
+/// it can read its as-shot white balance in Kelvin.
+pub fn has_matrices_camera(camera: &str) -> bool {
+    find_camera(camera).is_some_and(|e| lcc_raw::color::has_matrix(&e.color_data()))
+}
+
 /// Every entry: the embedded files, then the spectral table.
 pub fn entries() -> Vec<Entry> {
     embedded().iter().cloned().chain(lcc_raw::spectral::cameras().iter().map(spectral_entry)).collect()
@@ -372,11 +417,18 @@ fn brand(make: &str) -> String {
     make.split_whitespace().next().unwrap_or_default().to_uppercase()
 }
 
-/// A model name without case and a leading brand word ("LEICA Q2" → "Q2").
+/// A model name without case, a leading brand word, a leading `EOS` or a trailing `DIGITAL` ("LEICA Q2" → "Q2";
+/// Exif "Canon EOS 400D DIGITAL" and dcraw's "EOS 400D" → "400D"), as [`lcc_raw::spectral`] compares them.
 fn key(brand: &str, model: &str) -> String {
     let mut words: Vec<String> = model.split_whitespace().map(str::to_uppercase).collect();
     if words.len() > 1 && words.first().is_some_and(|w| *w == brand) {
         words.remove(0);
+    }
+    if words.len() > 1 && words.first().is_some_and(|w| w == "EOS") {
+        words.remove(0);
+    }
+    if words.len() > 1 && words.last().is_some_and(|w| w == "DIGITAL") {
+        words.pop();
     }
     words.join(" ")
 }
@@ -557,6 +609,23 @@ provenance = { source = "native-dng", detail = "Software: X1 1.0" }
         assert_eq!(k5.provenance.source, Source::Dcraw);
         assert!(find(Some("PENTAX Corporation"), "PENTAX K-5").is_some());
         assert!(find(Some("KONICA MINOLTA"), "DYNAX 7").is_some());
+    }
+
+    /// The catalog's one-string camera finds what `find` finds for its parts, and Canon's Exif names reach dcraw's
+    /// shorter ones.
+    #[test]
+    fn one_string_cameras_and_canon_names_resolve() {
+        let e = find_camera("Canon Canon EOS 350D DIGITAL").unwrap();
+        assert_eq!(e.provenance.source, Source::Dcraw);
+        assert_eq!(find(Some("Canon"), "Canon EOS 350D DIGITAL"), Some(e));
+        // a model both have: the spectral row, through its alias
+        assert_eq!(find_camera("Canon Canon EOS 400D DIGITAL").map(|e| e.provenance.source), Some(Source::SpectralSensitivities));
+        assert_eq!(find_camera("NIKON CORPORATION NIKON D3").map(|e| e.model), find(Some("NIKON CORPORATION"), "NIKON D3").map(|e| e.model));
+        assert!(has_matrices_camera("NIKON CORPORATION NIKON D3"));
+        assert!(has_matrices_camera("SONY ILCE-7M3"), "spectral rows count too");
+        assert!(!has_matrices_camera("NIKON CORPORATION NIKON Z 99"));
+        assert!(!has_matrices_camera(""));
+        assert!(!has_matrices_camera("   "));
     }
 
     /// Every listed camera is found again by its own Exif strings (and its aliases), under the right make, and
