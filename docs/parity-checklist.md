@@ -935,6 +935,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-26 | patch | LR-IMP-FORMATS: hot-pixel suppression takes each noise bin's median by selection instead of a sort (bit-identical medians; 10–15 % of that step); status unchanged |
 | 2026-10-26 | minor | LRC-LIB-LIBFOLDERS: a Folders folder's or disk's menu has Export Folder… and Export Folder with Preset ▸ (upstream #2956); status unchanged (✅) |
 | 2026-10-26 | minor | LRC-LIB-LIBFOLDERS: Copy Path in every folder menu; a disk's row gains Show in Finder and New Folder on Disk…, a Local row New Folder on Disk…; a folder can be made in a disk's root (upstream #2959); status unchanged (✅) |
 | 2026-10-26 | minor | LR-EDIT-DETAIL-DENOISE: AI Denoise follows Auto Sync in one undo step, starts at import above an ISO, and shows one batch row (upstream #2932); status unchanged (🟡) |
