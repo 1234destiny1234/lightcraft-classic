@@ -48,7 +48,8 @@ fn filter_id() -> Id {
 
 /// A candidate already in the library, a copy of another in this import, or in Recently Deleted.
 fn is_dup(d: &ImportDialog, i: usize) -> bool {
-    d.candidates.get(i).is_some_and(|c| c.duplicate.is_some()) || d.is_trashed(i)
+    // (a browsed photo isn't offered while copying: it counts as already there)
+    d.candidates.get(i).is_some_and(|c| c.duplicate.is_some()) || d.is_trashed(i) || (d.copy && d.is_browsed(i))
 }
 
 /// How many photos the button imports.
@@ -581,6 +582,14 @@ fn options(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
         let r = ui.add(egui::TextEdit::singleline(&mut d.keywords).hint_text(crate::i18n::tr("comma, separated")).desired_width(f32::INFINITY));
         register(ui.ctx(), "field:importKeywords", r.rect);
     });
+    if d.options_skip_browsed() {
+        let t = Tokens::get(ui.ctx());
+        ui.label(
+            egui::RichText::new(crate::i18n::tr("Keywords and presets apply to new files only, not to photos already in Local"))
+                .color(t.text_dim)
+                .small(),
+        );
+    }
     let mut albums = crate::album_picker::entries_from(&app.session.catalog, |_| None);
     albums.retain(|a| a.folder || !a.smart);
     d.album = d.album.filter(|id| albums.iter().any(|a| a.id == *id && !a.folder));
