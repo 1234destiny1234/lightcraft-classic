@@ -743,7 +743,6 @@ fn ctrl_shift_arrows_extend_the_grid_selection_and_keep_the_rest() {
     assert!(h.app.session.selection.ids.len() >= 2);
 }
 
-
 /// Shift+Left / Shift+Right belong to the grid: while the full-screen preview covers it they leave
 /// the selection alone. (Home / End are Library module keys in the Classic set and step to the
 /// first / last photo there too.)
