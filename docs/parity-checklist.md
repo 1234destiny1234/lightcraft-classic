@@ -934,6 +934,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-25 | patch | LR-IMP-FORMATS: Nikon HE slices, component wavelets and the inverse Star-Tetrix (own row-parallel version, bit-exact with `oxideav-jpegxs`'s) run in parallel: Z f HE raw decode 1009 → 127 ms, same samples; status and counts unchanged |
 | 2026-10-26 | minor | LR-EDIT-GEOM-UPRIGHT ✅ → 🟡 (upstream #2966): posts among people are corrected, long lines decide, a mode that finds nothing says why; tuned on a limited set of real frames |
 | 2026-10-26 | patch | LR-IMP-FORMATS: compressed Samsung SRW find their colour-filter layout from the embedded JPEG with a 256-entry linearisation table instead of a `powf` per preview sample (same result): NX500 raw decode 1434 → 406 ms (fork #503); status and counts unchanged |
 | 2026-10-26 | minor | LR-EDIT-OPTICS-PROFILE: Develop ▸ Lens Corrections names the profile it applies (or the file's own correction) and picks a lens per photo (Make → Model, focal length for photos without one; `lens.choose`; not in XMP yet; issue #307); status unchanged |
