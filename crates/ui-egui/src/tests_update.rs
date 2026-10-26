@@ -165,7 +165,7 @@ fn a_startup_check_that_found_a_release_waits_until_the_dialog_is_opened() {
     h.step();
     assert_eq!(h.app.ui.dialog, None, "a start-up check never opens a window");
     assert!(h.app.ui.update_pending.is_none(), "the announcement is made once");
-    assert!(h.app.ui.toast.is_some(), "it says so instead");
+    assert!(h.app.ui.toast().is_some(), "it says so instead");
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn a_startup_check_respects_skipped_version() {
     h.step();
     assert_eq!(h.app.ui.dialog, None);
     assert!(h.app.ui.update_pending.is_none());
-    assert!(h.app.ui.toast.is_none(), "skipped version is not toasted");
+    assert!(h.app.ui.toast().is_none(), "skipped version is not toasted");
 }
 
 #[test]
@@ -633,7 +633,7 @@ impl Drop for ReadOnly {
 
 #[cfg(unix)]
 fn toast_text(h: &Headless) -> String {
-    h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default()
+    h.app.ui.toast().map(|t| t.0.clone()).unwrap_or_default()
 }
 
 #[cfg(unix)]
