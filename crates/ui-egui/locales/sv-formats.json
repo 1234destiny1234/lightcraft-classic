@@ -303,5 +303,12 @@
   "Where should the Lightroom catalog “{catalog}” go?": "Vart ska Lightroom-katalogen ”{catalog}” importeras?",
   "Merge into the open library “{library}” ({count} photo{})": "Slå samman med det öppna biblioteket ”{library}” ({count} foto{:.0})",
   "{n} folder{} could not be read": "Mappar som inte gick att läsa: {n}{:.0}",
-  "{n} file{} skipped (not a supported photo type)": "Hoppade över filer (fotoformat som inte stöds): {n}{:.0}"
+  "{n} file{} skipped (not a supported photo type)": "Hoppade över filer (fotoformat som inte stöds): {n}{:.0}",
+  "about {h} h {m} min left": "cirka {h} h {m} min kvar",
+  "about {n} min left": "cirka {n} min kvar",
+  "Adjustments: {n}": "Justeringar: {n}",
+  "{n} done": "{n} klara",
+  ", {n} failed": ", {n} misslyckades",
+  "{n} failed": "{n} misslyckades",
+  "Show each photo ({n})": "Visa varje foto ({n})"
 }
