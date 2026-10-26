@@ -3,7 +3,7 @@
 Non-merge commits on upstream `main` that the fork lacked, judged one by one (policy: no merges, cherry-pick what
 helps; `docs/upstream-merge.md`).
 
-**Reviewed up to:** upstream/main `522beb0c3e6a8521c8298c16209f7db3d84d2608` (2026-10-26), against fork main `a52c9de11` (first pass: `31ec62cd0`, 2026-10-25).
+**Reviewed up to:** upstream/main `c7961df10bbce71667b9026a99ba9fca3673ec27` (2026-10-26), against Chromaforge main `be53dd149` (previous pass: `522beb0c3` against `a52c9de11`) (first pass: `31ec62cd0`, 2026-10-25).
 
 Taken commits are cherry-picked with `-x`; crate and app-struct names were rewritten to the fork's, upstream's file
 `format` tag for print templates went into `crates/engine/src/legacy.rs` (as for slideshow templates), and doc rows
@@ -47,6 +47,33 @@ Taken commits are cherry-picked with `-x`; crate and app-struct names were rewri
 | 0c71f7532 | security(heif): scan the primary item before heic_rs::probe, the alpha plane, and each thumbnail candidate | taken | clean pick |
 | 3022baa86 | security(raw,meta): follow-ups from review | taken | deflate row size now follows the bit packing (`packed_row_bytes`, u64); CR3 preview walk skips an over-budget JPEG instead of stopping; the fork's `get`-based slicing and its lossy-JPEG test kept |
 | 522beb0c3 | build: pin craft-update to craft-libs main (495e597) (#2990) | skipped | craft-update pin (see 2b9317519) |
+| 5ce171da2 | Docking: the workspace, its commands and their parser come from craft-ui (craft-libs 16fb3d4) | taken | Chromaforge PR #612; renames, `show_toast`, the settings writer's issue-#44 fallback kept; the new drag-bar test left out (Classic frames draw no group bar) |
+| c964b7f65 | Docking: a dragged divider beside Library or Tools keeps that panel's width | taken | Chromaforge PR #612 |
+| a70d7638a | Docking: repin craft-libs 1774443; a dragged divider keeps its panel's width without app code | taken | Chromaforge PR #612 |
+| 5b7a4e9a9 | Docs: ui.dock move lists the tab, above and below zones | taken | Chromaforge PR #612 |
+| a27d8c05d | Docs: ui.dock above and below name the target's group | taken | Chromaforge PR #612 |
+| b2f624631 | Docking: repin craft-libs 6e7f285 (the docking follow-ups) | taken | Chromaforge PR #612 |
+| ee1576682 | Docking: a drop at the window's edge makes no dock column | taken | Chromaforge PR #612; its drag test left out |
+| e442e3d22 | Docking: a panel with no recorded place opens beside the photo on its side | taken | Chromaforge PR #612 |
+| 63ab09257 | View: F8 on a right panel that isn't showing brings it forward in its mode | skipped | Chromaforge's F8 is its own (`right_collapsed` fold of the Classic right side); upstream's hide/restore branch it patches is gone here |
+| 1e4cc14df | Docking: group and window menu labels go through tr() in sentence case | taken | Chromaforge PR #612 |
+| 02aa1e0f5 | Docs: only the five split zones of ui.dock move have PascalCase names | taken | Chromaforge PR #612 |
+| 8e16c05cb | Docking: a panel whose saved place is gone opens beside the photo on its side | taken | Chromaforge PR #612 |
+| e8588b925 | Docking: repin craft-ui and craft-docpath to craft-libs 8a503cf | taken | Chromaforge PR #612 |
+| 4e6c210a5 | Docking: repin craft-ui and craft-docpath to craft-libs 4dc543c | taken | Chromaforge PR #612 (Chromaforge's craft-ui pin stops here) |
+| 8ae15d4f5 | Docking: side panels in dock columns; saved split-frame layouts reset once | deferred | moves Library/Tools out of the Classic side frames into dock columns and resets every saved layout once (the upstream #2839 change skipped before); see *Docking after 4dc543c* below |
+| b477efd3d | Docking: repin craft-ui and craft-docpath to craft-libs b6d35e2 | deferred | needs 8ae15d4f5 |
+| 4bc5d2b58 | Docking: the web app resets a saved split-frame layout once too | deferred | needs 8ae15d4f5 |
+| 577b6cfce | Top bar: the title-bar drag uses craft-window's title_bar, and a panel over the bar keeps the window still on macOS | deferred | egui 0.37 no longer blocks it (craft-window at ea4c823/5bbe9f6 is on egui 0.36), but Chromaforge's top bar diverged (search-field press handling, own `titlebar.rs`): a hand port plus a windowed check of drag and double-click on macOS, Windows and Linux |
+| 19ab82147 | Top bar: repin craft-window to craft-libs 4093ea4; the title bar is announced from empty_area's response | deferred | with 577b6cfce |
+| 901a115bf | Top bar: repin craft-window to craft-libs main ea4c823 | deferred | with 577b6cfce |
+| 1291d391d | Docking: repin craft-ui and craft-docpath to craft-libs main 5bbe9f6 | deferred | after 8ae15d4f5 |
+| 649e84b0e | Top bar: repin craft-window to craft-libs main 5bbe9f6 | deferred | with 577b6cfce |
+| d4cfd2e6d | LR-BEHAV-TITLEBAR: the checklist row follows craft-window's title_bar | deferred | with 577b6cfce |
+| df05e5947 | Docking: the Info fields test window is tall enough for the place fields in the dock column | deferred | after 8ae15d4f5 |
+| 387bed199 | chore(deps): refresh safe dependency bumps (#2994) | skipped | harfrust 0.13 would duplicate epaint 0.36's 0.12 and brotli 9 adds a second brotli-decompressor; miniz_oxide 0.9 in engine removes no copy (png keeps 0.8); the lockfile refresh is regenerated by Chromaforge's own updates |
+| 8020cd081 | showcase: check the file is readable without an empty with-block (#3001) | taken | run.py only; upstream's stray `__pycache__` .pyc left out |
+| c7961df10 | Camera profile: Sony ILCE-7RM5 (α7R V) (#3022) | taken | contributor's own fit (MIT OR Apache-2.0); README and raw-parity counts follow, attribution row uses `<cli>` |
 
 ### egui 0.37 (deferred, 2026-10-26)
 
@@ -68,3 +95,16 @@ Plan when it is taken up: (1) wait until egui 0.37.x on crates.io carries the fi
 `monochrome_emoji_fonts` features; (4) port the API changes crate by crate, using 50df64618 as the map, then
 c627ce721 and 3401286b5 for modal input ownership and text selection; (5) manual check of HDR, modals, text fields
 and shortcuts on the three OSes before a release.
+
+### Docking after 4dc543c (deferred, 2026-10-26)
+
+Chromaforge takes upstream's move of the workspace, `ui.dock` commands and parser into craft-ui up to the craft-libs
+`4dc543c` pin. The next step, 8ae15d4f5, puts Library and Tools into dock columns instead of the side frames the
+Classic layout is built on, and resets every saved split-frame layout once. A later port needs: (1) a decision that
+the Classic side panels may live in dock columns (folding headers, the Presets fold and `right_collapsed` must work
+there); (2) the one-time layout reset replaced by a migration that keeps a person's panel widths and visibility;
+(3) the craft-ui repins b6d35e2 and 5bbe9f6 with 8ae15d4f5, b477efd3d, 4bc5d2b58, 1291d391d and df05e5947 together;
+(4) a windowed check of drag, float and re-dock in Library and Develop. The title-bar series (577b6cfce, 19ab82147,
+901a115bf, 649e84b0e, d4cfd2e6d) can go separately: it adds `craft-window` at 5bbe9f6 (egui 0.36) and replaces
+`crates/ui-egui/src/titlebar.rs`; port the search-field press rule into the `title_bar` call, then check drag and
+double-click by hand on all three OSes.
