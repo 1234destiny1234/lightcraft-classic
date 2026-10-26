@@ -2764,5 +2764,10 @@
   "Import dropped files without review": "ჩაგდებული ფაილების იმპორტი გადახედვის გარეშე",
   "An import is running": "იმპორტი მიმდინარეობს",
   "An import is running. Drop photos when it has finished": "იმპორტი მიმდინარეობს. ფოტოები ჩააგდეთ, როცა დასრულდება",
-  "Finish Lightroom catalog import before adding photos": "ფოტოების დამატებამდე დაასრულეთ Lightroom-ის კატალოგის იმპორტი"
+  "Finish Lightroom catalog import before adding photos": "ფოტოების დამატებამდე დაასრულეთ Lightroom-ის კატალოგის იმპორტი",
+  "Saving metadata to files": "მეტამონაცემების ფაილებში შენახვა",
+  "Reading metadata from files": "მეტამონაცემების წაკითხვა ფაილებიდან",
+  "Save Metadata to Files": "მეტამონაცემების ფაილებში შენახვა",
+  "Read Metadata from Files": "მეტამონაცემების წაკითხვა ფაილებიდან",
+  "Save or Read Folder Metadata in the Background": "საქაღალდის მეტამონაცემების შენახვა ან წაკითხვა ფონურად"
 }
