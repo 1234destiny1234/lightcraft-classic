@@ -4089,7 +4089,6 @@ pub(crate) fn filmstrip(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
             }
             register(ui.ctx(), format!("film:{}", id.0), cr);
             let state = app.session.selection.state_of(*id);
-            let sel = state == lcc_engine::SelectionState::Active;
             let p = ui.painter();
             let label = app.session.catalog.photo(*id).and_then(|ph| ph.label);
             let selected = state != lcc_engine::SelectionState::NotSelected;
@@ -4121,11 +4120,7 @@ pub(crate) fn filmstrip(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
                 let s = (img_area.width() / tw as f32).min(img_area.height() / th as f32);
                 let fr = Rect::from_center_size(img_area.center(), vec2(tw as f32 * s, th as f32 * s));
                 p.image(tex.tex.id(), fr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-                if sel {
-                    p.rect_stroke(fr, 0.0, Stroke::new(1.5, Color32::WHITE), StrokeKind::Outside);
-                } else if state == lcc_engine::SelectionState::Selected {
-                    p.rect_stroke(fr, 0.0, Stroke::new(1.5, Color32::from_gray(170)), StrokeKind::Outside);
-                }
+                super::grid::selection_ring(p, &t, fr, state);
                 if app.ui.settings.film_badges
                     && let Some(ph) = app.session.catalog.photo(*id)
                 {
