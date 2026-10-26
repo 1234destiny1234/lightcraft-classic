@@ -336,6 +336,11 @@ fn photos(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog, max_h: Opti
             d.checked.iter_mut().for_each(|c| *c = false);
         }
     });
+    // what the scan left out, when it left something out
+    if let Some(note) = crate::import::scan_note(d) {
+        let r = ui.label(egui::RichText::new(note).color(t.caution).small());
+        crate::widgets::register(ui.ctx(), "label:importScanNote", r.rect);
+    }
     let types = d.file_types();
     if types.len() > 1 {
         ui.horizontal_wrapped(|ui| {
