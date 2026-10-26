@@ -17,9 +17,12 @@ fn meta_of(m: &lcc_meta::Metadata) -> (Meta, Option<String>) {
     // the camera's own wording, to the tenth of a second: `1/250`, `0.4`, `1.3″` (issue #1619: rounding
     // `1/0.4` to `1/2` both showed and exported the wrong time)
     let shutter = m.exposure_time.and_then(lcc_meta::exposure_display_of).unwrap_or_default();
-    let camera = [m.make.clone().unwrap_or_default(), m.model.clone().unwrap_or_default()].join(" ").trim().to_string();
+    let camera_make = m.make.clone().unwrap_or_default();
+    let camera_model = m.model.clone().unwrap_or_default();
     let meta = Meta {
-        camera,
+        camera: lcc_catalog::camera_label(&camera_make, &camera_model),
+        camera_make,
+        camera_model,
         // (a camera that writes no lens name, like Nikon's DSLRs, still says what range the lens covers)
         lens: m.lens_model.clone().or_else(|| m.lens_spec.and_then(lcc_meta::lens_spec_name)).unwrap_or_default(),
         focal_mm: m.focal_length.map(|f| f as f32),
@@ -1385,6 +1388,17 @@ impl crate::Session {
 pub(crate) mod tests {
     /// A raw cut short (still being copied) and a temporary name are refused by the file probe as
     /// still being written (issue #123), which the scans and imports skip.
+    /// Make and Model are kept separately for exports; the label drops a repeated maker (upstream #1618).
+    #[test]
+    fn imported_camera_keeps_make_and_model() {
+        let m = lcc_meta::Metadata { make: Some("Canon".into()), model: Some("Canon IXUS 185".into()), ..Default::default() };
+        let (meta, _) = super::meta_of(&m);
+        assert_eq!((meta.camera_make.as_str(), meta.camera_model.as_str()), ("Canon", "Canon IXUS 185"));
+        assert_eq!(meta.camera, "Canon IXUS 185");
+        let m = lcc_meta::Metadata { make: Some("Sony".into()), model: Some("A7 IV".into()), ..Default::default() };
+        assert_eq!(super::meta_of(&m).0.camera, "Sony A7 IV");
+    }
+
     #[test]
     fn files_still_being_copied_are_left_for_a_later_scan() {
         let dir = std::env::temp_dir().join(format!("copy-skip-{}", std::process::id()));
