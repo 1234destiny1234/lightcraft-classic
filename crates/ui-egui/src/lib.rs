@@ -131,6 +131,8 @@ mod tests_clipping;
 #[cfg(test)]
 mod tests_color_readout;
 #[cfg(test)]
+mod tests_colour_export;
+#[cfg(test)]
 mod tests_compare;
 #[cfg(test)]
 mod tests_copy_paste_dialogs;
