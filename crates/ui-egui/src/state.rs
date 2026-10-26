@@ -1136,6 +1136,11 @@ pub struct UiState {
     pub mask_curve_channel: String,
     /// Selected mixer mode: "hue" | "saturation" | "luminance" | "all".
     pub mixer_mode: String,
+    /// What the Color Mixer adjusts by: "hsl" (eight sliders per Hue / Saturation / Luminance) |
+    /// "color" (one colour at a time). HSL by default.
+    pub mixer_adjust: String,
+    /// The HSL group shown: "hue" | "sat" | "lum" | "all".
+    pub mixer_group: String,
     /// Selected colour grading tab: "3way" | "shadows" | "midtones" | "highlights".
     pub grading_mode: String,
     /// Colour grading wheels (shadows, midtones, highlights) hidden for viewing by their eye, and
@@ -1893,7 +1898,9 @@ impl Default for UiState {
             dragging_section: None,
             curve_channel: "parametric".into(),
             mask_curve_channel: "master".into(),
-            mixer_mode: "hue".into(),
+            mixer_mode: "red".into(),
+            mixer_adjust: "hsl".into(),
+            mixer_group: "hue".into(),
             grading_mode: "3way".into(),
             grading_hidden: None,
             tool: String::new(),
