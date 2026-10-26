@@ -2409,5 +2409,6 @@
   "Why?": "Чому?",
   "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "Для ШІ-шумозаглушення потрібна модель, а її не встановлено. Поки що шум зменшують Яскравість і Колір у розділі Деталі.",
   "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "Ця версія не містить моделі ШІ-шумозаглушення, і завантажити її звідси поки не можна.",
-  "No AI Denoise model is installed": "Модель ШІ-шумозаглушення не встановлено"
+  "No AI Denoise model is installed": "Модель ШІ-шумозаглушення не встановлено",
+  "Same Content as Another Photo": "Той самий вміст, що й в іншого фото"
 }

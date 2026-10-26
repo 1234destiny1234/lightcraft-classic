@@ -2396,5 +2396,6 @@
   "Why?": "Perché?",
   "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "La riduzione rumore IA richiede un modello, e non ce n’è nessuno installato. Nel frattempo, Luminanza e Colore in Dettaglio riducono il rumore.",
   "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "Questa versione non include un modello di riduzione rumore IA, e per ora non se ne può scaricare nessuno da qui.",
-  "No AI Denoise model is installed": "Nessun modello di riduzione rumore IA installato"
+  "No AI Denoise model is installed": "Nessun modello di riduzione rumore IA installato",
+  "Same Content as Another Photo": "Stesso contenuto di un'altra foto"
 }

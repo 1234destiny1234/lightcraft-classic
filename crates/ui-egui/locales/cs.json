@@ -2443,5 +2443,6 @@
   "Why?": "Proč?",
   "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "AI odšumění potřebuje model a žádný není nainstalován. Mezitím šum omezí Jas a Barva v části Detaily.",
   "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "Tato verze neobsahuje žádný model pro AI odšumění a zatím si ho odsud nelze stáhnout.",
-  "No AI Denoise model is installed": "Není nainstalován žádný model pro AI odšumění"
+  "No AI Denoise model is installed": "Není nainstalován žádný model pro AI odšumění",
+  "Same Content as Another Photo": "Stejný obsah jako jiná fotografie"
 }
