@@ -1595,7 +1595,7 @@ impl Session {
     }
 
     /// How long [`Self::settle_sidecar_writes`] waits (tests make it short).
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(all(test, unix))]
     pub(crate) fn set_sidecar_flush_limit(&mut self, limit: std::time::Duration) {
         self.sidecar_flush_limit = limit;
     }
