@@ -275,7 +275,7 @@ impl<'a> Ctx<'a> {
             }
             self.visits = visits;
             self.entries_total = entries;
-            self.budget -= c.cost.bytes;
+            self.budget = self.budget.saturating_sub(c.cost.bytes);
             return Ok((c.ifd.clone(), c.next));
         }
         if self.visits >= self.opts.max_ifds {
