@@ -305,11 +305,11 @@ mod tests {
         let (mut h, _) = app_with_picker();
         let ctx = h.view.ctx.clone();
         answer_after_restart(&mut h.app, &ctx, PickKind::Files, Err("disk full".into()));
-        assert!(h.app.ui.toast.take().is_some_and(|t| t.0.contains("disk full")), "a failure is shown");
+        assert!(h.app.ui.take_toast().is_some_and(|t| t.0.contains("disk full")), "a failure is shown");
         answer_after_restart(&mut h.app, &ctx, PickKind::Folder, Ok(vec!["/nowhere".into()]));
-        assert!(h.app.ui.toast.take().is_some(), "a folder's command is gone: the user is told");
+        assert!(h.app.ui.take_toast().is_some(), "a folder's command is gone: the user is told");
         answer_after_restart(&mut h.app, &ctx, PickKind::Files, Ok(vec![]));
-        assert!(h.app.ui.toast.is_none(), "cancelled: nothing to say");
+        assert!(h.app.ui.toast().is_none(), "cancelled: nothing to say");
         assert!(import_sources(&mut h).is_none());
     }
 
@@ -320,16 +320,16 @@ mod tests {
         asked.lock().unwrap()[0].1.send(Ok(vec![])).unwrap();
         assert!(import_sources(&mut h).is_none(), "cancelled: no import review");
         assert!(h.app.pending_picks.is_empty());
-        assert!(h.app.ui.toast.is_none(), "cancellation is not an error");
+        assert!(h.app.ui.toast().is_none(), "cancellation is not an error");
         // the dialog thread ends without answering (the host dropped the sender)
-        assert!(h.app.ui.toast.is_none(), "cancelled: nothing to say");
+        assert!(h.app.ui.toast().is_none(), "cancelled: nothing to say");
         h.app.run("file.addFolder", json!({})).unwrap();
         assert_eq!(h.app.pending_picks.len(), 1);
         asked.lock().unwrap().pop();
         assert!(import_sources(&mut h).is_none());
         assert!(h.app.pending_picks.is_empty());
         // the user chose something that never arrived: they are told
-        assert!(h.app.ui.toast.is_some(), "a dialog that ended without an answer is reported");
+        assert!(h.app.ui.toast().is_some(), "a dialog that ended without an answer is reported");
     }
 
     #[test]

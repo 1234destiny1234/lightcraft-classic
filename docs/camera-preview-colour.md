@@ -298,7 +298,7 @@ harvested from Adobe-converted DNGs, no Adobe-rendered pixels, and no tables fro
 a camera wrote itself and refuses DNGs whose `Software` tag names Adobe software (DNG Converter, Lightroom, Camera Raw,
 Photoshop), the app's own DNG export, or is missing. `<cli> camdb show MAKE MODEL` prints the entry a camera resolves
 to. A native DNG's matrices help that model's other raw format (a Pentax body's PEF files, say), whose files carry
-none. Besides dcraw's table, the database has no TOML entries yet.
+none. `<cli> calibrate-chart` measures entries with `chart` provenance from raw shots of a ColorChecker Classic ([chart-calibration](chart-calibration.md)). Besides dcraw's table, the database has no TOML entries yet.
 
 Calibrations matched to Lightroom (`crates/camdb/data/calibrations/`, maintainer decision 2026-10-25) are the one
 place Lightroom informs the numbers: black-box fits to Lightroom's *output images* of a contributor's own photos,

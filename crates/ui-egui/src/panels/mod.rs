@@ -102,29 +102,41 @@ pub fn resizable_side(
     Some(w.round().clamp(limits.min, max))
 }
 
-/// The HUD toast at the bottom centre of the canvas.
+/// The HUD toasts at the bottom centre of the canvas: the newest where a single toast always was, the older ones
+/// stacked above it (below it during a slideshow, whose toasts sit at the top), each fading out at its own time.
 pub fn toast(app: &mut LccApp, ctx: &egui::Context) {
     let now = ctx.input(|i| i.time);
-    let Some((text, until, label)) = app.ui.toast.clone() else { return };
-    if now > until {
-        app.ui.toast = None;
+    app.ui.expire_toasts(now);
+    if app.ui.toasts.is_empty() {
         return;
     }
     let Some(canvas) = app.canvas_rect else { return };
     let t = Tokens::get(ctx);
-    let fade = ((until - now) / 0.25).clamp(0.0, 1.0) as f32;
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("toast")));
     // long messages (a save warning, the web build's notices) wrap within the canvas
     let wrap = (canvas.width() - 80.0).clamp(200.0, 720.0);
-    let (background, foreground) = label.map(crate::theme::label_toast_colors).unwrap_or((egui::Color32::from_black_alpha(200), t.text));
-    let foreground = foreground.gamma_multiply(fade);
-    let galley = painter.layout(text, t.font(14.0), foreground, wrap);
-    let size = vec2(galley.size().x + 40.0, (galley.size().y + 22.0).max(40.0));
-    // a slideshow's playback controls sit at the bottom: the toast goes to the top there, clear of them
-    let y = if app.ui.slideshow.is_some() { canvas.top() + 60.0 } else { canvas.bottom() - 60.0 };
-    let r = Rect::from_center_size(pos2(canvas.center().x, y), size);
-    painter.rect_filled(r, 6.0, background.gamma_multiply(fade));
-    painter.galley(r.center() - galley.size() / 2.0, galley, foreground);
+    // a slideshow's playback controls sit at the bottom: the toasts go to the top there, clear of them
+    let top = app.ui.slideshow.is_some();
+    let mut edge = if top { canvas.top() + 40.0 } else { canvas.bottom() - 40.0 };
+    for (text, until, label) in app.ui.toasts.iter().rev() {
+        let fade = ((until - now) / 0.25).clamp(0.0, 1.0) as f32;
+        let (background, foreground) = label.map(crate::theme::label_toast_colors).unwrap_or((egui::Color32::from_black_alpha(200), t.text));
+        let foreground = foreground.gamma_multiply(fade);
+        let galley = painter.layout(text.clone(), t.font(14.0), foreground, wrap);
+        let size = vec2(galley.size().x + 40.0, (galley.size().y + 22.0).max(40.0));
+        let r = if top {
+            Rect::from_min_size(pos2(canvas.center().x - size.x / 2.0, edge), size)
+        } else {
+            Rect::from_min_size(pos2(canvas.center().x - size.x / 2.0, edge - size.y), size)
+        };
+        // never past the view
+        if r.top() < canvas.top() || r.bottom() > canvas.bottom() {
+            break;
+        }
+        painter.rect_filled(r, 6.0, background.gamma_multiply(fade));
+        painter.galley(r.center() - galley.size() / 2.0, galley, foreground);
+        edge = if top { r.bottom() + 8.0 } else { r.top() - 8.0 };
+    }
     ctx.request_repaint_after(std::time::Duration::from_millis(30));
 }
 
