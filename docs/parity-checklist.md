@@ -31,7 +31,7 @@ cited here still exists. Formerly docs/parity.md.
 | C. Views & navigation (VIEW) | 17 | 2 | 0 | 0 | 9/9 (100%) | 4/4 (100%) |
 | D. Search & filter (FILT) | 11 | 1 | 1 | 0 | 4/4 (100%) | 4/4 (100%) |
 | E. Metadata (META) | 5 | 1 | 0 | 0 | 2/2 (100%) | 2/2 (100%) |
-| F. Edit panel — global adjustments (EDIT) | 45 | 4 | 1 | 1 | 28/28 (100%) | 14/15 (93%) |
+| F. Edit panel — global adjustments (EDIT) | 44 | 5 | 1 | 1 | 28/28 (100%) | 13/15 (87%) |
 | G. Profiles (PROF) | 7 | 3 | 3 | 0 | 3/4 (75%) | 3/4 (75%) |
 | H. Crop & rotate (CROP) | 10 | 1 | 0 | 1 | 8/8 (100%) | 2/3 (67%) |
 | I. Remove / healing (REM) | 8 | 1 | 2 | 2 | 4/4 (100%) | 2/3 (67%) |
@@ -54,9 +54,9 @@ cited here still exists. Formerly docs/parity.md.
 | Z. Keyboard shortcuts (desktop) | 77 | 5 | 2 | 1 | 48/52 (92%) | 24/26 (92%) |
 | Lightroom Classic extras | 104 | 20 | 3 | 0 | — | 35/39 (90%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 504 | 69 | 29 | 27 | 195/203 (96%) | 166/184 (90%) |
+| **Total** | 503 | 70 | 29 | 27 | 195/203 (96%) | 165/184 (90%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.5%** of 602 in-scope rows — P0 98.0% of 203 · P1 94.8% of 184 · P2 76.8% of 213.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.4%** of 602 in-scope rows — P0 98.0% of 203 · P1 94.6% of 184 · P2 76.8% of 213.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -293,7 +293,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 )
 | LR-EDIT-OPTICS-DEFRINGE | Defringe | P1 | ✅ | `ctl:optics.defringe*` | no fringe eyedropper |
 | LR-EDIT-OPTICS-MANUAL | Manual distortion / vignetting | P1 | ✅ | `ctl:optics.distortion`, `ctl:optics.vignetting`, `ctl:optics.vignettingMidpoint` | |
-| LR-EDIT-GEOM-UPRIGHT | Upright | P1 | ✅ | `cmd:geometry.upright`, `cmd:geometry.guides` | |
+| LR-EDIT-GEOM-UPRIGHT | Upright | P1 | 🟡 | `cmd:geometry.upright`, `cmd:geometry.guides`, `crates/pipeline/src/upright.rs` | a vertical family is accepted when most of it agrees, or when the lines that disagree (people, folds, foliage) gather at no rival point half as strong, so two long posts flanking a crowd decide (`upright_corrects_converging_posts_among_people`); a mode that finds nothing to correct says why (`note`, shown over the photo: too few / too short lines, one object, lines that disagree, lines meeting inside the photo) and suggests Guided. Downgraded from ✅: a user's real pavilion shots (thick posts, thin poles) were not corrected and the tuning is so far proven on synthetic scenes only; thin poles below a pixel at the 1024 px analysis size are still lost |
 | LR-EDIT-GEOM-MANUAL | Manual transform | P1 | ✅ | `ctl:geometry.*` | |
 | LR-EDIT-GEOM-CONSTRAIN | Constrain crop | P1 | ✅ | `crates/ui-egui/src/panels/right.rs` (checkbox → `cmd:develop.merge`), `crates/engine/src/lib.rs` (`fit_constrained_crop`) | Ticking it, or changing Geometry, Upright or lens corrections while it is ticked, shrinks the stored crop about its centre until no blank corner is left, so the Crop tool shows it (it used to apply at render time only, outside the Crop tool: issue #1927; tests in `crates/engine/src/tests_constrain_crop.rs`). A crop drawn by hand is kept as drawn; unticking keeps the tighter crop |
 | LR-EDIT-GEOM-GRID | Grid while transforming | P2 | ✅ | `crates/ui-egui/src/panels/detail.rs` | a fine grid over the photo while a geometry slider is dragged |
@@ -934,6 +934,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-26 | minor | LR-EDIT-GEOM-UPRIGHT ✅ → 🟡 (upstream #2966): posts among people are corrected, long lines decide, a mode that finds nothing says why; tuned on a limited set of real frames |
 | 2026-10-26 | patch | LR-IMP-FORMATS: compressed Samsung SRW find their colour-filter layout from the embedded JPEG with a 256-entry linearisation table instead of a `powf` per preview sample (same result): NX500 raw decode 1434 → 406 ms (fork #503); status and counts unchanged |
 | 2026-10-26 | minor | LR-EDIT-OPTICS-PROFILE: Develop ▸ Lens Corrections names the profile it applies (or the file's own correction) and picks a lens per photo (Make → Model, focal length for photos without one; `lens.choose`; not in XMP yet; issue #307); status unchanged |
 | 2026-10-25 | minor | LR-EDIT-DETAIL-DENOISE: the upstream project's own AI Denoise model (MIT OR Apache-2.0) offered in the desktop app, from its release asset, else radfilms.com.au (same SHA-256); no dead end without a model; offline training tools in `tools/denoise-train` (upstream PR 2929); status unchanged (🟡) |
