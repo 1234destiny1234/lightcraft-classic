@@ -221,7 +221,7 @@ sample files. A pointer for contributors, not legal advice.
 
 | Item | Adobe | The app |
 |---|---|---|
-| Default profile per model | Adobe Standard for every model (1,500 profile names in the bundle) | the DNG's own matrices; else a pooled profile (**11 bundled**: ILCA-99M2, ILCE-7CR, ILCE-7M4, X-H2S, X-T4, NIKON Z 6_2, Z 8, D5300, D750, D780, D90); else a guarded per-file fit to the camera's embedded JPEG; else spectral matrices (**52 models**, rawtoaces-data); else a neutral matrix |
+| Default profile per model | Adobe Standard for every model (1,500 profile names in the bundle) | the DNG's own matrices; else a pooled profile (**12 bundled**: ILCA-99M2, ILCE-7CR, ILCE-7M4, ILCE-7RM5, X-H2S, X-T4, NIKON Z 6_2, Z 8, D5300, D750, D780, D90); else a guarded per-file fit to the camera's embedded JPEG; else spectral matrices (**52 models**, rawtoaces-data); else a neutral matrix |
 | Camera Matching looks | 481 models (plus phone-maker looks) | none (the per-file JPEG fit imitates the camera's own look) |
 | Creative profiles | Adobe Color, Portrait, Landscape, Vivid, Monochrome… | our own looks (Color, Neutral, Vivid, Landscape, Portrait, Monochrome) |
 | DCP / dual-illuminant model | ✅ | dual-illuminant DNG colour (ColorMatrix / ForwardMatrix 1-2, CameraCalibration, AnalogBalance), HueSatMap, LookTable, ProfileToneCurve; a person's own `.dcp` files can be imported per camera or per photo (`camera.importDcp`, `develop.cameraProfile`); none is shipped (clean-room) |
