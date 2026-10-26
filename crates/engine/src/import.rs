@@ -335,6 +335,10 @@ pub struct ImportDefaults {
     pub auto_album: Option<String>,
     /// Open the import review when a camera or memory card is connected.
     pub show_on_card: bool,
+    /// Synchronize Folder brings in files whose content a photo of the library already has (at
+    /// another path) as photos of their own: "Don't import files already in the library" turned
+    /// off, and kept as it was last left. Off (such files left out) unless turned on.
+    pub import_duplicates: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -690,21 +694,37 @@ fn library_files(library: &lcc_catalog::Catalog, files: &[String]) -> HashMap<Pa
 
 /// Which photo of the library has each of the contents `hashes` (the later one where several
 /// have it). One pass over the library, and an entry only for a content that was asked about.
+/// Records that photo `id`, whose catalog key is `key`, has the content `key` stands for: the map
+/// is keyed by the content (a Duplicate's `:dup<id>` key is the original's plus a suffix, and a
+/// file's own hash is the plain one). Where several photos have the content, the one with the
+/// plain key is kept, else the later one.
+fn note_content<V>(by_hash: &mut HashMap<String, (bool, V)>, key: &str, value: V) {
+    let base = crate::sync::base_hash(key);
+    let plain = base.len() == key.len();
+    match by_hash.get_mut(base) {
+        Some((had_plain, _)) if *had_plain && !plain => {}
+        Some(slot) => *slot = (plain, value),
+        None => {
+            by_hash.insert(base.to_string(), (plain, value));
+        }
+    }
+}
+
 fn library_hashes<'a>(library: &lcc_catalog::Catalog, hashes: impl Iterator<Item = &'a str>) -> HashMap<String, PhotoId> {
     let wanted: std::collections::HashSet<&str> = hashes.collect();
     let mut by_hash = HashMap::new();
     if wanted.is_empty() {
-        return by_hash;
+        return HashMap::new();
     }
     for p in library.photos() {
         if let Some(h) = &p.content_hash
             && !p.local
-            && wanted.contains(h.as_str())
+            && wanted.contains(crate::sync::base_hash(h))
         {
-            by_hash.insert(h.clone(), p.id);
+            note_content(&mut by_hash, h, p.id);
         }
     }
-    by_hash
+    by_hash.into_iter().map(|(h, (_, id))| (h, id)).collect()
 }
 
 /// Progress and cancellation of a running [`scan_with`].
@@ -945,13 +965,13 @@ impl Prepared {
     /// Preparation may have run while another import added the same path or content.
     pub fn revalidate_add(&mut self, s: &Session) {
         let mut paths = HashMap::new();
-        let mut hashes = HashMap::new();
+        let mut hashes: HashMap<String, (bool, PhotoId)> = HashMap::new();
         for photo in s.catalog.photos() {
             if let Source::File { path } = &photo.source {
                 paths.insert(normalize_import_path(path), photo.id);
             }
             if let Some(hash) = &photo.content_hash {
-                hashes.insert(hash.clone(), photo.id);
+                note_content(&mut hashes, hash, photo.id);
             }
         }
         let mut items = Vec::with_capacity(self.items.len());
@@ -962,7 +982,7 @@ impl Prepared {
             };
             let ReadyFile { path, stored, info, sidecar, placed } = *ready;
             let existing_path = paths.get(&normalize_import_path(&stored)).copied().or_else(|| paths.get(&normalize_import_path(&path)).copied());
-            let existing_hash = info.content_hash.as_ref().and_then(|hash| hashes.get(hash).copied());
+            let existing_hash = info.content_hash.as_ref().and_then(|hash| hashes.get(crate::sync::base_hash(hash)).map(|(_, id)| *id));
             if let Some(existing) = existing_path.or(existing_hash) {
                 if let Some(placed) = &placed {
                     crate::import_move::rollback(placed);
@@ -1059,6 +1079,7 @@ impl ImportJob {
     /// of the shared stem sidecars they read ([`crate::sidecar::ImportStems`]).
     fn look_up_library(&mut self) -> Option<lcc_catalog::Catalog> {
         let (library, fresh) = self.library.take()?;
+        let mut by_hash = HashMap::new();
         for p in library.photos() {
             // a trashed photo is replaced by a fresh import, so it doesn't count as a duplicate
             if p.deleted && fresh {
@@ -1071,9 +1092,10 @@ impl ImportJob {
             if let Some(h) = &p.content_hash
                 && (p.deleted || !self.opts.import_duplicates)
             {
-                self.by_hash.insert(h.clone(), Some(p.id));
+                note_content(&mut by_hash, h, Some(p.id));
             }
         }
+        self.by_hash.extend(by_hash.into_iter().map(|(h, (_, id))| (h, id)));
         Some(library)
     }
 
@@ -1483,11 +1505,12 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     // photos added by this batch, by content (a duplicate of a file earlier in the import names it)
     let mut new_hash: HashMap<String, PhotoId> = HashMap::new();
     // Fresh: trashed photos a new import replaces (by content or by file), each removed once
-    let (mut trash_hash, mut trash_path): (HashMap<String, PhotoId>, HashMap<String, PhotoId>) = Default::default();
+    let mut trash_content: HashMap<String, (bool, PhotoId)> = HashMap::new();
+    let mut trash_path: HashMap<String, PhotoId> = HashMap::new();
     if opts.on_deleted == OnDeleted::Fresh {
         for p in s.catalog.photos().filter(|p| p.deleted) {
             if let Some(h) = &p.content_hash {
-                trash_hash.insert(h.clone(), p.id);
+                note_content(&mut trash_content, h, p.id);
             }
             if let Source::File { path } = &p.source {
                 trash_path.insert(path.clone(), p.id);
@@ -1514,7 +1537,17 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
             PreparedItem::Duplicate { path, existing, reason, hash } => {
                 let existing = existing.or_else(|| {
                     let h = hash?;
-                    new_hash.get(&h).copied().or_else(|| s.catalog.photos().find(|p| p.content_hash.as_deref() == Some(h.as_str())).map(|p| p.id))
+                    new_hash
+                        .get(&h)
+                        .copied()
+                        .or_else(|| s.catalog.photos().find(|p| p.content_hash.as_deref() == Some(h.as_str())).map(|p| p.id))
+                        // a Duplicate's `<hash>:dup<id>` stands for its content too
+                        .or_else(|| {
+                            s.catalog
+                                .photos()
+                                .find(|p| p.content_hash.as_deref().is_some_and(|k| crate::sync::base_hash(k) == h.as_str()))
+                                .map(|p| p.id)
+                        })
                 });
                 let trashed = existing.filter(|id| s.catalog.photo(*id).is_some_and(|p| p.deleted));
                 match trashed {
@@ -1542,7 +1575,8 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 if let Some(h) = &info.content_hash {
                     new_hash.insert(h.clone(), id);
                 }
-                for old in info.content_hash.as_ref().and_then(|h| trash_hash.get(h)).into_iter().chain(trash_path.get(&stored)) {
+                for old in info.content_hash.as_ref().and_then(|h| trash_content.get(h)).map(|(_, id)| id).into_iter().chain(trash_path.get(&stored))
+                {
                     if purged.insert(*old) {
                         purge.push(*old);
                     }

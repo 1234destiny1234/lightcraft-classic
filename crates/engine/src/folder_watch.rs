@@ -295,7 +295,7 @@ pub fn apply(
 
 /// What a poll's synchronize does: add the new files, nothing else.
 pub fn only_new() -> crate::sync::SyncChoice {
-    crate::sync::SyncChoice { import_new: true, relink_moved: false, remove_missing: false, read_metadata: false }
+    crate::sync::SyncChoice { import_new: true, relink_moved: false, remove_missing: false, read_metadata: false, import_duplicates: false }
 }
 
 /// Note that a poll's scan of `folder` found `n` new files: its badge (newFiles: ask) says so,
