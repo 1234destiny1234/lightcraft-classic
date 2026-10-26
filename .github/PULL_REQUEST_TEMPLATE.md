@@ -26,8 +26,10 @@ Fixes #
 
 ## How it was checked
 
-- [ ] `cargo xtask ci` passes on this branch, rebased on current `main`
-- [ ] A test that fails without this change (for a crash fix: a regression test that panicked before it)
+- [ ] `cargo xtask ci --fast`, `cargo xtask sil` and `cargo test -p` for the touched crates pass on this branch, up to
+      date with `main` (merged in, not rebased)
+- [ ] A test that fails without this change (for a crash fix: a hostile-input check that the bad input gives an
+      error, not a panic)
 - [ ] User-visible change: ran the app and looked at the result
 
 <!-- Numbers, when it changes rendering, decoding or speed: before and after, on more than one photo or camera
@@ -45,13 +47,14 @@ Fixes #
   this one differs. Search the open pull requests for the issue number and checklist id first. "none found" is fine. -->
 - **Existing edits and libraries:** <!-- does any photo already edited render differently, or any saved setting,
   preset, sort order or default change? Then it goes behind a new process version (docs/process-versions.md) or is a
-  setting that is off by default, with a line in docs/whats-new.md. "unchanged" is fine. -->
+  setting that is off by default, with an entry in docs/whats-new/. "unchanged" is fine. -->
 - **Shared numbers taken:** <!-- catalog format `VERSION` (crates/catalog/src/journal.rs), `RENDER_CACHE_VERSION`,
   `LOOK_VERSION`, process version: the number this takes. If another pull request lands with it first, take one
-  past main's when you rebase. -->
+  past main's when you merge main in. -->
 - **Where it came from:** <!-- for a decoder, camera or lens data, or fitted constants: the public spec, your own
-  measurements, or observed output, and the files measured. Never GPL / LGPL code (dcraw, LibRaw, rawspeed, darktable,
-  RawTherapee, lensfun …), text derived from it, or Adobe profiles. -->
+  measurements, or observed output, and the files measured. Never GPL / LGPL code (LibRaw, rawspeed, darktable,
+  RawTherapee, lensfun …), text derived from it, or Adobe profiles; dcraw only as AGENTS.md's dcraw reference policy
+  allows. -->
 - **New dependencies, `unsafe`, build scripts, network access, spawned processes, deleted files, CI or `xtask` gate
   changes:** <!-- each with its reason, or "none". Dependencies are pure Rust and use `workspace = true`; actions are
   pinned by SHA; downloads are checked against a sha256; nothing leaves the machine unless the person asked. -->
