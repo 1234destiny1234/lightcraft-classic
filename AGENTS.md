@@ -38,6 +38,11 @@ The app is a clean-room, open-source, pure-Rust photo library + non-destructive 
 
 `plan/observations/` (Adobe-observation notes) is gitignored (local-only).
 
+**PRs start from the latest main:** GitHub refuses to merge a PR whose branch is behind `main` (the ruleset requires
+branches to be up to date). Right before you push a PR branch, and again whenever `main` moves while it waits,
+`git fetch origin && git merge origin/main`, resolve conflicts, re-run `cargo xtask ci --fast`, and push. Auto-merge
+does not update the branch for you; `gh pr update-branch N --repo …` does it when there are no conflicts.
+
 **Merging agent branches:** merge one branch, run `cargo xtask ci`, fix, commit — then the next. Two individually green
 branches can still break each other (e.g. a new struct field vs. a new constructor).
 
