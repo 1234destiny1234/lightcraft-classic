@@ -2259,5 +2259,9 @@
   "Your own model (optional)": "Your own model (optional)",
   "To use a model of your own instead of the built-in denoiser, install an ONNX file with denoise-model.json beside it. This build offers no model downloads.": "To use a model of your own instead of the built-in denoiser, install an ONNX file with denoise-model.json beside it. This build offers no model downloads.",
   "Stop using": "Stop using",
-  "The built-in denoiser is in use: press Use on a model to use that instead.": "The built-in denoiser is in use: press Use on a model to use   that instead."
+  "The built-in denoiser is in use: press Use on a model to use that instead.": "The built-in denoiser is in use: press Use on a model to use   that instead.",
+  "No photo in this folder is in the library yet": "此文件夹中还没有照片在图库中",
+  "Select the photos to move in the grid first": "请先在网格视图中选择要移动的照片",
+  "This place is kept in Local already": "此位置已保留在本地",
+  "Only a place at the top of Local can be removed from it": "只有本地最上层的位置才能从本地移除"
 }

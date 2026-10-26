@@ -2443,5 +2443,9 @@
   "Your own model (optional)": "Your own model (optional)",
   "To use a model of your own instead of the built-in denoiser, install an ONNX file with denoise-model.json beside it. This build offers no model downloads.": "To use a model of your own instead of the built-in denoiser, install an ONNX file with denoise-model.json beside it. This build offers no model downloads.",
   "Stop using": "Stop using",
-  "The built-in denoiser is in use: press Use on a model to use that instead.": "The built-in denoiser is in use:   press Use on a model to use that instead."
+  "The built-in denoiser is in use: press Use on a model to use that instead.": "The built-in denoiser is in use:   press Use on a model to use that instead.",
+  "No photo in this folder is in the library yet": "V této složce zatím není žádná fotografie z knihovny",
+  "Select the photos to move in the grid first": "Nejprve v mřížce vyberte fotografie, které chcete přesunout",
+  "This place is kept in Local already": "Toto místo už je v místních souborech ponecháno",
+  "Only a place at the top of Local can be removed from it": "Z místních souborů lze odebrat jen místo na jejich nejvyšší úrovni"
 }

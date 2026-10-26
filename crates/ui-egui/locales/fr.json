@@ -3595,5 +3595,9 @@
   "Your own model (optional)": "Your own model (optional)",
   "To use a model of your own instead of the built-in denoiser, install an ONNX file with denoise-model.json beside it. This build offers no model downloads.": "To use a model of your own instead of the built-in denoiser, install an ONNX file with denoise-model.json beside it. This build offers no model downloads.",
   "Stop using": "Stop using",
-  "The built-in denoiser is in use: press Use on a model to use that instead.": "The built-in denoiser is in use: press Use on a model to use   that instead."
+  "The built-in denoiser is in use: press Use on a model to use that instead.": "The built-in denoiser is in use: press Use on a model to use   that instead.",
+  "No photo in this folder is in the library yet": "Aucune photo de ce dossier n’est encore dans la bibliothèque",
+  "Select the photos to move in the grid first": "Sélectionnez d’abord dans la grille les photos à déplacer",
+  "This place is kept in Local already": "Ce lieu est déjà conservé dans Local",
+  "Only a place at the top of Local can be removed from it": "Seul un lieu tout en haut de Local peut en être retiré"
 }
