@@ -180,6 +180,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("panel.editKeywords", "Edit Keywords", Some("Cmd+Shift+K"), ""),
     ("panel.activity", "History", None, "Window>Panels"),
     ("panel.close", "Close Panel", None, ""),
+    // the Color Mixer's layout {tab?: mixer|point, adjust?: hsl|color, group?: hue|sat|lum|all,
+    // band?: red…magenta}: opens it in the Edit panel (the sliders are the mixer.* controls)
+    ("view.colorMixer", "Color Mixer Layout", None, ""),
     ("panel.collapseRight", "Show/Hide Right Panel", None, "Window>Panels"),
     // {solo?}: true opens just that section (⌥-click on its header); otherwise opens or closes it
     // Lightroom Classic's ⌘1–⌘9, top to bottom (the fork's Tone Curve, Color Mixer, Color Grading and Transform are
@@ -531,6 +534,45 @@ fn theme_command(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     };
     app.ui.settings.select_theme(kind);
     Ok(appearance_json(app))
+}
+
+/// `view.colorMixer`: the Color Mixer's tab, Adjust mode, HSL group and Color-mode band, each
+/// optional; the Edit panel opens on it. Returns the layout now shown.
+fn color_mixer_layout(app: &mut LccApp, p: &Value) -> Result<Value, String> {
+    use crate::panels::edit::{MIXER_ADJUST, MIXER_GROUPS};
+    let choose = |key: &str, keys: &[&str]| -> Result<Option<String>, String> {
+        match p.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(v)) if keys.contains(&v.as_str()) => Ok(Some(v.clone())),
+            Some(other) => Err(format!("view.colorMixer: `{key}` must be one of {}, not {other}", keys.join(", "))),
+        }
+    };
+    let adjust: Vec<&str> = MIXER_ADJUST.iter().map(|(_, k)| *k).collect();
+    let groups: Vec<&str> = MIXER_GROUPS.iter().map(|(_, k)| *k).collect();
+    let (tab, adjust, group, band) =
+        (choose("tab", &["mixer", "point"])?, choose("adjust", &adjust)?, choose("group", &groups)?, choose("band", &lcc_develop::MIXER_BANDS)?);
+    if let Some(tab) = tab
+        && (tab == "point") != app.ui.flyout_open("pointColor")
+    {
+        app.ui.toggle_flyout("pointColor");
+    }
+    if let Some(v) = adjust {
+        app.ui.mixer_adjust = v;
+    }
+    if let Some(v) = group {
+        app.ui.mixer_group = v;
+    }
+    if let Some(v) = band {
+        app.ui.mixer_mode = v;
+    }
+    crate::panels::edit::drop_hidden_mixer_tool(app);
+    app.ui.right = RightPanel::Edit;
+    app.ui.view = ViewMode::Detail;
+    if !app.ui.section_open("mixer") {
+        app.ui.toggle_section("mixer");
+    }
+    let tab = if app.ui.flyout_open("pointColor") { "point" } else { "mixer" };
+    Ok(json!({"tab": tab, "adjust": app.ui.mixer_adjust, "group": app.ui.mixer_group, "band": app.ui.mixer_mode}))
 }
 
 /// Handle UI commands; `None` means "not a UI command — send it to the engine".
@@ -1518,6 +1560,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             }
             Ok(Value::Null)
         }
+        "view.colorMixer" => color_mixer_layout(app, p),
         "panel.close" => {
             app.ui.right = RightPanel::None;
             app.ui.presets = false;

@@ -1919,7 +1919,124 @@ fn set_tat(app: &mut LccApp, ctx: &egui::Context, tool: &str, active: bool) {
 
 // ------------------------------------------------------------------------------ colour mixer
 
+/// The Mixer's Adjust choice (HSL | Color) and the HSL groups (Hue | Saturation | Luminance | All),
+/// as (label, key).
+pub(crate) const MIXER_ADJUST: [(&str, &str); 2] = [("HSL", "hsl"), ("Color", "color")];
+pub(crate) const MIXER_GROUPS: [(&str, &str); 4] = [("Hue", "hue"), ("Saturation", "sat"), ("Luminance", "lum"), ("All", "all")];
+/// The mixer bands' names, as the HSL sliders are labelled (parallel to `MIXER_BANDS`).
+const BAND_NAMES: [&str; 8] = ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"];
+
+/// A Color Mixer targeted adjustment (`tat:hue|sat|lum`) whose button the mixer's layout no longer
+/// shows is put down (a B&W photo shows Luminance's only, Point Color none, HSL the chosen group's
+/// or all three in All, Color mode all three): dragging on the photo would change a hidden group.
+pub(crate) fn drop_hidden_mixer_tool(app: &mut LccApp) {
+    let Some(key) = app.ui.tool.strip_prefix("tat:") else { return };
+    if !matches!(key, "hue" | "sat" | "lum") {
+        return;
+    }
+    let bw = app.session.active().and_then(|id| app.session.develop_of(id)).is_some_and(|d| crate::is_bw(&d));
+    let shown = if bw {
+        key == "lum"
+    } else {
+        !app.ui.flyout_open("pointColor") && (app.ui.mixer_adjust == "color" || app.ui.mixer_group == "all" || app.ui.mixer_group == key)
+    };
+    if !shown {
+        app.ui.tool.clear();
+    }
+}
+
+/// The Color Mixer's Mixer tab, as in Lightroom Classic: it adjusts by HSL (Hue | Saturation |
+/// Luminance | All: eight colour sliders per group, each group with its targeted adjustment) or by
+/// Color (one colour at a time). The same `mixer.<band>.<hue|sat|lum>` controls either way; a B&W
+/// photo shows its B&W mix.
 fn mixer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
+    if crate::is_bw(d) {
+        mixer_by_color(app, ui, d);
+        return;
+    }
+    let t = Tokens::get(ui.ctx());
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 4, bottom: 2 }).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(crate::i18n::tr("Adjust")).color(t.text_dim).size(11.5));
+            let at = MIXER_ADJUST.iter().position(|(_, k)| *k == app.ui.mixer_adjust).unwrap_or(0);
+            if let Some((_, k)) = crate::widgets::segmented(ui, "mixerAdjust", &MIXER_ADJUST, Some(at), 2).and_then(|i| MIXER_ADJUST.get(i)) {
+                app.ui.mixer_adjust = k.to_string();
+            }
+        });
+    });
+    drop_hidden_mixer_tool(app);
+    if app.ui.mixer_adjust == "color" {
+        mixer_by_color(app, ui, d);
+        return;
+    }
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 6, bottom: 2 }).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
+            for (label, key) in MIXER_GROUPS {
+                if group_tab(ui, &format!("mixerGroup-{key}"), crate::i18n::tr(label), app.ui.mixer_group == key).clicked() {
+                    app.ui.mixer_group = key.to_string();
+                    drop_hidden_mixer_tool(app);
+                }
+            }
+        });
+    });
+    let groups: &[(&str, &str)] = match app.ui.mixer_group.as_str() {
+        "sat" => &MIXER_GROUPS[1..2],
+        "lum" => &MIXER_GROUPS[2..3],
+        "all" => &MIXER_GROUPS[..3],
+        _ => &MIXER_GROUPS[..1],
+    };
+    let all = groups.len() > 1;
+    for (label, key) in groups {
+        // the group's targeted adjustment (and, in All, its heading)
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: if all { 8 } else { 2 }, bottom: 0 }).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let tool = format!("tat:{key}");
+                let active = app.ui.tool == tool;
+                if crate::widgets::icon_button(
+                    ui,
+                    &format!("tatMixer-{key}"),
+                    Icon::Target,
+                    vec2(22.0, 22.0),
+                    active,
+                    true,
+                    "Targeted adjustment: drag up/down on the photo to adjust the colours there",
+                )
+                .clicked()
+                {
+                    set_tat(app, ui.ctx(), &tool, active);
+                }
+                if all {
+                    let r = ui.label(egui::RichText::new(crate::i18n::tr(label)).color(t.text).strong().size(12.0));
+                    register(ui.ctx(), format!("mixerHeading:{key}"), r.rect);
+                }
+            });
+        });
+        for (band, name) in lcc_develop::MIXER_BANDS.iter().zip(BAND_NAMES) {
+            control_as(app, ui, d, &format!("mixer.{band}.{key}"), true, Some(name));
+        }
+    }
+}
+
+/// A word tab (Hue, Saturation…): bright and underlined when it is the one shown.
+fn group_tab(ui: &mut egui::Ui, id: &str, label: &str, active: bool) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let font = t.semibold(11.5);
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text);
+    let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x, 20.0), Sense::click());
+    crate::widgets::announce_selected(&resp, label.to_string(), active);
+    register(ui.ctx(), format!("button:{id}"), r);
+    let colour = if active || resp.hovered() { t.text } else { t.text_dim };
+    ui.painter().text(pos2(r.left(), r.center().y), Align2::LEFT_CENTER, label, font, colour);
+    if active {
+        ui.painter().line_segment([pos2(r.left(), r.bottom() - 1.0), pos2(r.right(), r.bottom() - 1.0)], Stroke::new(1.5, t.text));
+    }
+    resp
+}
+
+/// The Mixer by colour (and a B&W photo's mix): a dot per colour, then that colour's sliders.
+fn mixer_by_color(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     let t = Tokens::get(ui.ctx());
     let bands = lcc_develop::MIXER_BANDS;
     let sel = bands.iter().position(|b| *b == app.ui.mixer_mode).unwrap_or(0);
