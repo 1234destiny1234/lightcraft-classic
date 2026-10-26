@@ -1251,5 +1251,10 @@
   "It needs features this version of the app doesn't have:": "Йому потрібні функції, яких немає в цій версії застосунку:",
   "Install a newer version of the app to use it.": "Установіть новішу версію застосунку, щоб користуватися ним.",
   "It can't be installed:": "Його не можна встановити:",
-  "Install Older Version": "Встановити старішу версію"
+  "Install Older Version": "Встановити старішу версію",
+  "Start the program": "Запуск програми",
+  "not installed": "не встановлено",
+  "checking…": "перевірка…",
+  "installed:": "встановлено:",
+  "Waiting for a plug-in's program": "Очікування програми плагіна"
 }

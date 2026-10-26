@@ -26,7 +26,7 @@ pub const MAX_VERSION_BYTES: usize = 64;
 /// `requires` and isn't installed (or loaded) where one is missing. Every manifest field,
 /// permission group or host call added from now on gets a name here; what the host had before
 /// `requires` existed is the baseline and has none.
-pub const HOST_FEATURES: &[&str] = &[];
+pub const HOST_FEATURES: &[&str] = &["programs"];
 
 /// The manifest a plug-in returns from `lcc_manifest`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -188,7 +188,7 @@ fn short(s: &str) -> String {
     s.chars().take(64).collect()
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 

@@ -1422,5 +1422,10 @@
   "It needs features this version of the app doesn't have:": "它需要此版本应用没有的功能：",
   "Install a newer version of the app to use it.": "请安装较新版本的应用以使用它。",
   "It can't be installed:": "无法安装：",
-  "Install Older Version": "安装旧版本"
+  "Install Older Version": "安装旧版本",
+  "Start the program": "启动程序",
+  "not installed": "未安装",
+  "checking…": "检查中…",
+  "installed:": "已安装：",
+  "Waiting for a plug-in's program": "正在等待插件的程序"
 }

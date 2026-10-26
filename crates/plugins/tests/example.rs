@@ -287,3 +287,100 @@ fn custom_fields_example_shows_and_edits_fields() {
     assert!(m.set_metadata_field(id, "3", "job", &json!("x")).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// What the stand-in converter does (`$1` is the job list): one `<photo>\t<made>` line per photo
+/// into `result.txt` next to the list.
+#[cfg(unix)]
+const STAND_IN: &str = r#"d=$(dirname "$1"); while read -r p; do printf '%s\t%s/%s.dng\n' "$p" "$d" "$p"; done < "$1" > "$d/result.txt""#;
+
+/// The app's side of `program.start`, with `/bin/sh` running [`STAND_IN`] as the installed program.
+#[cfg(unix)]
+struct StandIn {
+    installed: bool,
+    runs: Vec<(lcc_plugins::StartRequest, std::process::Child)>,
+}
+
+#[cfg(unix)]
+impl HostApi for StandIn {
+    fn catalog(&mut self, method: &str, _: &Value) -> Result<Value, String> {
+        Err(format!("{method}: no catalog here"))
+    }
+
+    fn find_program(&mut self, decl: &lcc_plugins::ProgramDecl) -> Vec<lcc_plugins::Found> {
+        if !self.installed {
+            return vec![];
+        }
+        let bundle_id = if cfg!(target_os = "macos") { decl.mac_bundle_ids.first().cloned() } else { None };
+        vec![lcc_plugins::Found { bundle_id, path: "/bin/sh".into(), version: Some("1.0".into()) }]
+    }
+
+    fn start_program(&mut self, run: lcc_plugins::StartRequest) -> Result<(), String> {
+        match Command::new(&run.found.path).arg("-c").arg(STAND_IN).arg("stand-in").args(&run.args).spawn() {
+            Ok(child) => {
+                self.runs.push((run, child));
+                Ok(())
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn program_tools_example_starts_its_program_and_reads_what_it_made() {
+    let Some(wasm) = build_sdk_example("program-tools") else { return };
+    let dir = temp("program-tools");
+    let mut m = Manager::open(&dir).unwrap();
+    let id = "org.example.program-tools";
+    let requested = m.install_bytes_by_user(&wasm, None, false).unwrap().info()["requested"].clone();
+    assert_eq!(requested["programs"][0]["id"], "converter", "the manifest's programs are asked for");
+    let mut host = StandIn { installed: false, runs: vec![] };
+    let photos = ["p1".to_string(), "p2".to_string()];
+
+    // not granted yet: the example says so, and nothing starts
+    let r = m.run_command(id, "send", &json!({}), &photos, &mut host).unwrap();
+    assert!(r["message"].as_str().unwrap().contains("Allow"), "{r}");
+    let grant: Permissions = serde_json::from_value(json!({"programs": requested["programs"]})).unwrap();
+    m.set_grant_by_user(id, grant).unwrap();
+    let r = m.run_command(id, "send", &json!({}), &photos, &mut host).unwrap();
+    assert!(r["message"].as_str().unwrap().contains("not installed"), "{r}");
+    assert!(host.runs.is_empty(), "nothing starts while the program isn't installed");
+
+    // granted and installed: the job list is in the run's folder before the program starts
+    host.installed = true;
+    let r = m.run_command(id, "send", &json!({}), &photos, &mut host).unwrap();
+    assert_eq!(r["message"], "Sent 2 photo(s) to Example Converter.");
+    let (run, mut child) = host.runs.pop().unwrap();
+    assert_eq!(r["run"], run.run());
+    let job = run.dir.path().join("job.txt");
+    assert_eq!(run.args, vec![job.display().to_string()], "{{tmpDir}} became the run's folder");
+    assert_eq!(std::fs::read_to_string(&job).unwrap(), "p1\np2\n");
+
+    // one run at a time per program
+    assert!(m.run_command(id, "send", &json!({}), &photos, &mut host).is_err(), "a second start while the run is active fails");
+    assert!(host.runs.is_empty());
+
+    // the program exits: program.end reads what it made from the lent folder
+    assert!(child.wait().unwrap().success());
+    let mut call = m.program_end_call(id, run.run(), "converter", lcc_plugins::EndStatus::Exited, Some(0), run.dir.path()).unwrap();
+    let outcome = call.run(&mut host);
+    let ended = m.end(call, Some(outcome)).unwrap();
+    assert_eq!(ended["converted"], json!(["p1", "p2"]));
+
+    // the run is over: the folder goes and a new start works
+    let lcc_plugins::StartRequest { dir: run_dir, reservation, .. } = run;
+    let folder = run_dir.path().to_path_buf();
+    run_dir.remove();
+    assert!(!folder.exists());
+    drop(reservation);
+    m.run_command(id, "send", &json!({}), &photos, &mut host).unwrap();
+    let (again, mut child) = host.runs.pop().unwrap();
+    child.wait().unwrap();
+    // a program that exits with an error: nothing is recorded, and the log says why
+    let mut call = m.program_end_call(id, again.run(), "converter", lcc_plugins::EndStatus::Exited, Some(2), again.dir.path()).unwrap();
+    let outcome = call.run(&mut host);
+    assert_eq!(m.end(call, Some(outcome)).unwrap()["converted"], json!([]), "a failed run converts nothing");
+    assert!(m.get(id).unwrap().log.iter().any(|l| l.contains("exit code 2")), "the plug-in sees the exit code");
+    again.dir.remove();
+    let _ = std::fs::remove_dir_all(&dir);
+}

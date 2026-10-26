@@ -8,7 +8,12 @@
 //! - After an export, enabled export hooks and the chosen export destination run on the written
 //!   files, on a worker with an activity row ([`after_export`], [`poll`]).
 //!
-//! Every action is an engine `plugin.*` command. State lives in a static here (no field on the
+//! - A program a plug-in may start (`programs`) is granted only here, by the user: the install
+//!   button and the permission checkboxes go through [`lcc_engine::cmd::plugins::install_by_user`]
+//!   and [`lcc_engine::cmd::plugins::grant_by_user`], which no command reaches. Each such row
+//!   shows where the program is installed.
+//!
+//! Every other action is an engine `plugin.*` command. State lives in a static here (no field on the
 //! app), so the shell only needs the calls in `run`, `show`, `menu_items` and `after_export`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -99,7 +104,7 @@ fn begin_install(app: &mut LccApp, s: &mut State, path: &str) -> Result<(), Stri
     }
     let info = app.session.execute("plugin.inspectFile", &json!({"path": path})).map_err(|e| e.to_string())?;
     let grant = info["installed"]["granted"].clone();
-    let grant = if grant.is_object() { grant } else { json!({"catalog": false, "metadataWrite": false, "network": [], "fs": []}) };
+    let grant = if grant.is_object() { grant } else { json!({"catalog": false, "metadataWrite": false, "network": [], "fs": [], "programs": []}) };
     s.pending = Some(Pending { path: path.to_string(), info, grant });
     s.open = true;
     Ok(())
@@ -151,7 +156,7 @@ pub fn after_export(app: &mut LccApp, ctx: &egui::Context, files: &[Value], dest
     let total = hooks.len();
     let cancel = Arc::new(AtomicBool::new(false));
     let progress = Arc::new(Mutex::new((0usize, String::new())));
-    let (mut host, requests) = lcc_engine::cmd::plugins::relay_host();
+    let (mut host, requests) = lcc_engine::cmd::plugins::relay_host(&app.session);
     let (tx, results) = std::sync::mpsc::channel();
     let (c, p) = (cancel.clone(), progress.clone());
     let work = move || {
@@ -199,6 +204,11 @@ pub fn export_hooks_running() -> bool {
 /// Per frame: answer the running export hooks' catalog requests, keep their activity row up to
 /// date and, when they finish, report how they went.
 pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
+    // a plug-in's program.end hook asks for the catalog from its own thread
+    lcc_engine::cmd::plugin_programs::answer_requests(&mut app.session);
+    if lcc_engine::cmd::plugin_programs::hooks_running() {
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
+    }
     let mut g = task_lock();
     let Some(task) = g.as_mut() else { return };
     while let Ok(req) = task.requests.try_recv() {
@@ -438,6 +448,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         return;
     }
     let list = app.session.execute("plugin.list", &json!({})).unwrap_or(Value::Null);
+    let installs = program_installs(app, &list, s.pending.as_ref());
+    if installs.values().any(|t| t == tr("checking…")) {
+        // a lookup runs in the background: show its answer when it comes
+        ctx.request_repaint_after(std::time::Duration::from_millis(200));
+    }
     let mut actions: Vec<(&'static str, Value)> = Vec::new();
     let mut inspect: Option<String> = None;
     if s.open {
@@ -486,7 +501,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     ui.weak(tr("No plug-ins installed."));
                 }
                 for p in &plugins {
-                    plugin_ui(ui, p, &mut actions);
+                    plugin_ui(ui, p, &installs, &mut actions);
                 }
             });
         s.open = open && !closed;
@@ -497,7 +512,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             s.message = e;
         }
     }
-    approval_ui(ctx, &mut s, &mut actions);
+    approval_ui(ctx, &mut s, &installs, &mut actions);
     dialog_ui(ctx, &mut s, &mut actions);
     for (id, p) in actions {
         s.message.clear();
@@ -508,6 +523,17 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Ok(v) if !v.is_null() => toast_result(app, ctx, &mut s, &v),
                     Ok(_) => {}
                     Err(e) => s.message = e,
+                }
+            }
+            // only these two can grant programs: the user's own clicks, never a command
+            "plugins.userInstall" => {
+                if let Err(e) = lcc_engine::cmd::plugins::install_by_user(&mut app.session, &p) {
+                    s.message = e.to_string();
+                }
+            }
+            "plugins.userGrant" => {
+                if let Err(e) = lcc_engine::cmd::plugins::grant_by_user(&mut app.session, &p) {
+                    s.message = e.to_string();
                 }
             }
             _ => {
@@ -528,7 +554,7 @@ fn toast_result(app: &mut LccApp, ctx: &egui::Context, s: &mut State, v: &Value)
 }
 
 /// The install approval: each requested permission with a checkbox; new ones marked.
-fn approval_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static str, Value)>) {
+fn approval_ui(ctx: &egui::Context, s: &mut State, installs: &Installs, actions: &mut Vec<(&'static str, Value)>) {
     let Some(mut pending) = s.pending.take() else { return };
     let m = pending.info["manifest"].clone();
     let installed = pending.info["installed"].clone();
@@ -582,7 +608,8 @@ fn approval_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static s
                 for row in rows {
                     let mut on = row.granted(&pending.grant);
                     let new = !row.granted(&had);
-                    let text = if new && installed.is_object() { format!("{}  ({})", row.label(), tr("new")) } else { row.label() };
+                    let label = row.label(installs, m["id"].as_str().unwrap_or(""));
+                    let text = if new && installed.is_object() { format!("{label}  ({})", tr("new")) } else { label };
                     if ui.checkbox(&mut on, text).changed() {
                         row.set(&mut pending.grant, on);
                     }
@@ -594,7 +621,7 @@ fn approval_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static s
                     use crate::button::{Button, Kind};
                     let label = if downgrade { "Install Older Version" } else { "Install" };
                     if !blocked && Button::new(label).kind(Kind::Primary).widget("button:pluginInstall").show(ui).clicked() {
-                        actions.push(("plugin.install", json!({"path": pending.path, "grant": pending.grant, "allowDowngrade": downgrade})));
+                        actions.push(("plugins.userInstall", json!({"path": pending.path, "grant": pending.grant, "allowDowngrade": downgrade})));
                         keep = false;
                     }
                     if Button::new("Cancel").widget("button:pluginInstallCancel").show(ui).clicked() {
@@ -609,11 +636,76 @@ fn approval_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static s
     }
 }
 
+/// Where each declared program is installed, by `(plug-in id, program id)`: a line for its row.
+type Installs = std::collections::BTreeMap<(String, String), String>;
+
+/// Looks up the programs of the listed plug-ins and of the one waiting to install. Never waits:
+/// the desktop looks in the background and keeps answers for a few seconds; until the first comes
+/// the row says "checking…".
+fn program_installs(app: &LccApp, list: &Value, pending: Option<&Pending>) -> Installs {
+    let mut out = Installs::new();
+    let manifests = list["plugins"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|p| (p["id"].clone(), p["requested"]["programs"].clone()))
+        .chain(pending.map(|p| (p.info["manifest"]["id"].clone(), p.info["manifest"]["permissions"]["programs"].clone())));
+    for (id, programs) in manifests {
+        for decl in programs.as_array().into_iter().flatten() {
+            let text = match lcc_engine::cmd::plugins::find_program(&app.session, decl) {
+                None => tr("checking…").to_string(),
+                Some(found) => installed_text(&found),
+            };
+            out.insert((id.as_str().unwrap_or("").to_string(), decl["id"].as_str().unwrap_or("").to_string()), text);
+        }
+    }
+    out
+}
+
+/// "installed: Tool 2.0, Tool 3.1", or "not installed".
+fn installed_text(found: &[Value]) -> String {
+    if found.is_empty() {
+        return tr("not installed").to_string();
+    }
+    let each: Vec<String> = found
+        .iter()
+        .map(|f| {
+            let path = f["path"].as_str().unwrap_or("");
+            let name = std::path::Path::new(path).file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            match f["version"].as_str() {
+                Some(v) => format!("{name} {v}"),
+                None => name,
+            }
+        })
+        .collect();
+    format!("{} {}", tr("installed:"), each.join(", "))
+}
+
+/// What a program entry names on this system: its bundle ids on macOS, its executable elsewhere.
+fn program_identity(d: &Value) -> String {
+    if cfg!(target_os = "macos") {
+        d["macBundleIds"].as_array().into_iter().flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")
+    } else {
+        let exe = if cfg!(windows) { "windowsExe" } else { "linuxExe" };
+        d[exe].as_str().unwrap_or("").to_string()
+    }
+}
+
+/// Does entry `d` name only what the granted entry `g` names (`lcc_plugins::ProgramDecl::within`):
+/// its bundle ids among `g`'s, each executable `g`'s or none?
+fn program_within(d: &Value, g: &Value) -> bool {
+    let ids = |v: &Value| v["macBundleIds"].as_array().cloned().unwrap_or_default();
+    let exe = |k: &str| d[k].is_null() || d[k] == g[k];
+    d["id"] == g["id"] && ids(d).iter().all(|b| ids(g).contains(b)) && exe("windowsExe") && exe("linuxExe")
+}
+
 /// One requested permission.
 enum Row {
     Flag(&'static str),
     Host(Value),
     Root(Value),
+    /// A program it may start: `{id, name, …}`.
+    Program(Value),
 }
 
 fn permission_rows(req: &Value) -> Vec<Row> {
@@ -625,12 +717,23 @@ fn permission_rows(req: &Value) -> Vec<Row> {
     }
     v.extend(req["network"].as_array().into_iter().flatten().cloned().map(Row::Host));
     v.extend(req["fs"].as_array().into_iter().flatten().cloned().map(Row::Root));
+    v.extend(req["programs"].as_array().into_iter().flatten().cloned().map(Row::Program));
     v
 }
 
 impl Row {
-    fn label(&self) -> String {
+    /// The row's text; a program's says where it's installed (`installs`, for `plugin`).
+    fn label(&self, installs: &Installs, plugin: &str) -> String {
         match self {
+            Row::Program(d) => {
+                let id = d["id"].as_str().unwrap_or("");
+                let name = d["name"].as_str().unwrap_or(id);
+                let at = installs.get(&(plugin.to_string(), id.to_string())).cloned().unwrap_or_default();
+                match program_identity(d) {
+                    ident if ident.is_empty() => format!("{} {name} ({at})", tr("Start the program")),
+                    ident => format!("{} {name} [{ident}] ({at})", tr("Start the program")),
+                }
+            }
             Row::Flag("catalog") => tr("Read the catalog").to_string(),
             Row::Flag(_) => tr("Write photo metadata").to_string(),
             Row::Host(h) => format!("{} {}", tr("Connect to"), h.as_str().unwrap_or("")),
@@ -645,6 +748,8 @@ impl Row {
             Row::Flag(k) => g[*k].as_bool() == Some(true),
             Row::Host(h) => g["network"].as_array().is_some_and(|a| a.contains(h)),
             Row::Root(r) => g["fs"].as_array().is_some_and(|a| a.iter().any(|x| x["path"] == r["path"])),
+            // an update that widened a granted entry shows it unticked (and new)
+            Row::Program(d) => g["programs"].as_array().is_some_and(|a| a.iter().any(|x| program_within(d, x))),
         }
     }
     fn set(&self, g: &mut Value, on: bool) {
@@ -660,6 +765,7 @@ impl Row {
             Row::Flag(k) => g[*k] = json!(on),
             Row::Host(h) => list(g, "network", h, &|x| x == h),
             Row::Root(r) => list(g, "fs", r, &|x| x["path"] == r["path"]),
+            Row::Program(d) => list(g, "programs", d, &|x| x["id"] == d["id"]),
         }
     }
 }
@@ -701,7 +807,7 @@ fn dialog_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static str
     }
 }
 
-fn plugin_ui(ui: &mut egui::Ui, p: &Value, actions: &mut Vec<(&'static str, Value)>) {
+fn plugin_ui(ui: &mut egui::Ui, p: &Value, installs: &Installs, actions: &mut Vec<(&'static str, Value)>) {
     let id = p["id"].as_str().unwrap_or_default().to_string();
     let title = format!("{} {}", p["name"].as_str().unwrap_or(&id), p["version"].as_str().unwrap_or(""));
     egui::CollapsingHeader::new(title).id_salt(("plugin", &id)).default_open(true).show(ui, |ui| {
@@ -731,13 +837,13 @@ fn plugin_ui(ui: &mut egui::Ui, p: &Value, actions: &mut Vec<(&'static str, Valu
         let mut changed = false;
         for row in rows {
             let mut on = row.granted(&grant);
-            if ui.checkbox(&mut on, row.label()).changed() {
+            if ui.checkbox(&mut on, row.label(installs, &id)).changed() {
                 row.set(&mut grant, on);
                 changed = true;
             }
         }
         if changed {
-            actions.push(("plugin.grant", json!({"id": id, "grant": grant})));
+            actions.push(("plugins.userGrant", json!({"id": id, "grant": grant})));
         }
         if p["enabled"].as_bool() == Some(true) {
             for c in p["commands"].as_array().into_iter().flatten() {
@@ -838,5 +944,40 @@ mod tests {
         rows[3].set(&mut g, false);
         assert_eq!(g["fs"], json!([]));
         assert!(!rows[0].granted(&g));
+    }
+
+    #[test]
+    fn program_rows_say_where_the_program_is_and_grant_its_whole_entry() {
+        let conv = json!({"id": "conv", "name": "Converter", "macBundleIds": ["org.example.conv"]});
+        let rows = permission_rows(&json!({"catalog": true, "programs": [conv.clone(), {"id": "x", "name": "X", "linuxExe": "x"}]}));
+        assert_eq!(rows.len(), 3, "catalog and two programs");
+        let mut installs = Installs::new();
+        installs.insert(("p".into(), "conv".into()), "installed: Converter 2.0".into());
+        let label = rows[1].label(&installs, "p");
+        assert!(label.contains("Converter") && label.contains("installed: Converter 2.0"), "{label}");
+        let mut g = json!({"catalog": true, "programs": []});
+        assert!(!rows[1].granted(&g), "a program starts unticked");
+        rows[1].set(&mut g, true);
+        assert_eq!(g["programs"], json!([conv]), "ticking grants the entry as the manifest declares it");
+        assert!(rows[1].granted(&g) && !rows[2].granted(&g));
+        rows[1].set(&mut g, false);
+        assert_eq!(g["programs"], json!([]));
+        if cfg!(target_os = "macos") {
+            assert!(label.contains("org.example.conv"), "the row names what it starts: {label}");
+        }
+    }
+
+    #[test]
+    fn a_widened_program_shows_unticked_and_a_narrowed_one_ticked() {
+        let had = json!({"programs": [{"id": "conv", "name": "Converter", "macBundleIds": ["a.one", "a.two"], "linuxExe": "conv"}]});
+        let rows = |entry: Value| permission_rows(&json!({"programs": [entry]}));
+        let narrowed = rows(json!({"id": "conv", "name": "Converter 2", "macBundleIds": ["a.two"]}));
+        assert!(narrowed[0].granted(&had), "renamed and narrowed: still granted");
+        let more_ids = rows(json!({"id": "conv", "name": "Converter", "macBundleIds": ["a.one", "a.three"], "linuxExe": "conv"}));
+        assert!(!more_ids[0].granted(&had), "another bundle id: unticked and new");
+        let other_exe = rows(json!({"id": "conv", "name": "Converter", "macBundleIds": ["a.one"], "linuxExe": "sh"}));
+        assert!(!other_exe[0].granted(&had), "another executable: unticked and new");
+        let added_exe = rows(json!({"id": "conv", "name": "Converter", "macBundleIds": ["a.one"], "linuxExe": "conv", "windowsExe": "conv.exe"}));
+        assert!(!added_exe[0].granted(&had), "an added executable: unticked and new");
     }
 }

@@ -13,6 +13,7 @@ plug-ins are not supported.
 | Metadata and keyword suggestions | `hooks.metadata: true` | `{"hook":"metadata","photos":[photo.inspect JSON]}` → `{"suggestions":[{photo, fields?, keywords?}]}` |
 | A publish service (kind `plugin:<id>` in `publish.addService`) | `publish: {id, name}` | `{"hook":"publish.upload","service","item":{path, photo, title, caption, keywords, remoteId?}}` → `{remoteId, url?}`; `{"hook":"publish.delete","service","remoteId"}` |
 | Export destinations ("Then send to" in the Export dialog) | `exportDestinations: [{id, name, dialog}]` | `{"hook":"export.destination","destination","args","files":[{path, photo}]}` after the files are written and the export hooks ran; the files are lent to the call; a `message` in the reply is shown |
+| Programs it starts (an installed tool, such as a raw converter) | `permissions.programs: [{id, name, macBundleIds?, windowsExe?, linuxExe?}]` | `{"hook":"program.end","run","program","status","code","tmpDir"}` when a run ends (see [Programs](#programs)) |
 | Custom metadata fields (Metadata panel ▸ Plug-in fields) | `metadataFields: [{key, label, type, …, readOnly?}]` | none: the values are the plug-in's namespace entries under each field's `key` (`ns.set {photo, key, value}`); the user edits them in the panel on every selected photo (`plugin.setField {ids}`; differing values read `< mixed >`), read-only ones only the plug-in sets. The plug-in's data stays the source; the app keeps an in-memory index of it (`Photo.plugin_fields`, never saved with the catalog, so its format is unchanged: rebuilt when a library opens and after every plug-in command and export hook): Library filter text search finds the values (`key:value` for one field), smart-album and filter rules test them as `plugin:<id>/<key>` (Rules ▸ Plug-in Fields; text operators, number fields compare as numbers: is ≥, is between, …), and XMP sidecars carry them as `lcpf:fields` (a bag of `{lcpf:plugin, lcpf:key, lcpf:value}`, namespace `<homepage>/ns/plugin-fields/1.0/`, from `homepage` in `brand.toml`) when metadata is saved, and give them back to the plug-in's data on import, Synchronize Folder and Read Metadata from File (installed, enabled plug-ins only; read-only fields included; values the field doesn't take are skipped) |
 
 Commands appear under File ▸ Plug-ins and run as the engine command `plugin.run {plugin, command, args?, ids?}`. The UI, CLI,
@@ -27,7 +28,8 @@ the plug-in sees them.
 A plug-in gets nothing it did not ask for in `permissions`, and nothing the user did not approve.
 Installing shows every requested permission with a checkbox, unticked, and grants only the ones the
 user ticks; an update shows what it newly asks for and keeps nothing beyond the previous grant
-unless approved. Through the engine, `plugin.install` without `grant` grants nothing new. The Plugin Manager can revoke a permission at any
+unless approved. Through the engine, `plugin.install` without `grant` grants nothing new, and
+`plugin.install` and `plugin.grant` never add `programs` (below). The Plugin Manager can revoke a permission at any
 time, and the change applies from the next call. In every call, the plug-in's effective rights
 are the granted permissions intersected with the requested ones.
 
@@ -36,7 +38,8 @@ are the granted permissions intersected with the requested ones.
 | `catalog: true` | `catalog.query`, `photo.inspect`, `catalog.stats`, `keyword.list` (read-only) |
 | `metadataWrite: true` | `metadata.setStandard {ids, title?, caption?, keywords?, addKeywords?, …}` |
 | `network: ["api.example.com", "*.example.org"]` | `http.request` to those hosts only. Redirects are not followed: the plug-in has to request the new URL itself, and that request is checked again. A binary body goes as `bodyBase64` (with `contentType`) instead of `body`. |
-| `fs: [{path: "/abs/dir", write?}]` | `fs.readText`, `fs.readBytes`, `fs.list`, `fs.exists` below each root, and `fs.writeText`, `fs.writeBytes`, `fs.remove` (files only) below writable roots. Bytes travel as base64 (`{path}` → base64 text; `{path, base64}`). `..` is rejected, and symbolic links are resolved so a link cannot lead out of a root. Files lent to a call (an export hook's or destination's exported files, a publish upload's rendered file) can be read and rewritten without any root, never removed. |
+| `fs: [{path: "/abs/dir", write?}]` | `fs.readText`, `fs.readBytes`, `fs.list`, `fs.exists` below each root, and `fs.writeText`, `fs.writeBytes`, `fs.remove` (files only) below writable roots. Bytes travel as base64 (`{path}` → base64 text; `{path, base64}`). `..` is rejected, and symbolic links are resolved so a link cannot lead out of a root. Files lent to a call (an export hook's or destination's exported files, a publish upload's rendered file) can be read and rewritten without any root, never removed. A program run's folder is lent to its `program.end` call for reading. |
+| `programs: [{id, name, macBundleIds?, windowsExe?, linuxExe?}]` | `program.start` of those programs (`program.list` needs nothing). Only the user grants one, by ticking it in the install dialog or the Plugin Manager. `plugin.install` with `grant` and `plugin.grant`, whoever calls them (MCP, the control channel, an action, the command line), may repeat the programs already granted (they stay granted) or leave them out (revoked), and refuse a grant that names any other program or a wider entry than the granted one, changing nothing. The control channel's input requests (`ui.pointer`, `ui.clickWidget`, `ui.key`) work the dialog as the user's mouse and keyboard would, so a row ticked through them counts as the user's: give the control port only to agents you would let tick it. |
 
 Every plug-in can always use its own **metadata namespace** (`ns.get {photo}`,
 `ns.set {photo, key, value}`, `ns.photos`). The namespace is stored next to the module, never in
@@ -44,6 +47,81 @@ the catalog. Photo ids are only unique within one library, so the namespace is k
 a plug-in always sees the data of the library that is open (each library gets a stable
 `libraryId` in its `catalog-settings.json` the first time; a library without a folder, e.g. one
 held in memory, shares one unnamed namespace).
+
+## Programs
+
+A plug-in can hand photos to a program installed on the computer (a raw converter, a denoiser) and
+pick up what it made when it ends. It requires the host feature `programs` (`"requires":
+["programs"]`), and each program is an entry in `permissions.programs`:
+
+| Field | |
+|---|---|
+| `id` | the program's id in this plug-in (1–64 of `A-Z a-z 0-9 . _ -`) |
+| `name` | shown to the user (install dialog, Plugin Manager, activity stack) |
+| `macBundleIds` | macOS: the app's bundle ids, newest version first (at most 8); each is a version the user may have installed |
+| `windowsExe` | Windows: the executable's file name, looked up under `App Paths` in the registry (per user, per machine, then the machine's 32-bit view), then in the absolute folders on `PATH` |
+| `linuxExe` | Linux and the BSDs: the executable's file name, looked up in the absolute folders on `PATH` |
+
+An entry names at least one of the three, and at most 8 programs per plug-in. Executable names are
+plain file names that are valid on every system (no folder, none of `<>:"/\|?*`, no device name
+such as `CON` or `NUL.txt`, no trailing dot or space). On macOS the app finds each bundle id with
+Spotlight and reads its version from the app's `Info.plist`; elsewhere the version is not read.
+When Spotlight knows several copies, the one in `/Applications` or `~/Applications` is used, then
+one elsewhere on the startup disk, then one on another volume (a mounted disk image, an external
+drive); a copy in the Trash never is. A
+lookup that takes more than 3 seconds is stopped and finds nothing. The install dialog and the
+Plugin Manager show each entry as a permission row with what it names on this system (the bundle
+ids, or the executable) and where it is installed ("not installed" if nowhere, "checking…" while
+the app looks; the dialog never waits for a lookup). An update that widens a granted entry shows it
+unticked and marked new. An update keeps a granted entry when
+it names no more than before: renaming it, reordering or removing bundle ids and dropping an
+executable keep the grant. An update that adds a bundle id or changes an executable unticks the
+entry, with a line in the plug-in's log, until the user ticks it again: the user allowed
+particular programs, not whatever the entry names later. An install from a command
+(`plugin.install`) whose module differs from the installed one keeps none of the plug-in's
+programs, with a line in its log: the user allowed them for the code they had. Installing the same
+module again keeps them.
+
+- **`program.list`** → `[{program, name, granted, installed: [{bundleId?, path?, version?}]}]` for
+  every declared program, in manifest order (on macOS, installs in the entry's order). It needs no
+  permission, so a plug-in can tell the user what to install or allow; `path`, where the program
+  is installed, comes only once the program is granted.
+- **`program.start {program, args?, files?, bundleId?}`** → `{run, tmpDir}`:
+  1. it checks everything first: the program is declared and granted; `files` (`{name: text}`, at
+     most 64 plain file names, 8 MiB in all) and `args` (at most 256 strings of 4 KiB) are valid;
+     `bundleId` (macOS only) is one of the entry's;
+  2. it makes a new folder for the run (private to the user) and writes `files` into it; every
+     `{tmpDir}` in `args` becomes that folder's path;
+  3. it starts the program with `args`, `TMPDIR` set to the folder (elsewhere `TEMP` and `TMP`
+     too) and its standard input and output discarded: on macOS the first installed bundle id in the entry's order (or `bundleId`),
+     as a new instance (`open -n -W -a`, with `--env` for `TMPDIR`); elsewhere the executable
+     directly (on Windows with no console window).
+
+  Nothing is written or started when a check fails, and a program that exits with an error at once
+  is reported as not started. One run per program and plug-in at a time: a second start while a
+  run is active is refused. A failed start adds a line to the plug-in's log (at most 20 per call).
+
+  Only a plug-in command (`plugin.run`, a menu item) starts programs: export hooks, export
+  destinations, metadata providers and `program.end` can list programs but get an error from
+  `program.start` ("start the program from a command"). Publish services have neither (no
+  catalog, no programs). A command's lookups (at most 3 seconds per lookup) and the check that the
+  program didn't fail at once (300 ms) run on the thread that runs the command, in the app the UI
+  thread, so a start can hold the window that long.
+- **`program.end`**: when the program exits, the plug-in gets `{"hook":"program.end","run",
+  "program","status","code","tmpDir"}` once, on a worker thread, with the run's folder lent for
+  reading (`status`: `exited`, `cancelled` or `failed`; `code`: the program's exit code, or null on
+  macOS, where `open` starts it, after a cancel, and for a program ended by a signal). Its catalog
+  reads and writes are answered on the UI thread, as for export hooks; a session with no UI
+  (headless MCP, the CLI) refuses them. `program.list` works there; `program.start` doesn't (start
+  programs from a command, where the user is).
+- **The activity stack** shows each run ("Waiting for a plug-in's program", kind `pluginProgram`;
+  detail: the program's name). ✕ ends the run (`program.end` with `cancelled`) but leaves the
+  program running: it belongs to the user now.
+- **The run's folder** is deleted once `program.end` has returned and the program has exited, also
+  when the hook fails. If the app quits first, the folder is left for the program; the next start
+  of the app removes run folders more than a day old, except those of runs another copy of the app
+  still watches (each run holds a lock file next to its folder).
+- The web build has no programs: `program.start` returns an error there.
 
 ## Limits
 
@@ -62,7 +140,7 @@ hook that's never called, a host call that fails as an unknown method).
 
 - **The host's list** is `lcc_plugins::HOST_FEATURES`, and `plugin.list` returns it as
   `host: {abi, features}`. Everything the host had when `requires` arrived is the baseline and
-  has no name; the list starts empty. Every manifest field, permission group or host call added
+  has no name; the list started empty. Names so far: `programs` ([Programs](#programs)). Every manifest field, permission group or host call added
   from then on gets a name there in the change that adds it, and its documentation here says
   which name to require.
 - **Names** are `[A-Za-z0-9._-]{1,64}`, at most 64, none repeated; anything else is a manifest
@@ -115,7 +193,7 @@ Imports (module `host`):
 
 ## Writing one in Rust
 
-The guest SDK is `sdk/plugin` (`lcc-plugin-sdk`). Five examples, each a complete plug-in:
+The guest SDK is `sdk/plugin` (`lcc-plugin-sdk`). Six examples, each a complete plug-in:
 
 | Example | Shows |
 |---|---|
@@ -123,6 +201,7 @@ The guest SDK is `sdk/plugin` (`lcc-plugin-sdk`). Five examples, each a complete
 | `sdk/examples/batch-metadata` | a small useful tool (`catalog` + `metadataWrite`): *Title / Caption from Template…* fills the title or caption of the selected photos from a template with tokens (`{name}`, `{file}`, `{date}`, `{year}`, `{camera}`, `{n}` with a start number); *Add Keywords…* adds comma-separated keywords. Every write goes through `metadata.setStandard` |
 | `sdk/examples/export-tools` | **export hooks**: a post-process hook that reads each exported file (binary, `host::read_bytes`) and records its CRC-32; an **export destination** "WebDAV Upload" that `PUT`s the files to a server (`host::http_bytes`, basic auth, a dry-run switch) |
 | `sdk/examples/publish-folder` | a **publish service** "Local Gallery": copies each rendered photo into a gallery folder (one writable `fs` root), keeps an `index.json`, replaces on re-publish and deletes on removal |
+| `sdk/examples/program-tools` | **programs**: *Send to Converter* writes the selected photos' ids into the run's folder and starts a granted program on that list (`host::program_start`); its **`program.end`** hook reads the program's `result.txt` and records each photo's result, or logs the exit code when the program failed |
 | `sdk/examples/custom-fields` | **custom metadata fields** Client / Job / Usage (editable in the Metadata panel) and Delivered (read-only), a *Set Job Fields…* command for the selection, an export hook that marks exported photos delivered, and a metadata provider that suggests the client as a keyword |
 
 ```sh
@@ -212,6 +291,7 @@ The manifest fields:
 | `metadata` | `photos`: `photo.inspect` JSON | `{suggestions: [{photo, fields?, keywords?}]}` |
 | `publish.upload` | `item: {path, photo, title, caption, keywords, remoteId?}` | `{remoteId, url?}`; the same `remoteId` comes back on a re-publish and on removal |
 | `publish.delete` | `remoteId` | anything |
+| `program.end` | `req.run()`, `req.program()`, `req.status()` (`exited`, `cancelled`, `failed`), `req.code()` (the exit code, when known), `req.tmp_dir()` (readable during the call) | anything; failures go to the log |
 
 ### 4. Call the host
 
@@ -223,6 +303,8 @@ The manifest fields:
 | `host::ns_get(photo)`, `host::ns_set(photo, key, value)` | `ns.get`, `ns.set`, `ns.photos` | nothing (own namespace; also holds `metadataFields` values) |
 | `host::read_text`, `host::write_text`, `host::read_bytes`, `host::write_bytes`, `host::remove`, `host::exists` | `fs.*` | an `fs` root (or a lent file) |
 | `host::http(method, url, headers, body)`, `host::http_bytes(…)` | `http.request` → `{status, contentType, location, body}` | the URL's host in `network` |
+| `host::program_list()` | `program.list` | nothing |
+| `host::program_start(program, args, files, bundle_id)` | `program.start` → `{run, tmpDir}` | the program in `programs` (granted by the user) |
 | `host::log(line)` | `host.log` | nothing; Plug-in Manager ▸ Log |
 | `lcc_plugin_sdk::base64::{encode, decode}` | | |
 
@@ -239,6 +321,8 @@ The manifest fields:
   unticked; an update that asks for more gets nothing new until approved; the user can revoke any
   permission later. Handle `permission … not granted` errors with a clear message.
 - Paths must be **absolute** without `..`; links can't lead out of a root.
+- **Programs** start only once the user has ticked them, one run per program at a time, and their
+  folder lives only until the run is over: copy what you need out of it in `program.end`.
 
 ### 6. Test and ship
 
@@ -362,6 +446,8 @@ filters turn it (long edge 2048, cached per photo and stack; a change of the sta
 - Network and filesystem permissions are fixed in the manifest: a WebDAV destination for "any
   server the user types" isn't possible; the author names the hosts.
 - No plug-in store, signing or automatic updates; Lightroom Lua plug-ins don't run.
+- Programs: a plug-in can't add what a program made to the library, read its output while it runs,
+  or stop it; ✕ only stops waiting. Versions are read on macOS only.
 - Pixel filters: a Display filter with `overlap` > 0 still works in output pixels (it runs after
   every develop step, so a native-resolution pass would mean a full-size develop per preview), so
   a preview and a larger export of one differ.

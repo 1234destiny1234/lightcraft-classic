@@ -1500,5 +1500,10 @@
   "It needs features this version of the app doesn't have:": "このバージョンのアプリにない機能が必要です:",
   "Install a newer version of the app to use it.": "使用するには、新しいバージョンのアプリをインストールしてください。",
   "It can't be installed:": "インストールできません:",
-  "Install Older Version": "古いバージョンをインストール"
+  "Install Older Version": "古いバージョンをインストール",
+  "Start the program": "プログラムを起動",
+  "not installed": "インストールされていません",
+  "checking…": "確認中…",
+  "installed:": "インストール済み：",
+  "Waiting for a plug-in's program": "プラグインのプログラムを待機中"
 }

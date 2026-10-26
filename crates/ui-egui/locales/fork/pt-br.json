@@ -1500,5 +1500,10 @@
   "It needs features this version of the app doesn't have:": "Ele precisa de recursos que esta versão do aplicativo não tem:",
   "Install a newer version of the app to use it.": "Instale uma versão mais recente do aplicativo para usá-lo.",
   "It can't be installed:": "Não é possível instalá-lo:",
-  "Install Older Version": "Instalar versão anterior"
+  "Install Older Version": "Instalar versão anterior",
+  "Start the program": "Iniciar o programa",
+  "not installed": "não instalado",
+  "checking…": "verificando…",
+  "installed:": "instalado:",
+  "Waiting for a plug-in's program": "Aguardando o programa de um plug-in"
 }
