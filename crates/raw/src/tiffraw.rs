@@ -131,8 +131,35 @@ pub fn read_image(data: &[u8], info: &ImageInfo, order: ByteOrder, packing: Pack
         return Err(RawError::Corrupt("the tile grid is much larger than the image".into()));
     }
     let group_samples = (total / 4).max(1 << 20);
-    let mut out_u16 = if float { Vec::new() } else { vec![0u16; total] };
-    let mut out_f32 = if float { vec![0f32; total] } else { Vec::new() };
+    let mut out_u16 = Vec::new();
+    let mut out_f32 = Vec::new();
+    // one chunk that is the whole image (a phone's single-strip DNG) is the image, without a copy
+    if let [c] = chunks.as_slice()
+        && (c.x, c.y, c.width as usize, c.height as usize, planar) == (0, 0, w, h, false)
+    {
+        // a chunk that cannot be decoded is not a partial image: the file stays preview-only
+        let px = decode_chunk(data, info, c, order, packing, ccpp, bits, float)?;
+        let at = Place { w, cpp, cw: w, ccpp, x0: 0, y0: 0, copy_w: w, copy_h: h, plane: None };
+        return Ok(match px {
+            ChunkPx::U16(v) if !float && v.len() == total => RawData::U16(v),
+            ChunkPx::F32(v) if float && v.len() == total => RawData::F32(v),
+            ChunkPx::U16(v) => {
+                out_u16 = vec![0u16; total];
+                at.copy(&v, &mut out_u16);
+                if float { RawData::F32(vec![0f32; total]) } else { RawData::U16(out_u16) }
+            }
+            ChunkPx::F32(v) => {
+                out_f32 = vec![0f32; total];
+                at.copy(&v, &mut out_f32);
+                if float { RawData::F32(out_f32) } else { RawData::U16(vec![0u16; total]) }
+            }
+        });
+    }
+    if float {
+        out_f32 = vec![0f32; total];
+    } else {
+        out_u16 = vec![0u16; total];
+    }
     let mut decode_from = 0usize;
     while decode_from < chunks.len() {
         let mut to = decode_from;
@@ -155,36 +182,55 @@ pub fn read_image(data: &[u8], info: &ImageInfo, order: ByteOrder, packing: Pack
             if x0 >= w || y0 >= h {
                 continue;
             }
-            let copy_w = cw.min(w - x0);
-            let copy_h = ch.min(h - y0);
-            for y in 0..copy_h {
-                for x in 0..copy_w {
-                    for s in 0..ccpp {
-                        let src = (y * cw + x) * ccpp + s;
-                        let dst_s = if planar { c.plane as usize } else { s };
-                        if dst_s >= cpp {
-                            continue;
-                        }
-                        let dst = ((y0 + y) * w + x0 + x) * cpp + dst_s;
-                        match &px {
-                            ChunkPx::U16(v) => {
-                                if let (Some(o), Some(&s)) = (out_u16.get_mut(dst), v.get(src)) {
-                                    *o = s;
-                                }
-                            }
-                            ChunkPx::F32(v) => {
-                                if let (Some(o), Some(&s)) = (out_f32.get_mut(dst), v.get(src)) {
-                                    *o = s;
-                                }
-                            }
-                        }
-                    }
-                }
+            let at = Place { w, cpp, cw, ccpp, x0, y0, copy_w: cw.min(w - x0), copy_h: ch.min(h - y0), plane: planar.then_some(c.plane as usize) };
+            match &px {
+                ChunkPx::U16(v) => at.copy(v, &mut out_u16),
+                ChunkPx::F32(v) => at.copy(v, &mut out_f32),
             }
         }
         decode_from = to;
     }
     Ok(if float { RawData::F32(out_f32) } else { RawData::U16(out_u16) })
+}
+
+/// Where a decoded chunk's samples go in the image (see [`read_image`]).
+struct Place {
+    w: usize,
+    cpp: usize,
+    cw: usize,
+    ccpp: usize,
+    x0: usize,
+    y0: usize,
+    copy_w: usize,
+    copy_h: usize,
+    /// The plane of a planar chunk (one sample per pixel).
+    plane: Option<usize>,
+}
+
+impl Place {
+    fn copy<T: Copy>(&self, v: &[T], out: &mut [T]) {
+        for y in 0..self.copy_h {
+            let src = y * self.cw * self.ccpp;
+            let dst = ((self.y0 + y) * self.w + self.x0) * self.cpp;
+            match self.plane {
+                // interleaved: the row's samples in one copy, as far as the chunk has them
+                None => {
+                    let src = v.get(src..).unwrap_or_default();
+                    let dst = out.get_mut(dst..).unwrap_or_default();
+                    let n = (self.copy_w * self.ccpp).min(src.len()).min(dst.len());
+                    dst[..n].copy_from_slice(&src[..n]);
+                }
+                Some(p) if p < self.cpp => {
+                    for x in 0..self.copy_w {
+                        if let (Some(o), Some(&s)) = (out.get_mut(dst + x * self.cpp + p), v.get(src + x)) {
+                            *o = s;
+                        }
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+    }
 }
 
 /// Bytes that `n` samples take in a row of an uncompressed or inflated chunk, laid out as

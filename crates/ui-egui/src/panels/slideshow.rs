@@ -84,6 +84,7 @@ pub fn start(app: &mut LccApp, p: &Value, now: f64) -> Result<Value, String> {
     app.ui.fullscreen = true;
     app.ui.zoom = crate::state::Zoom::Fit;
     app.ui.tool.clear();
+    app.end_midi_interaction();
     let _ = app.session.end_interaction();
     Ok(out)
 }
