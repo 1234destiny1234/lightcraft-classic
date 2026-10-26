@@ -164,11 +164,33 @@ pub fn parse_shutter_seconds(s: &str) -> Option<f64> {
     .filter(|v: &f64| v.is_finite() && *v > 0.0)
 }
 
+/// The library label for a camera: the model alone when it already names the maker ("Canon IXUS
+/// 185"), otherwise "Make Model" ("Sony A7 IV"). Exports keep the two parts as read.
+pub fn camera_label(make: &str, model: &str) -> String {
+    let (make, model) = (make.trim(), model.trim());
+    if make.is_empty() {
+        return model.to_string();
+    }
+    if model.is_empty() {
+        return make.to_string();
+    }
+    match model.get(..make.len()) {
+        Some(head) if head.eq_ignore_ascii_case(make) => model.to_string(),
+        _ => format!("{make} {model}"),
+    }
+}
+
 /// Descriptive + capture metadata.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Meta {
     pub camera: String,
+    /// EXIF Make and Model as read, kept separately for exports (issue #1618); `camera` is the
+    /// display label. Left out of the catalog JSON when empty, so older catalogs read unchanged.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub camera_make: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub camera_model: String,
     pub lens: String,
     pub focal_mm: Option<f32>,
     pub aperture: Option<f32>,
@@ -746,6 +768,31 @@ impl Album {
     }
     pub fn is_smart(&self) -> bool {
         self.smart.is_some()
+    }
+}
+
+#[cfg(test)]
+mod camera_label_tests {
+    use super::camera_label;
+
+    #[test]
+    fn label_drops_a_repeated_maker() {
+        assert_eq!(camera_label("Canon", "Canon IXUS 185"), "Canon IXUS 185");
+        assert_eq!(camera_label("Nothing", "Nothing Phone (3a) Pro"), "Nothing Phone (3a) Pro");
+        assert_eq!(camera_label("SONY", "Sony A7 IV"), "Sony A7 IV");
+    }
+
+    #[test]
+    fn label_joins_distinct_parts() {
+        assert_eq!(camera_label("Sony", "A7 IV"), "Sony A7 IV");
+        assert_eq!(camera_label(" Apple ", " iPhone 15 "), "Apple iPhone 15");
+    }
+
+    #[test]
+    fn label_falls_back_to_the_part_that_exists() {
+        assert_eq!(camera_label("", "Canon IXUS 185"), "Canon IXUS 185");
+        assert_eq!(camera_label("Canon", ""), "Canon");
+        assert_eq!(camera_label("  ", "  "), "");
     }
 }
 

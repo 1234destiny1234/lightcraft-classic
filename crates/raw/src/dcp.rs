@@ -302,6 +302,134 @@ pub fn resolve_camera(choice: &str, camera: &str) -> Option<Arc<Dcp>> {
         .or_else(|| resolve(choice, None, camera))
 }
 
+/// Write `dcp` as a `.dcp` file (little-endian, `IIRC`): `UniqueCameraModel`, the colour and forward matrices with
+/// their illuminants, `ProfileName`, the hue/saturation maps, look table and tone curve, `ProfileEmbedPolicy` (no
+/// restrictions), `ProfileCopyright` and `BaselineExposureOffset` (the colour's `baseline_exposure`). [`parse`] reads
+/// it back. Sources: DNG specification 1.7 chapter 6 (camera profile tags).
+pub fn write(dcp: &Dcp) -> Result<Vec<u8>, String> {
+    let (model, name, copyright, color) = (dcp.model.as_str(), dcp.name.as_str(), dcp.copyright.as_str(), &dcp.color);
+    enum V {
+        Ascii(String),
+        Short(u16),
+        Long(Vec<u32>),
+        SRational(Vec<f64>),
+        Float(Vec<f32>),
+    }
+    let mut tags: Vec<(u16, V)> = vec![(50708, V::Ascii(model.into()))];
+    let mat = |m: &crate::Mat3| V::SRational(m.0.iter().flatten().copied().collect());
+    for (k, tag) in [(0usize, 50721u16), (1, 50722)] {
+        if let Some(Some(m)) = color.color_matrix.get(k) {
+            tags.push((tag, mat(m)));
+        }
+    }
+    for (k, tag) in [(0usize, 50778u16), (1, 50779)] {
+        if let Some(&code) = color.illuminant.get(k)
+            && code != 0
+        {
+            tags.push((tag, V::Short(code)));
+        }
+    }
+    if !name.is_empty() {
+        tags.push((50936, V::Ascii(name.into())));
+    }
+    let table_data = |t: &crate::profile::HsvTable| V::Float(t.data.iter().flatten().copied().collect());
+    let dims = |t: &crate::profile::HsvTable| -> Result<V, String> {
+        let d = [t.hue_divisions, t.sat_divisions, t.val_divisions].map(u32::try_from);
+        match d {
+            [Ok(h), Ok(s), Ok(v)] => Ok(V::Long(vec![h, s, v])),
+            _ => Err("table too large for a camera profile".into()),
+        }
+    };
+    let p = &color.profile;
+    if let [Some(a), Some(b)] = &p.hue_sat_map {
+        if (a.hue_divisions, a.sat_divisions, a.val_divisions) == (b.hue_divisions, b.sat_divisions, b.val_divisions) {
+            tags.push((50937, dims(a)?));
+            tags.push((50938, table_data(a)));
+            tags.push((50939, table_data(b)));
+            tags.push((51107, V::Long(vec![u32::from(a.srgb_value)])));
+        }
+    } else if let Some(a) = p.hue_sat_map.iter().flatten().next() {
+        tags.push((50937, dims(a)?));
+        tags.push((50938, table_data(a)));
+        tags.push((51107, V::Long(vec![u32::from(a.srgb_value)])));
+    }
+    if let Some(curve) = &p.tone_curve {
+        tags.push((50940, V::Float(curve.points.iter().flatten().copied().collect())));
+    }
+    tags.push((50941, V::Long(vec![3]))); // ProfileEmbedPolicy: no restrictions
+    if !copyright.is_empty() {
+        tags.push((50942, V::Ascii(copyright.into())));
+    }
+    for (k, tag) in [(0usize, 50964u16), (1, 50965)] {
+        if let Some(Some(m)) = color.forward_matrix.get(k) {
+            tags.push((tag, mat(m)));
+        }
+    }
+    if let Some(t) = &p.look_table {
+        tags.push((50981, dims(t)?));
+        tags.push((50982, table_data(t)));
+        tags.push((51108, V::Long(vec![u32::from(t.srgb_value)])));
+    }
+    if color.baseline_exposure != 0.0 && color.baseline_exposure.is_finite() {
+        tags.push((51109, V::SRational(vec![color.baseline_exposure])));
+    }
+    tags.sort_by_key(|(t, _)| *t);
+
+    let to_u32 = |n: usize| u32::try_from(n).map_err(|_| "camera profile too large".to_string());
+    let encode = |v: &V| -> (u16, usize, Vec<u8>) {
+        match v {
+            V::Ascii(s) => {
+                let mut b: Vec<u8> = s.bytes().filter(|&c| c != 0).collect();
+                b.push(0);
+                (2, b.len(), b)
+            }
+            V::Short(x) => (3, 1, x.to_le_bytes().to_vec()),
+            V::Long(xs) => (4, xs.len(), xs.iter().flat_map(|x| x.to_le_bytes()).collect()),
+            V::SRational(xs) => (
+                10,
+                xs.len(),
+                xs.iter()
+                    .flat_map(|x| {
+                        let n = (x * 10000.0).round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
+                        n.to_le_bytes().into_iter().chain(10000i32.to_le_bytes())
+                    })
+                    .collect(),
+            ),
+            V::Float(xs) => (11, xs.len(), xs.iter().flat_map(|x| x.to_le_bytes()).collect()),
+        }
+    };
+    let n = tags.len();
+    let too_large = || "camera profile too large".to_string();
+    let ifd_len = n.checked_mul(12).and_then(|b| b.checked_add(6)).ok_or_else(too_large)?;
+    let mut head = b"IIRC".to_vec();
+    head.extend_from_slice(&8u32.to_le_bytes());
+    head.extend_from_slice(&u16::try_from(n).map_err(|_| "too many tags".to_string())?.to_le_bytes());
+    let mut data = Vec::new();
+    let data_at = ifd_len.checked_add(8).ok_or_else(too_large)?;
+    for (tag, v) in &tags {
+        let (ty, count, bytes) = encode(v);
+        head.extend_from_slice(&tag.to_le_bytes());
+        head.extend_from_slice(&ty.to_le_bytes());
+        head.extend_from_slice(&to_u32(count)?.to_le_bytes());
+        if bytes.len() <= 4 {
+            let mut inline = [0u8; 4];
+            for (d, s) in inline.iter_mut().zip(&bytes) {
+                *d = *s;
+            }
+            head.extend_from_slice(&inline);
+        } else {
+            if data.len() & 1 == 1 {
+                data.push(0); // TIFF values start on a word boundary
+            }
+            head.extend_from_slice(&to_u32(data_at.checked_add(data.len()).ok_or_else(too_large)?)?.to_le_bytes());
+            data.extend_from_slice(&bytes);
+        }
+    }
+    head.extend_from_slice(&0u32.to_le_bytes());
+    head.extend_from_slice(&data);
+    Ok(head)
+}
+
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects)]
 mod tests {

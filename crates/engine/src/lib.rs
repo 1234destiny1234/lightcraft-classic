@@ -21,6 +21,7 @@ pub mod availability;
 pub(crate) mod camera_preview;
 pub mod camera_profiles;
 pub mod cmd;
+pub mod colour_export;
 pub mod config;
 pub mod contact_sheet;
 pub mod control_auth;

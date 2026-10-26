@@ -21,7 +21,6 @@ use lcc_camdb::calibration::{self, Calibration};
 use lcc_colourfit::dataset::{self, CollectOptions, ExportSet};
 use lcc_colourfit::fit::{self, FitOptions};
 use lcc_raw::ColorData;
-use lcc_raw::profile::HsvTable;
 
 /// Where `add` writes calibrations, relative to the repository root.
 const DATA_DIR: &str = "crates/camdb/data/calibrations";
@@ -483,125 +482,7 @@ fn with_attribution_row(table: &str, path: &str, c: &Calibration, today: &str) -
 
 /// A little-endian DNG camera profile (`.dcp`) of `color`'s profile tags, readable by `lcc_raw::dcp::parse`.
 pub fn write_dcp(model: &str, name: &str, copyright: &str, color: &ColorData) -> Result<Vec<u8>, String> {
-    enum V {
-        Ascii(String),
-        Short(u16),
-        Long(Vec<u32>),
-        SRational(Vec<f64>),
-        Float(Vec<f32>),
-    }
-    let mut tags: Vec<(u16, V)> = vec![(50708, V::Ascii(model.into()))];
-    let mat = |m: &lcc_raw::Mat3| V::SRational(m.0.iter().flatten().copied().collect());
-    for (k, tag) in [(0usize, 50721u16), (1, 50722)] {
-        if let Some(Some(m)) = color.color_matrix.get(k) {
-            tags.push((tag, mat(m)));
-        }
-    }
-    for (k, tag) in [(0usize, 50778u16), (1, 50779)] {
-        if let Some(&code) = color.illuminant.get(k)
-            && code != 0
-        {
-            tags.push((tag, V::Short(code)));
-        }
-    }
-    if !name.is_empty() {
-        tags.push((50936, V::Ascii(name.into())));
-    }
-    let table_data = |t: &HsvTable| V::Float(t.data.iter().flatten().copied().collect());
-    let dims = |t: &HsvTable| -> Result<V, String> {
-        let d = [t.hue_divisions, t.sat_divisions, t.val_divisions].map(u32::try_from);
-        match d {
-            [Ok(h), Ok(s), Ok(v)] => Ok(V::Long(vec![h, s, v])),
-            _ => Err("table too large for a camera profile".into()),
-        }
-    };
-    let p = &color.profile;
-    if let [Some(a), Some(b)] = &p.hue_sat_map {
-        if (a.hue_divisions, a.sat_divisions, a.val_divisions) == (b.hue_divisions, b.sat_divisions, b.val_divisions) {
-            tags.push((50937, dims(a)?));
-            tags.push((50938, table_data(a)));
-            tags.push((50939, table_data(b)));
-            tags.push((51107, V::Long(vec![u32::from(a.srgb_value)])));
-        }
-    } else if let Some(a) = p.hue_sat_map.iter().flatten().next() {
-        tags.push((50937, dims(a)?));
-        tags.push((50938, table_data(a)));
-        tags.push((51107, V::Long(vec![u32::from(a.srgb_value)])));
-    }
-    if let Some(curve) = &p.tone_curve {
-        tags.push((50940, V::Float(curve.points.iter().flatten().copied().collect())));
-    }
-    tags.push((50941, V::Long(vec![3]))); // ProfileEmbedPolicy: no restrictions
-    if !copyright.is_empty() {
-        tags.push((50942, V::Ascii(copyright.into())));
-    }
-    for (k, tag) in [(0usize, 50964u16), (1, 50965)] {
-        if let Some(Some(m)) = color.forward_matrix.get(k) {
-            tags.push((tag, mat(m)));
-        }
-    }
-    if let Some(t) = &p.look_table {
-        tags.push((50981, dims(t)?));
-        tags.push((50982, table_data(t)));
-        tags.push((51108, V::Long(vec![u32::from(t.srgb_value)])));
-    }
-    if color.baseline_exposure != 0.0 && color.baseline_exposure.is_finite() {
-        tags.push((51109, V::SRational(vec![color.baseline_exposure])));
-    }
-    tags.sort_by_key(|(t, _)| *t);
-
-    let to_u32 = |n: usize| u32::try_from(n).map_err(|_| "camera profile too large".to_string());
-    let encode = |v: &V| -> (u16, usize, Vec<u8>) {
-        match v {
-            V::Ascii(s) => {
-                let mut b: Vec<u8> = s.bytes().filter(|&c| c != 0).collect();
-                b.push(0);
-                (2, b.len(), b)
-            }
-            V::Short(x) => (3, 1, x.to_le_bytes().to_vec()),
-            V::Long(xs) => (4, xs.len(), xs.iter().flat_map(|x| x.to_le_bytes()).collect()),
-            V::SRational(xs) => (
-                10,
-                xs.len(),
-                xs.iter()
-                    .flat_map(|x| {
-                        let n = (x * 10000.0).round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
-                        n.to_le_bytes().into_iter().chain(10000i32.to_le_bytes())
-                    })
-                    .collect(),
-            ),
-            V::Float(xs) => (11, xs.len(), xs.iter().flat_map(|x| x.to_le_bytes()).collect()),
-        }
-    };
-    let n = tags.len();
-    let ifd_len = 2 + 12 * n + 4;
-    let mut head = b"IIRC".to_vec();
-    head.extend_from_slice(&8u32.to_le_bytes());
-    head.extend_from_slice(&u16::try_from(n).map_err(|_| "too many tags".to_string())?.to_le_bytes());
-    let mut data = Vec::new();
-    let data_at = 8 + ifd_len;
-    for (tag, v) in &tags {
-        let (ty, count, bytes) = encode(v);
-        head.extend_from_slice(&tag.to_le_bytes());
-        head.extend_from_slice(&ty.to_le_bytes());
-        head.extend_from_slice(&to_u32(count)?.to_le_bytes());
-        if bytes.len() <= 4 {
-            let mut inline = [0u8; 4];
-            for (d, s) in inline.iter_mut().zip(&bytes) {
-                *d = *s;
-            }
-            head.extend_from_slice(&inline);
-        } else {
-            if data.len() % 2 == 1 {
-                data.push(0); // TIFF values start on a word boundary
-            }
-            head.extend_from_slice(&to_u32(data_at + data.len())?.to_le_bytes());
-            data.extend_from_slice(&bytes);
-        }
-    }
-    head.extend_from_slice(&0u32.to_le_bytes());
-    head.extend_from_slice(&data);
-    Ok(head)
+    lcc_raw::dcp::write(&lcc_raw::dcp::Dcp { model: model.into(), name: name.into(), copyright: copyright.into(), color: color.clone() })
 }
 
 #[cfg(test)]
@@ -618,7 +499,8 @@ mod tests {
         color.color_matrix = [Some(cm), Some(cm)];
         color.forward_matrix = [Some(fm), Some(fm)];
         color.baseline_exposure = 0.35;
-        let table = HsvTable { hue_divisions: 6, sat_divisions: 2, val_divisions: 1, data: vec![[2.0, 1.1, 0.9]; 12], srgb_value: false };
+        let table =
+            lcc_raw::profile::HsvTable { hue_divisions: 6, sat_divisions: 2, val_divisions: 1, data: vec![[2.0, 1.1, 0.9]; 12], srgb_value: false };
         color.profile.hue_sat_map = [Some(table.clone()), Some(table.clone())];
         color.profile.look_table = Some(table);
         color.profile.tone_curve = Some(ToneCurve { points: vec![[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]] });

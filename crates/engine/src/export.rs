@@ -1737,7 +1737,15 @@ pub fn export_metadata(photo: &lcc_catalog::Photo, catalog: &lcc_catalog::Catalo
         out.gps = m.gps.map(|(latitude, longitude)| Gps { latitude, longitude, altitude: None });
     }
     if o.metadata == MetadataPolicy::All {
-        out.model = text(&m.camera);
+        // Make and Model as read (issue #1618); catalogs from before they were kept separately
+        // only have the label, which stands in for the Model.
+        let (make, model) = if m.camera_make.is_empty() && m.camera_model.is_empty() {
+            (None, text(&m.camera))
+        } else {
+            (text(&m.camera_make), text(&m.camera_model))
+        };
+        out.make = make;
+        out.model = model;
         out.lens_model = text(&m.lens);
         out.focal_length = m.focal_mm.map(f64::from);
         out.f_number = m.aperture.map(f64::from);
@@ -1845,6 +1853,8 @@ enum Work {
         remove_location: bool,
         label: String,
         size: (usize, usize),
+        /// The photo's camera-profile choice (`profile.camera`): a DNG carries the colour the photo renders with.
+        camera: String,
     },
 }
 
@@ -1923,6 +1933,7 @@ fn prepare_guarded(
         // the file's bytes; a DNG also decodes the raw data (16-bit samples) and writes it again
         let weight = (p.file_size as usize).saturating_add(if dng.is_some() { full_px.saturating_mul(6) } else { 0 });
         let work = Work::File {
+            camera: p.develop.profile.camera.clone(),
             path: path.clone(),
             read: session.media.file_bytes.clone(),
             packet: crate::sidecar::sidecar_packet_with(p, &session.catalog, removes_location(p, &session.catalog, o)),
@@ -2038,7 +2049,7 @@ impl PreparedExport {
                     video_file: None,
                 })
             }
-            Work::File { path, read, packet, dng, quality, lossy_edge, label, size, remove_location } => {
+            Work::File { path, read, packet, dng, quality, lossy_edge, label, size, remove_location, camera } => {
                 let bytes = match &read {
                     Some(r) => r(&path)?,
                     None => std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?,
@@ -2085,7 +2096,8 @@ impl PreparedExport {
                     return Err(format!("{label}: DNG export needs a raw photo"));
                 }
                 let mut raw = lcc_raw::decode(&bytes).map_err(|e| format!("{label}: {e}"))?;
-                crate::camera_preview::with_starting_colour(&mut raw, &bytes);
+                // the colour the photo renders with: its chosen .dcp or calibration look, else the starting colour
+                crate::colour_export::with_photo_colour(&mut raw, &bytes, &camera);
                 drop(bytes);
                 let compression = match dng {
                     DngCompression::Lossless => lcc_raw::DngCompression::Lj92 { tile: 256 },
@@ -2934,6 +2946,28 @@ mod tests {
         assert_eq!((back.copyright_marked, back.usage_terms.as_deref()), (Some(true), Some("Editorial use only")));
         assert_eq!(back.copyright_url.as_deref(), Some("https://example.com/rights"));
         assert!(back.gps.is_some());
+    }
+
+    /// Exports write EXIF Make and Model as read, not the label (#1618); a catalog from before the
+    /// parts were kept separately falls back to the label for the Model.
+    #[test]
+    fn export_writes_camera_make_and_model() {
+        use lcc_catalog::{Catalog, Photo, PhotoId, Source};
+        let mut p = Photo::new(PhotoId(1), Source::Demo { scene: 0 }, "a.jpg", "jpeg", 10, 10, "2026-10-06T00:00:00");
+        p.meta.camera = "Canon IXUS 185".into();
+        p.meta.camera_make = "Canon".into();
+        p.meta.camera_model = "Canon IXUS 185".into();
+        let m = export_metadata(&p, &Catalog::new(), &ExportOptions::default()).unwrap();
+        assert_eq!((m.make.as_deref(), m.model.as_deref()), (Some("Canon"), Some("Canon IXUS 185")));
+        // embedded and readable back from the JPEG
+        let jpg = encode_with_metadata(&test_image(), &ExportOptions::default(), Some(&m)).unwrap();
+        let back = lcc_meta::extract(&jpg);
+        assert_eq!((back.make.as_deref(), back.model.as_deref()), (Some("Canon"), Some("Canon IXUS 185")));
+        // a catalog from before the parts were kept: the label stands in for the Model
+        let mut old = Photo::new(PhotoId(2), Source::Demo { scene: 0 }, "b.jpg", "jpeg", 10, 10, "2026-10-06T00:00:00");
+        old.meta.camera = "Canon Canon IXUS 185".into();
+        let m = export_metadata(&old, &Catalog::new(), &ExportOptions::default()).unwrap();
+        assert_eq!((m.make.as_deref(), m.model.as_deref()), (None, Some("Canon Canon IXUS 185")));
     }
 
     #[test]
