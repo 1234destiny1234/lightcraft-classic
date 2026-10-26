@@ -749,7 +749,12 @@ mod tests {
         for (name, text) in embedded_files() {
             let c = Calibration::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
             assert_eq!(*name, c.file_name(), "{name} should be named after its camera");
-            assert_eq!(c.to_json().unwrap(), *text, "{name} should be written in the canonical form (`calibrate-lightroom add`)");
+            // (a Windows checkout may have turned LF into CRLF)
+            assert_eq!(
+                c.to_json().unwrap(),
+                text.replace("\r\n", "\n"),
+                "{name} should be written in the canonical form (`calibrate-lightroom add`)"
+            );
         }
     }
 }
