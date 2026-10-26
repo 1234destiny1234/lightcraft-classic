@@ -308,7 +308,7 @@ fn decode_saved_ui(bytes: &[u8]) -> Result<(UiState, bool), String> {
     let fields = saved.as_object_mut().ok_or("settings must be an object")?;
     let recovered =
         fields.get("docking").is_some_and(|value| match serde_json::from_value::<Option<lcc_ui_egui::docking::Workspace>>(value.clone()) {
-            Ok(Some(workspace)) => workspace.validate().is_err(),
+            Ok(Some(workspace)) => lcc_ui_egui::docking::validate(&workspace).is_err(),
             Ok(None) => false,
             Err(_) => true,
         });
@@ -449,7 +449,9 @@ impl PrefsWriter {
         // Issue #44: a layout that doesn't validate is left out of the file instead of failing
         // the save, so the rest of the settings (panel folds, sections, library) are still kept.
         let bytes = match &ui.docking {
-            Some(workspace) if workspace.validate().is_err() => serde_json::to_vec_pretty(&UiState { docking: None, ..ui.clone() }),
+            Some(workspace) if lcc_ui_egui::docking::validate(workspace).is_err() => {
+                serde_json::to_vec_pretty(&UiState { docking: None, ..ui.clone() })
+            }
             _ => serde_json::to_vec_pretty(ui),
         }
         .map_err(|e| e.to_string())?;
@@ -1627,7 +1629,7 @@ mod tests {
         restored_app.ui = restored.unwrap();
         restored_app.run("ui.dock", serde_json::json!({"operation":"open", "panel":"tools"})).unwrap();
         assert_eq!(
-            restored_app.ui.docking.as_ref().unwrap().layout.floating.iter().find(|g| g.panels.contains(&Panel::Tools)).unwrap().rect,
+            restored_app.ui.docking.as_ref().unwrap().layout.floating.iter().find(|g| g.contains(&Panel::Tools)).unwrap().rect,
             [70.0, 80.0, 310.0, 500.0]
         );
         std::fs::remove_dir_all(d).unwrap();
