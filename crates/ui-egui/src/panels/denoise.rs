@@ -143,7 +143,8 @@ pub fn detail_toggle(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, on: bool,
         }
         register(ui.ctx(), "denoise:enabled", r.rect);
         if r.changed() {
-            let _ = app.run("denoise.toggle", json!({"id": id.0, "enabled": enabled}));
+            let params = if app.session.active() == Some(id) { json!({"enabled": enabled}) } else { json!({"id": id.0, "enabled": enabled}) };
+            let _ = app.run("denoise.toggle", params);
         }
     });
 }
@@ -192,14 +193,20 @@ pub fn detail_status(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, amount: f
         // push every control under it down and back up while the user drags a slider); the activity stack shows the
         // progress, with the photo's file name.
         PhotoState::Idle => {
-            if amount > 0.0 && app.session.denoise_auto() {
+            let held = app.session.denoise_held(id);
+            if amount > 0.0 && app.session.denoise_auto() && !held {
                 // the pump has not met this photo yet: let it come round soon instead of waiting out its pause
                 let now = ui.ctx().input(|i| i.time);
                 app.caches.denoise.next_pump = app.caches.denoise.next_pump.min(now + 0.05);
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(60));
             } else if amount > 0.0 {
                 egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-                    note(ui, "Its denoised picture is not made yet, and pictures are not made on their own (Settings, AI Denoise).", t.text_dim);
+                    let why = if held {
+                        "Its denoised picture is not made yet: AI Denoise was stopped for it."
+                    } else {
+                        "Its denoised picture is not made yet, and pictures are not made on their own (Settings, AI Denoise)."
+                    };
+                    note(ui, why, t.text_dim);
                     ui.add_space(2.0);
                     let r = ui.small_button(crate::i18n::tr("Make it now"));
                     register(ui.ctx(), "denoise:make", r.rect);

@@ -308,5 +308,11 @@
   "Where should the Lightroom catalog “{catalog}” go?": "Où importer le catalogue Lightroom « {catalog} » ?",
   "Merge into the open library “{library}” ({count} photo{})": "Fusionner avec la bibliothèque ouverte « {library} » ({count} photo{})",
   "{n} file{} skipped (not a supported photo type)": "Fichiers ignorés (type de photo non pris en charge) : {n}{:.0}",
-  "{n} folder{} could not be read": "Dossiers illisibles : {n}{:.0}"
+  "{n} folder{} could not be read": "Dossiers illisibles : {n}{:.0}",
+  "about {n} min left": "environ {n} min restantes",
+  "about {h} h {m} min left": "environ {h} h {m} min restantes",
+  "{n} done": "{n} terminées",
+  ", {n} failed": ", {n} en échec",
+  "{n} failed": "{n} en échec",
+  "Show each photo ({n})": "Afficher chaque photo ({n})"
 }

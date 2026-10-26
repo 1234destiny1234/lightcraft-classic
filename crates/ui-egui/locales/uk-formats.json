@@ -308,5 +308,11 @@
   "Where should the Lightroom catalog “{catalog}” go?": "Куди імпортувати каталог Lightroom «{catalog}»?",
   "Merge into the open library “{library}” ({count} photo{})": "Об’єднати з відкритою бібліотекою «{library}» (фото: {count}){:.0}",
   "{n} file{} skipped (not a supported photo type)": "Пропущено файлів (непідтримуваний тип фото): {n}{:.0}",
-  "{n} folder{} could not be read": "Папок, які не вдалося прочитати: {n}{:.0}"
+  "{n} folder{} could not be read": "Папок, які не вдалося прочитати: {n}{:.0}",
+  "about {n} min left": "лишилося близько {n} хв",
+  "about {h} h {m} min left": "лишилося близько {h} год {m} хв",
+  "{n} done": "готово: {n}",
+  ", {n} failed": ", з помилкою: {n}",
+  "{n} failed": "з помилкою: {n}",
+  "Show each photo ({n})": "Показати окремі фото ({n})"
 }
