@@ -315,7 +315,9 @@ struct PrefsFile {
     keyword_sets: Vec<crate::cmd::keywords::KeywordSet>,
     keyword_set: Option<String>,
     recent_keywords: Vec<String>,
+    /// The single keyword shortcut of older libraries; read, written empty.
     keyword_shortcut: Option<String>,
+    keyword_shortcuts: Vec<String>,
     /// Develop defaults for imported photos.
     import: crate::import::ImportDefaults,
     /// Thumbnail disk cache budget (MB, 0 = default).
@@ -541,6 +543,10 @@ impl Session {
 
     /// Open `stores`; the new library takes `lock` once nothing can fail any more.
     fn open_stores(&mut self, stores: LibraryStores, seed_demo: bool, lock: &mut Option<LibraryLock>) -> Result<()> {
+        // the old library's queued sidecar writes are made against its catalog; one still stuck (a share that stopped
+        // answering) keeps this library open, with its retries, rather than lose or misplace its result. First, before
+        // anything of the session changes.
+        self.settle_sidecar_writes()?;
         let LibraryStores { dir, catalog, mut files, on_disk } = stores;
         self.media.smart_dir = on_disk.then(|| crate::smart::dir(&dir));
         // the current library may be these same files: let its background snapshot land first
@@ -562,6 +568,8 @@ impl Session {
         // never edited this session would look unchanged and show the old library's numbers.
         static LOADS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         catalog.revision = LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed).wrapping_add(1) << 32;
+        // (a sidecar waiting for a retry is a photo of the old library)
+        self.unsaved_sidecars.clear();
         self.catalog = catalog;
         // (nothing of the list the last library showed is this one's)
         self.refresh_view();
@@ -609,7 +617,8 @@ impl Session {
         self.keyword_sets = prefs.keyword_sets;
         self.keyword_set = prefs.keyword_set;
         self.recent_keywords = prefs.recent_keywords;
-        self.keyword_shortcut = prefs.keyword_shortcut;
+        self.keyword_shortcut =
+            if prefs.keyword_shortcuts.is_empty() { prefs.keyword_shortcut.into_iter().collect() } else { prefs.keyword_shortcuts };
         self.import_defaults = prefs.import;
         self.cache_mb = prefs.cache_mb;
         self.preview_prefs = prefs.previews;
@@ -862,6 +871,8 @@ impl Session {
             return Ok(());
         }
         let _ = self.end_interaction();
+        // the automatic sidecar writes still queued are made, and a failed one recorded, before the library goes
+        self.flush_sidecar_writes();
         let persisted = self.persist();
         self.save_view();
         let unlogged = if persisted.is_err() { self.pending_log.len() as u64 } else { 0 };
@@ -955,7 +966,8 @@ impl Session {
             keyword_sets: self.keyword_sets.clone(),
             keyword_set: self.keyword_set.clone(),
             recent_keywords: self.recent_keywords.clone(),
-            keyword_shortcut: self.keyword_shortcut.clone(),
+            keyword_shortcut: None,
+            keyword_shortcuts: self.keyword_shortcut.clone(),
             import: self.import_defaults.clone(),
             cache_mb: self.cache_mb,
             smart_previews_dir: self.smart_previews_dir.as_ref().map(|d| d.to_string_lossy().to_string()),

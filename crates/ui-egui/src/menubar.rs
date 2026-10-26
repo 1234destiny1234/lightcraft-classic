@@ -238,6 +238,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "library.toggleAutoWriteXmp",
             "photo.readFocusPoints",
             "---",
+            "dialog.keywordShortcut",
             "keyword.toggleShortcut",
             "---",
             "photo.tagFromTracklog",

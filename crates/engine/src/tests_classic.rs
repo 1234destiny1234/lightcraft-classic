@@ -237,5 +237,31 @@ fn builtin_keyword_sets_and_the_keyword_shortcut() {
     s.execute("keyword.toggleShortcut", &json!({})).unwrap();
     assert!(!has(&s, "Travel|Rome"));
     s.execute("keyword.setShortcut", &json!({"keyword": ""})).unwrap();
-    assert_eq!(s.keyword_shortcut, None);
+    assert!(s.keyword_shortcut.is_empty());
+}
+
+/// The keyword shortcut (Set Keyword Shortcut…, ⌘⌥⇧K) holds the keywords typed with commas
+/// between them, each once whatever its case; ⇧K adds them to the target photos unless every one
+/// has them all, and then takes them off.
+#[test]
+fn the_keyword_shortcut_adds_and_removes_several_keywords() {
+    let (mut s, ids) = demo_with(2);
+    let kw = |s: &Session, id: u64| s.catalog.photo(lcc_catalog::PhotoId(id)).unwrap().meta.keywords.clone();
+    s.execute("photo.setMeta", &json!({"ids": [ids[0]], "keywords": ["beach"]})).unwrap();
+    s.execute("photo.setMeta", &json!({"ids": [ids[1]], "keywords": []})).unwrap();
+    let r = s.execute("keyword.setShortcut", &json!({"keywords": " beach , sunset,, BEACH"})).unwrap();
+    assert_eq!(r["keywords"], json!(["beach", "sunset"]));
+    assert_eq!(s.execute("keyword.shortcut", &json!({})).unwrap()["keywords"], json!(["beach", "sunset"]));
+    let r = s.execute("keyword.toggleShortcut", &json!({"ids": ids})).unwrap();
+    assert_eq!(r["added"], true, "{r}");
+    assert_eq!(kw(&s, ids[0]).len(), 2, "a keyword it has isn't added again: {:?}", kw(&s, ids[0]));
+    assert_eq!(kw(&s, ids[1]).len(), 2);
+    let r = s.execute("keyword.toggleShortcut", &json!({"ids": ids})).unwrap();
+    assert_eq!(r["added"], false, "{r}");
+    assert!(ids.iter().all(|id| kw(&s, *id).is_empty()), "every photo had both: taken off");
+    // a name with a comma survives confirming the text the dialog showed
+    s.execute("keyword.setShortcut", &json!({"keywords": ["Paris, France", "Trips"]})).unwrap();
+    let r = s.execute("keyword.setShortcut", &json!({"keywords": "Paris, France, Trips"})).unwrap();
+    assert_eq!(r["keywords"], json!(["Paris, France", "Trips"]));
+    assert_eq!(s.execute("keyword.setShortcut", &json!({"keywords": " , "})).unwrap()["keywords"], json!([]));
 }
