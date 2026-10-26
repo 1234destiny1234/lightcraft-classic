@@ -306,5 +306,7 @@
   "Could not read {name}: {e}": "{name} を読み取れませんでした: {e}",
   "Added {n} photo{}": "{n}枚を追加しました{:.0}",
   "Where should the Lightroom catalog “{catalog}” go?": "Lightroom カタログ「{catalog}」をどこに読み込みますか？",
-  "Merge into the open library “{library}” ({count} photo{})": "開いているライブラリ「{library}」に統合（写真{count}枚）{:.0}"
+  "Merge into the open library “{library}” ({count} photo{})": "開いているライブラリ「{library}」に統合（写真{count}枚）{:.0}",
+  "{n} file{} skipped (not a supported photo type)": "スキップしたファイル（非対応の写真形式）：{n}個{:.0}",
+  "{n} folder{} could not be read": "読み取れなかったフォルダー：{n}個{:.0}"
 }
