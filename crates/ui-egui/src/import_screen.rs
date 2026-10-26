@@ -336,6 +336,11 @@ fn photos(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog, max_h: Opti
             d.checked.iter_mut().for_each(|c| *c = false);
         }
     });
+    // what the scan left out, when it left something out
+    if let Some(note) = crate::import::scan_note(d) {
+        let r = ui.label(egui::RichText::new(note).color(t.caution).small());
+        crate::widgets::register(ui.ctx(), "label:importScanNote", r.rect);
+    }
     let types = d.file_types();
     if types.len() > 1 {
         ui.horizontal_wrapped(|ui| {
@@ -590,6 +595,7 @@ fn options(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
                 .small(),
         );
     }
+    crate::import::recipe_section(app, ui, d);
     let mut albums = crate::album_picker::entries_from(&app.session.catalog, |_| None);
     albums.retain(|a| a.folder || !a.smart);
     d.album = d.album.filter(|id| albums.iter().any(|a| a.id == *id && !a.folder));

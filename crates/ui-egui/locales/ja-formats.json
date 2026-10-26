@@ -146,6 +146,7 @@
   "; {outside} outside its time range": "。{outside}枚は記録時間の範囲外",
   "@{}: {} PRs, {} commits, +{} / −{} lines (Δ {}), +{} / −{} binary assets, {} – {}": "@{}：PR {}件、コミット {}件、+{} / −{} 行（Δ {}）、バイナリアセット +{} / −{}、{} – {}",
   "Added {what} to {name}": "{what}を{name}に追加しました",
+  "Adjustments: {n}": "調整：{n}",
   "Auto Import: added {} photo{}": "自動読み込み：{}枚の写真を追加しました{:.0}",
   "Building previews for {} photos…": "{}枚のプレビューを作成中…",
   "Couldn't open the editor: {e}": "エディターを開けませんでした：{e}",
@@ -306,5 +307,7 @@
   "Could not read {name}: {e}": "{name} を読み取れませんでした: {e}",
   "Added {n} photo{}": "{n}枚を追加しました{:.0}",
   "Where should the Lightroom catalog “{catalog}” go?": "Lightroom カタログ「{catalog}」をどこに読み込みますか？",
-  "Merge into the open library “{library}” ({count} photo{})": "開いているライブラリ「{library}」に統合（写真{count}枚）{:.0}"
+  "Merge into the open library “{library}” ({count} photo{})": "開いているライブラリ「{library}」に統合（写真{count}枚）{:.0}",
+  "{n} file{} skipped (not a supported photo type)": "スキップしたファイル（非対応の写真形式）：{n}個{:.0}",
+  "{n} folder{} could not be read": "読み取れなかったフォルダー：{n}個{:.0}"
 }
