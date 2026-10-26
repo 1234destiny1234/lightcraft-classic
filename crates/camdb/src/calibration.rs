@@ -267,6 +267,24 @@ fn check_text(what: &str, s: &str, max: usize) -> Result<(), Error> {
     Ok(())
 }
 
+/// A camera or look identifier (make, model, alias, look name): trimmed, not empty, at most `max` characters,
+/// no control characters, no backslashes, no path traversal (`..`), and no leading or trailing slash. Slashes
+/// inside the identifier are permitted (e.g. phone models like "Xiaomi 17 Ultra/2512BPNDAG" or look names like
+/// "Camera PROVIA/STANDARD").
+fn check_identifier(what: &str, s: &str, max: usize) -> Result<(), Error> {
+    if s.trim().is_empty() {
+        return Err(Error(format!("{what} is empty")));
+    }
+    if s.chars().count() > max {
+        return Err(Error(format!("{what} is longer than {max} characters")));
+    }
+    let trimmed = s.trim();
+    if s.chars().any(|c| c.is_control() || c == '\\') || trimmed.starts_with('/') || trimmed.ends_with('/') || s.contains("//") || s.contains("..") {
+        return Err(Error(format!("{what} {s:?} holds a control character or reads as a path")));
+    }
+    Ok(())
+}
+
 fn check_matrix(what: &str, m: &Mat3) -> Result<(), Error> {
     if !m.0.iter().flatten().all(|v| v.is_finite() && v.abs() < 16.0) {
         return Err(Error(format!("{what} has an entry that is not finite or too large")));
@@ -318,15 +336,15 @@ impl Calibration {
         if self.version != VERSION {
             return Err(Error(format!("calibration version {} (this app reads {VERSION})", self.version)));
         }
-        check_text("make", &self.make, 64)?;
-        check_text("model", &self.model, 64)?;
+        check_identifier("make", &self.make, 64)?;
+        check_identifier("model", &self.model, 64)?;
         let name = format!("{} {}", self.make.trim(), self.model.trim());
         let err = |e: Error| Error(format!("{name}: {}", e.0));
         if self.aliases.len() > 8 {
             return Err(Error(format!("{name}: more than 8 aliases")));
         }
         for a in &self.aliases {
-            check_text("alias", a, 64).map_err(err)?;
+            check_identifier("alias", a, 64).map_err(err)?;
         }
         if self.method != self.editor.method() {
             return Err(Error(format!("{name}: unknown method {:?} for {}", self.method, self.editor.name())));
@@ -365,7 +383,7 @@ impl Calibration {
         }
         let mut ids: Vec<String> = Vec::new();
         for look in &self.looks {
-            check_text("look name", &look.name, 64).map_err(err)?;
+            check_identifier("look name", &look.name, 64).map_err(err)?;
             let id = look_id(&look.name);
             if id == LOOK_PREFIX || ids.contains(&id) {
                 return Err(Error(format!("{name}: look {:?} has no usable or a duplicate id", look.name)));
@@ -389,7 +407,7 @@ impl Calibration {
             return Err(Error(format!("{name}: evidence out of range")));
         }
         for l in &e.looks {
-            check_text("evidence look name", &l.name, 64).map_err(err)?;
+            check_identifier("evidence look name", &l.name, 64).map_err(err)?;
             let finite = [l.before.median, l.before.p95, l.after.median, l.after.p95].iter().all(|v| v.is_finite() && (0.0..=200.0).contains(v));
             if !finite {
                 return Err(Error(format!("{name}: evidence for {:?} out of range", l.name)));
@@ -626,6 +644,21 @@ mod tests {
         c.looks.clear();
         cases.push(c);
         let mut c = ok.clone();
+        c.model = "/etc/passwd".into();
+        cases.push(c);
+        let mut c = ok.clone();
+        c.model = "foo/../bar".into();
+        cases.push(c);
+        let mut c = ok.clone();
+        c.model = "foo//bar".into();
+        cases.push(c);
+        let mut c = ok.clone();
+        c.model = "foo\\bar".into();
+        cases.push(c);
+        let mut c = ok.clone();
+        c.model = "model/".into();
+        cases.push(c);
+        let mut c = ok.clone();
         c.contributor = Some("/home/someone/photos".into());
         cases.push(c);
         let mut c = ok.clone();
@@ -648,6 +681,22 @@ mod tests {
             assert!(Calibration::parse(text).is_err());
         }
         assert!(Calibration::parse(&" ".repeat(MAX_FILE + 1)).is_err());
+    }
+
+    #[test]
+    fn slash_in_camera_model_and_look_names_is_allowed() {
+        let mut c = sample();
+        c.make = "Xiaomi".into();
+        c.model = "Xiaomi 17 Ultra/2512BPNDAG".into();
+        c.aliases = vec!["17 Ultra/2512BPNDAG".into()];
+        c.looks[0].name = "Camera PROVIA/STANDARD".into();
+        c.evidence.looks[0].name = "Camera PROVIA/STANDARD".into();
+        assert!(c.validate().is_ok());
+        assert_eq!(c.file_name(), "XIAOMI_Xiaomi_17_Ultra_2512BPNDAG.json");
+        assert_eq!(look_id(&c.looks[0].name), "cal:camera-provia-standard");
+        assert!(c.matches(Some("Xiaomi"), "Xiaomi 17 Ultra/2512BPNDAG"));
+        assert!(c.matches(None, "17 ultra/2512bpndag"));
+        assert_eq!(c.look_dcp(&c.looks[0]).model, "XIAOMI Xiaomi 17 Ultra/2512BPNDAG");
     }
 
     #[test]
