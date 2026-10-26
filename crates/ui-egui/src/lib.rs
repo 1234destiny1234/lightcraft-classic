@@ -1007,7 +1007,7 @@ impl LccApp {
             if let Some(message) = completed {
                 // Menu clicks can arrive before the next frame updates last_time.
                 let now = self.tasks.repaint.as_ref().map(|ctx| ctx.input(|i| i.time)).unwrap_or(self.last_time);
-                self.ui.toast = Some((message, now + TOAST_SECONDS, None));
+                self.ui.show_toast((message, now + TOAST_SECONDS, None));
             }
         }
         if r.is_ok() && matches!(id, "photo.label" | "photo.clearLabel") {
@@ -1026,7 +1026,7 @@ impl LccApp {
             };
             // Native menu clicks can arrive before logic() updates last_time after an idle gap.
             let now = self.tasks.repaint.as_ref().map(|ctx| ctx.input(|i| i.time)).unwrap_or(self.last_time);
-            self.ui.toast = Some((text, now + TOAST_SECONDS, label));
+            self.ui.show_toast((text, now + TOAST_SECONDS, label));
         }
         match &r {
             Err(e) => {
@@ -1137,7 +1137,7 @@ impl LccApp {
             (Some((n, e)), false) => {
                 self.ui.unsaved_seen = true;
                 let t = ctx.input(|i| i.time);
-                self.ui.toast = Some((
+                self.ui.show_toast((
                     crate::i18n::tr_format!(
                         "{n} change{} saved in memory but not written to disk: {e} — {app} will retry",
                         if n == 1 { "" } else { "s" },
@@ -1176,7 +1176,7 @@ impl LccApp {
     /// A toast that stays `secs` seconds (messages that say where to look or what to do next).
     pub fn toast_for(&mut self, ctx: &egui::Context, text: impl Into<String>, secs: f64) {
         let t = ctx.input(|i| i.time);
-        self.ui.toast = Some((text.into(), t + secs, None));
+        self.ui.show_toast((text.into(), t + secs, None));
     }
 
     /// Reverse geocoding: say how a place-names download ended (a failure stays readable, with what to do).
@@ -1264,7 +1264,7 @@ impl LccApp {
     /// A toast for an error the user has to read and act on (stays 6 s).
     pub fn toast_error(&mut self, ctx: &egui::Context, text: impl Into<String>) {
         let t = ctx.input(|i| i.time);
-        self.ui.toast = Some((text.into(), t + 6.0, None));
+        self.ui.show_toast((text.into(), t + 6.0, None));
     }
 
     fn drain_control(&mut self, ctx: &egui::Context) {
