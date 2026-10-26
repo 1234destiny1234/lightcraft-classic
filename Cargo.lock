@@ -4596,6 +4596,7 @@ dependencies = [
  "log",
  "proptest",
  "redb",
+ "same-file",
  "serde",
  "serde_json",
  "siphasher",
