@@ -2766,6 +2766,8 @@
   "Select the photos to move in the grid first": "ჯერ ბადეში მონიშნეთ გადასატანი ფოტოები",
   "This place is kept in Local already": "ეს ადგილი უკვე დატოვებულია ლოკალურში",
   "Only a place at the top of Local can be removed from it": "ლოკალურიდან ამოშლა მხოლოდ მის ზედა დონეზე მყოფ ადგილს შეუძლია",
+  "Copy Path": "მისამართის კოპირება",
+  "Path copied": "მისამართი დაკოპირდა",
   "Same Content as Another Photo": "იგივე შიგთავსი, რაც სხვა ფოტოს",
   "less than a minute left": "დარჩა წუთზე ნაკლები",
   "cancelled": "გაუქმდა",

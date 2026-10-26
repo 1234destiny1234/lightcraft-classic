@@ -3507,6 +3507,8 @@
   "Select the photos to move in the grid first": "Wähle zuerst im Raster die Fotos aus, die du verschieben willst",
   "This place is kept in Local already": "Dieser Ort wird bereits in „Lokal“ behalten",
   "Only a place at the top of Local can be removed from it": "Nur ein Ort ganz oben in „Lokal“ kann daraus entfernt werden",
+  "Copy Path": "Pfad kopieren",
+  "Path copied": "Pfad kopiert",
   "Same Content as Another Photo": "Gleicher Inhalt wie ein anderes Foto",
   "less than a minute left": "weniger als eine Minute übrig",
   "cancelled": "abgebrochen",
