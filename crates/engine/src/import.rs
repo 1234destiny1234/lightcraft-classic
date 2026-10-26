@@ -18,6 +18,8 @@
 //! 7. Optionally apply a preset and add keywords (the import dialog's options).
 //! 8. Commit all new photos as one undoable op. (Undoing a move removes the catalog records;
 //!    the files stay at the destination — undo never moves files back over a card.)
+//! 9. Copy and Move rename sequences use checked platform-sized numbers: the last number is usable once, and any
+//!    further renamed files are reported as failed without losing earlier completed transfers.
 //!
 //! The import dialog first calls [`scan`] (`library.importPreview`): the same expansion, probing
 //! and duplicate detection without adding anything, so the user can review the candidates. The
@@ -40,7 +42,7 @@ pub const EXTENSIONS: &[&str] = &[
     // Decoded when built with the codecs' `heif` feature; otherwise the import reports them as
     // failed with the reason ("HEIC/HEIF support isn't included in this build").
     "heic", "heif", "avif", // a HEIC without the `heif` feature is reported as failed
-    "iiq", "crw", "mrw", "x3f", "kdc", "mos", "erf", "3fr", "fff", "mef", // video clips (MediaKind::Video; see VIDEO_EXTENSIONS)
+    "iiq", "crw", "mrw", "x3f", "kdc", "mos", "erf", "3fr", "fff", "mef", "gpr", // video clips (MediaKind::Video; see VIDEO_EXTENSIONS)
     "mp4", "m4v", "mov", "mkv", "webm", "mts", "m2ts", "3gp", "mxf",
 ];
 
@@ -333,6 +335,10 @@ pub struct ImportDefaults {
     pub auto_album: Option<String>,
     /// Open the import review when a camera or memory card is connected.
     pub show_on_card: bool,
+    /// Synchronize Folder brings in files whose content a photo of the library already has (at
+    /// another path) as photos of their own: "Don't import files already in the library" turned
+    /// off, and kept as it was last left. Off (such files left out) unless turned on.
+    pub import_duplicates: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -491,6 +497,23 @@ pub enum LaunchPath {
     /// Not imported: `path` (absolute) is a whole drive or the whole home folder, which is never
     /// walked without being chosen in the app (issue #374).
     Refused { path: String, why: String },
+    /// Open this (absolute) library folder: the argument was a library's `catalog.snap` or its folder, as a
+    /// double-click on a catalog in the file manager gives. Never imported.
+    Library(String),
+}
+
+/// The library folder `path` names: a library's catalog file (`catalog.snap`, or the v4 store's `catalog.redb`; its
+/// folder), or a folder holding one. `None` for anything else (photos, folders of photos).
+pub fn library_dir_of(path: &Path) -> Option<PathBuf> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let names = [lcc_catalog::journal::SNAPSHOT, lcc_catalog::db::DB_FILE];
+    #[cfg(target_arch = "wasm32")]
+    let names = [lcc_catalog::journal::SNAPSHOT];
+    let named = path.file_name().is_some_and(|n| names.iter().any(|c| n.to_string_lossy().eq_ignore_ascii_case(c)));
+    if named && path.is_file() {
+        return path.parent().map(Path::to_path_buf);
+    }
+    (path.is_dir() && names.iter().any(|c| path.join(c).is_file())).then(|| path.to_path_buf())
 }
 
 /// Resolve a launch argument for importing (issue #374). An empty argument is ignored (`None`);
@@ -533,6 +556,9 @@ pub fn launch_path(arg: &str, cwd: Option<&Path>, home: Option<&Path>, dcim: imp
     let key = lcc_catalog::query::folder_key;
     if home.is_some_and(|h| key(&h.to_string_lossy()) == key(&shown)) {
         return Some(LaunchPath::Refused { path: shown, why: "the whole home folder".into() });
+    }
+    if let Some(dir) = library_dir_of(&abs) {
+        return Some(LaunchPath::Library(dir.to_string_lossy().to_string()));
     }
     Some(LaunchPath::Import(shown))
 }
@@ -668,21 +694,37 @@ fn library_files(library: &lcc_catalog::Catalog, files: &[String]) -> HashMap<Pa
 
 /// Which photo of the library has each of the contents `hashes` (the later one where several
 /// have it). One pass over the library, and an entry only for a content that was asked about.
+/// Records that photo `id`, whose catalog key is `key`, has the content `key` stands for: the map
+/// is keyed by the content (a Duplicate's `:dup<id>` key is the original's plus a suffix, and a
+/// file's own hash is the plain one). Where several photos have the content, the one with the
+/// plain key is kept, else the later one.
+fn note_content<V>(by_hash: &mut HashMap<String, (bool, V)>, key: &str, value: V) {
+    let base = crate::sync::base_hash(key);
+    let plain = base.len() == key.len();
+    match by_hash.get_mut(base) {
+        Some((had_plain, _)) if *had_plain && !plain => {}
+        Some(slot) => *slot = (plain, value),
+        None => {
+            by_hash.insert(base.to_string(), (plain, value));
+        }
+    }
+}
+
 fn library_hashes<'a>(library: &lcc_catalog::Catalog, hashes: impl Iterator<Item = &'a str>) -> HashMap<String, PhotoId> {
     let wanted: std::collections::HashSet<&str> = hashes.collect();
     let mut by_hash = HashMap::new();
     if wanted.is_empty() {
-        return by_hash;
+        return HashMap::new();
     }
     for p in library.photos() {
         if let Some(h) = &p.content_hash
             && !p.local
-            && wanted.contains(h.as_str())
+            && wanted.contains(crate::sync::base_hash(h))
         {
-            by_hash.insert(h.clone(), p.id);
+            note_content(&mut by_hash, h, p.id);
         }
     }
-    by_hash
+    by_hash.into_iter().map(|(h, (_, id))| (h, id)).collect()
 }
 
 /// Progress and cancellation of a running [`scan_with`].
@@ -855,7 +897,8 @@ pub struct ImportJob {
     cache: HashMap<String, ProbeInfo>,
     naming: crate::sidecar::SidecarNaming,
     now: String,
-    seq: usize,
+    /// Next rename number; `None` once the final representable value has been reserved.
+    seq: Option<usize>,
     /// Files found so far (folders expanded) and handled so far, for progress.
     pub total: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     pub done: std::sync::Arc<std::sync::atomic::AtomicUsize>,
@@ -922,13 +965,13 @@ impl Prepared {
     /// Preparation may have run while another import added the same path or content.
     pub fn revalidate_add(&mut self, s: &Session) {
         let mut paths = HashMap::new();
-        let mut hashes = HashMap::new();
+        let mut hashes: HashMap<String, (bool, PhotoId)> = HashMap::new();
         for photo in s.catalog.photos() {
             if let Source::File { path } = &photo.source {
                 paths.insert(normalize_import_path(path), photo.id);
             }
             if let Some(hash) = &photo.content_hash {
-                hashes.insert(hash.clone(), photo.id);
+                note_content(&mut hashes, hash, photo.id);
             }
         }
         let mut items = Vec::with_capacity(self.items.len());
@@ -939,7 +982,7 @@ impl Prepared {
             };
             let ReadyFile { path, stored, info, sidecar, placed } = *ready;
             let existing_path = paths.get(&normalize_import_path(&stored)).copied().or_else(|| paths.get(&normalize_import_path(&path)).copied());
-            let existing_hash = info.content_hash.as_ref().and_then(|hash| hashes.get(hash).copied());
+            let existing_hash = info.content_hash.as_ref().and_then(|hash| hashes.get(crate::sync::base_hash(hash)).map(|(_, id)| *id));
             if let Some(existing) = existing_path.or(existing_hash) {
                 if let Some(placed) = &placed {
                     crate::import_move::rollback(placed);
@@ -988,7 +1031,7 @@ impl ImportJob {
         }
         let fresh = opts.on_deleted == OnDeleted::Fresh;
         Ok(ImportJob {
-            seq: opts.rename_start.max(1),
+            seq: Some(opts.rename_start.max(1)),
             opts,
             mode,
             lib_dir,
@@ -1036,6 +1079,7 @@ impl ImportJob {
     /// of the shared stem sidecars they read ([`crate::sidecar::ImportStems`]).
     fn look_up_library(&mut self) -> Option<lcc_catalog::Catalog> {
         let (library, fresh) = self.library.take()?;
+        let mut by_hash = HashMap::new();
         for p in library.photos() {
             // a trashed photo is replaced by a fresh import, so it doesn't count as a duplicate
             if p.deleted && fresh {
@@ -1048,9 +1092,10 @@ impl ImportJob {
             if let Some(h) = &p.content_hash
                 && (p.deleted || !self.opts.import_duplicates)
             {
-                self.by_hash.insert(h.clone(), Some(p.id));
+                note_content(&mut by_hash, h, Some(p.id));
             }
         }
+        self.by_hash.extend(by_hash.into_iter().map(|(h, (_, id))| (h, id)));
         Some(library)
     }
 
@@ -1109,6 +1154,8 @@ impl ImportJob {
         // copies or moves — the slow part, reading and writing every byte and verifying it — are
         // collected and run on several threads (issue #367), then their outcomes take their places.
         let mut plan = Plan::default();
+        // sidecar names are answered from one listing per folder (round trips cost on a network share)
+        let mut listing = crate::sidecar::FolderListing::default();
         for (path, info) in todo.into_iter().zip(probed) {
             if cancel.load(Relaxed) {
                 break;
@@ -1149,7 +1196,7 @@ impl ImportJob {
             // the XMP sidecar (or a raw's embedded XMP), read before copying: its capture time files
             // and names the copy when the file itself has none
             let raw = info.kind == MediaKind::Raw;
-            let packet = crate::sidecar::find_sidecar_for_import(&stems, self.naming, &path)
+            let packet = crate::sidecar::find_sidecar_for_import(&stems, self.naming, &path, &mut listing)
                 .and_then(|f| std::fs::read_to_string(f).ok())
                 .or_else(|| info.xmp.clone().filter(|_| raw));
             let target = crate::crs::Target::for_file(info.kind, &info.format, info.preview_only.is_some(), &info.meta.camera);
@@ -1185,11 +1232,20 @@ impl ImportJob {
                     if let Some(sc) = &sidecar {
                         crate::sidecar::merge_into(&mut q, sc, &self.now);
                     }
-                    let name = opts.rename.as_deref().filter(|t| !t.trim().is_empty()).map(|t| {
-                        let n = crate::rename::expand(t, &q, self.seq);
-                        self.seq += 1;
-                        n
-                    });
+                    let name = if let Some(template) = opts.rename.as_deref().filter(|t| !t.trim().is_empty()) {
+                        let Some(seq) = self.seq else {
+                            self.done.fetch_add(1, Relaxed);
+                            plan.slots.push(Slot::Item(PreparedItem::Failed(
+                                path,
+                                "rename sequence exhausted; choose a lower renameStart or leave rename blank".into(),
+                            )));
+                            continue;
+                        };
+                        self.seq = seq.checked_add(1);
+                        Some(crate::rename::expand(template, &q, seq))
+                    } else {
+                        None
+                    };
                     let folders = opts.organize.folders(&q);
                     let dir = folders.iter().fold(root.to_path_buf(), |d, f| d.join(f));
                     // the name this file gets depends on what a pending transfer of a like-named file
@@ -1449,11 +1505,12 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     // photos added by this batch, by content (a duplicate of a file earlier in the import names it)
     let mut new_hash: HashMap<String, PhotoId> = HashMap::new();
     // Fresh: trashed photos a new import replaces (by content or by file), each removed once
-    let (mut trash_hash, mut trash_path): (HashMap<String, PhotoId>, HashMap<String, PhotoId>) = Default::default();
+    let mut trash_content: HashMap<String, (bool, PhotoId)> = HashMap::new();
+    let mut trash_path: HashMap<String, PhotoId> = HashMap::new();
     if opts.on_deleted == OnDeleted::Fresh {
         for p in s.catalog.photos().filter(|p| p.deleted) {
             if let Some(h) = &p.content_hash {
-                trash_hash.insert(h.clone(), p.id);
+                note_content(&mut trash_content, h, p.id);
             }
             if let Source::File { path } = &p.source {
                 trash_path.insert(path.clone(), p.id);
@@ -1480,7 +1537,17 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
             PreparedItem::Duplicate { path, existing, reason, hash } => {
                 let existing = existing.or_else(|| {
                     let h = hash?;
-                    new_hash.get(&h).copied().or_else(|| s.catalog.photos().find(|p| p.content_hash.as_deref() == Some(h.as_str())).map(|p| p.id))
+                    new_hash
+                        .get(&h)
+                        .copied()
+                        .or_else(|| s.catalog.photos().find(|p| p.content_hash.as_deref() == Some(h.as_str())).map(|p| p.id))
+                        // a Duplicate's `<hash>:dup<id>` stands for its content too
+                        .or_else(|| {
+                            s.catalog
+                                .photos()
+                                .find(|p| p.content_hash.as_deref().is_some_and(|k| crate::sync::base_hash(k) == h.as_str()))
+                                .map(|p| p.id)
+                        })
                 });
                 let trashed = existing.filter(|id| s.catalog.photo(*id).is_some_and(|p| p.deleted));
                 match trashed {
@@ -1508,12 +1575,15 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 if let Some(h) = &info.content_hash {
                     new_hash.insert(h.clone(), id);
                 }
-                for old in info.content_hash.as_ref().and_then(|h| trash_hash.get(h)).into_iter().chain(trash_path.get(&stored)) {
+                for old in info.content_hash.as_ref().and_then(|h| trash_content.get(h)).map(|(_, id)| id).into_iter().chain(trash_path.get(&stored))
+                {
                     if purged.insert(*old) {
                         purge.push(*old);
                     }
                 }
                 let sidecar = sidecar.map(|sc| sc.resolve_label(&s.catalog)).filter(|sc| *sc != crate::sidecar::SidecarData::default());
+                // the photo is upright as the file's own orientation turns it, when the file states one
+                let sidecar = sidecar.map(|sc| crate::sidecar::SidecarData { orientation: info.orientation.or(sc.orientation), ..sc });
                 // a copy is catalogued under its new name
                 let name = Path::new(&stored).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
                 let mut p = Photo::new(id, Source::File { path: stored }, &name, &info.format, info.width, info.height, &now);

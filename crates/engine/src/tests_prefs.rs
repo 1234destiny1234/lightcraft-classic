@@ -108,7 +108,7 @@ fn preferences_persist_with_the_library() {
         s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
         s.execute(
             "library.preferences",
-            &json!({"import": {"rawPreset": "user.rawlook", "perCamera": true, "showOnCard": true}, "camera": {"camera": "Canon EOS R5", "preset": "user.canonlook"}, "cacheMb": 512}),
+            &json!({"import": {"rawPreset": "user.rawlook", "perCamera": true, "showOnCard": true, "importDuplicates": true}, "camera": {"camera": "Canon EOS R5", "preset": "user.canonlook"}, "cacheMb": 512}),
         )
         .unwrap();
         s.close_library().unwrap();
@@ -119,6 +119,7 @@ fn preferences_persist_with_the_library() {
     assert_eq!(s.import_defaults.raw_preset.as_deref(), Some("user.rawlook"));
     assert!(s.import_defaults.per_camera);
     assert!(s.import_defaults.show_on_card);
+    assert!(s.import_defaults.import_duplicates, "files already in the library come in, as last left");
     assert_eq!(s.import_defaults.cameras.len(), 1);
     assert_eq!(s.import_defaults.preset_for(true, "Canon EOS R5"), Some("user.canonlook"));
     assert_eq!(s.cache_mb, 512);
@@ -139,6 +140,7 @@ fn preferences_persist_with_the_library() {
     s.open_library(&lib, false).unwrap();
     assert_eq!(s.last_export, Some(json!({"format": "png"})));
     assert_eq!(s.import_defaults, Default::default());
+    assert!(!s.import_defaults.import_duplicates, "a library from before the setting leaves copies out");
     let _ = std::fs::remove_dir_all(&lib);
 }
 
@@ -403,7 +405,7 @@ fn slideshow_playback_settings_persist_with_the_library() {
         let r = s
             .execute(
                 "slideshow.playback",
-                &json!({"slideDuration": 6, "fadeDuration": 2.5, "fadeColor": "#000000", "randomOrder": true, "repeat": false}),
+                &json!({"slideDuration": 6, "fadeDuration": 2.5, "fadeColor": "#000000", "randomOrder": true, "repeat": false, "manual": true}),
             )
             .unwrap();
         assert_eq!(r["fadeColor"], "#000000");
@@ -417,7 +419,7 @@ fn slideshow_playback_settings_persist_with_the_library() {
     let r = s.execute("slideshow.playback", &json!({})).unwrap();
     assert_eq!(
         r,
-        json!({"slideDuration": 6.0, "fadeDuration": 2.5, "fadeColor": "#000000", "randomOrder": true, "repeat": false, "preparePreviews": true})
+        json!({"slideDuration": 6.0, "fadeDuration": 2.5, "fadeColor": "#000000", "randomOrder": true, "repeat": false, "preparePreviews": true, "manual": true})
     );
     drop(s);
     // out-of-range values written by hand are clamped when the library opens

@@ -21,6 +21,7 @@ pub mod availability;
 pub(crate) mod camera_preview;
 pub mod camera_profiles;
 pub mod cmd;
+pub mod colour_export;
 pub mod config;
 pub mod contact_sheet;
 pub mod control_auth;
@@ -92,6 +93,8 @@ pub mod rename;
 pub mod render_dng;
 pub mod segment;
 pub mod sidecar;
+#[cfg(not(target_arch = "wasm32"))]
+mod sidecar_writer;
 pub mod slide;
 pub mod slide_overlay;
 pub mod slide_template;
@@ -308,6 +311,12 @@ pub struct Session {
     /// Photos whose automatic XMP sidecar write failed (their folder offline, read-only or full), written again by
     /// [`Session::retry_unsaved_sidecars`] once their file is reachable.
     pub(crate) unsaved_sidecars: std::collections::BTreeSet<PhotoId>,
+    /// The background sidecar writer, when the host turned it on ([`Session::set_background_sidecar_writes`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) sidecar_writer: Option<sidecar_writer::Writer>,
+    /// How long a file operation waits for the background sidecar writes queued before it ([`Session::settle_sidecar_writes`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) sidecar_flush_limit: std::time::Duration,
     /// AI denoise: the model in use, the photos that have their picture and the work in progress.
     pub(crate) denoise: denoise::State,
     /// Plug-in filter measurements (`develop.pluginFilter.analyze`) running in the background.
@@ -322,6 +331,8 @@ pub struct Session {
     pub(crate) lens_seen: std::collections::HashMap<PhotoId, u64>,
     /// Whether each photo looked up this session carries its file\'s own lens correction (not a database profile).
     pub(crate) lens_from_file: std::collections::HashMap<PhotoId, bool>,
+    /// The lens picked for each photo ([`lcc_develop::Optics::lens`]) when its lens data was last looked up.
+    pub(crate) lens_chosen_seen: std::collections::HashMap<PhotoId, Option<lcc_develop::ChosenLens>>,
     /// Reverse geocoding: the parsed place names and their download (`metadata.*PlaceNames`).
     pub place_names: cmd::geocode::PlaceNames,
     /// The user's own list of models to download (`catalog.json` in the models folder), as last read.
@@ -437,8 +448,8 @@ pub struct Session {
     pub keyword_sets: Vec<cmd::keywords::KeywordSet>,
     pub keyword_set: Option<String>,
     pub recent_keywords: Vec<String>,
-    /// The keyword ⇧K toggles on the selected photos (Keywording ▸ keyword shortcut).
-    pub keyword_shortcut: Option<String>,
+    /// The keywords ⇧K adds to or removes from the selected photos (Set Keyword Shortcut…).
+    pub keyword_shortcut: Vec<String>,
     /// Keyword attributes (synonyms, export options, person) and keywords created before any
     /// photo has them, by keyword path (Keyword List).
     /// Before/After: the "before" settings chosen per photo (this session; default: the photo's
@@ -568,6 +579,10 @@ impl Session {
             skip_auto_write: false,
             reload_tickets: Default::default(),
             unsaved_sidecars: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sidecar_writer: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            sidecar_flush_limit: std::time::Duration::from_secs(30),
             denoise: Default::default(),
             filter_analyses: Default::default(),
             face_models_dir: None,
@@ -575,6 +590,7 @@ impl Session {
             lens_db: Default::default(),
             lens_seen: Default::default(),
             lens_from_file: Default::default(),
+            lens_chosen_seen: Default::default(),
             place_names: Default::default(),
             face_catalog: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -632,7 +648,7 @@ impl Session {
             keyword_sets: Vec::new(),
             keyword_set: None,
             recent_keywords: Vec::new(),
-            keyword_shortcut: None,
+            keyword_shortcut: Vec::new(),
             before: Default::default(),
             import_probes: Default::default(),
             folder_changes: None,
@@ -753,10 +769,12 @@ impl Session {
 
     // ---------------------------------------------------------------- ops, undo
 
-    /// Apply an op as one undoable step.
+    /// Apply an op as one undoable step. A new edit: one that would make a smart album include
+    /// itself is refused here, whichever command, task or caller asked ([`Catalog::apply_new`]);
+    /// undo, redo and opening a library bring back what was and are not held to that.
     pub fn commit(&mut self, label: &str, op: Op) -> Result<()> {
         let fwd = op.clone();
-        let inv = self.apply_catalog(op)?;
+        let inv = self.apply_through(op, Catalog::apply_new)?;
         self.pending_log.push(fwd);
         self.undo.push(UndoEntry { label: label.to_string(), op: inv, folder: None, retry_inverse: Vec::new(), retry_sidecars: Vec::new() });
         self.commits = self.commits.wrapping_add(1);
@@ -770,7 +788,18 @@ impl Session {
         Ok(())
     }
 
+    /// [`Catalog::apply`] for what brings back what was (an undo or a redo).
     fn apply_catalog(&mut self, op: Op) -> Result<Op> {
+        self.apply_through(op, Catalog::apply)
+    }
+
+    /// Apply `op` with `apply` (the catalog's way in for a new edit or for bringing back what
+    /// was), then forget what the session cached of the photos it replaced.
+    fn apply_through(&mut self, op: Op, apply: fn(&mut Catalog, Op) -> std::result::Result<Op, lcc_catalog::CatalogError>) -> Result<Op> {
+        // a sidecar write still queued for a photo whose file moves, goes or changes would land at the old place
+        if op_moves_files(&op) {
+            self.settle_sidecar_writes()?;
+        }
         // Retain only cache IDs while the catalog consumes the operation. Cloning an import
         // batch here also cloned every photo, although commit already keeps the journal copy.
         let mut invalidated = Vec::new();
@@ -791,7 +820,7 @@ impl Session {
                 _ => {}
             }
         }
-        let inv = self.catalog.apply(op)?;
+        let inv = apply(&mut self.catalog, op)?;
         for id in invalidated {
             self.media.forget(id);
         }
@@ -1643,8 +1672,25 @@ pub fn json_delta(old: &Value, new: &Value) -> Option<Value> {
     }
 }
 
+/// Whether `op` changes where a photo's file is, or removes or replaces it.
+fn op_moves_files(op: &Op) -> bool {
+    let mut pending = vec![op];
+    while let Some(op) = pending.pop() {
+        match op {
+            Op::SetFile { .. } | Op::Relink { .. } | Op::RemovePhoto { .. } | Op::SetContent { .. } => return true,
+            Op::Batch { ops } => pending.extend(ops),
+            _ => {}
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_album_loops;
+#[cfg(test)]
+mod tests_album_missing;
 #[cfg(test)]
 mod tests_album_order;
 #[cfg(test)]
