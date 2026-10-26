@@ -2256,5 +2256,6 @@
   "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "A redução de ruído com IA precisa de um modelo, e nenhum está instalado. Enquanto isso, Luminância e Cor em Detalhe reduzem o ruído.",
   "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "Esta versão não vem com um modelo de redução de ruído com IA, e ainda não é possível baixar um por aqui.",
   "No AI Denoise model is installed": "Nenhum modelo de redução de ruído com IA instalado",
-  "Same Content as Another Photo": "Mesmo conteúdo que outra foto"
+  "Same Content as Another Photo": "Mesmo conteúdo que outra foto",
+  "Keywords and presets apply to new files only, not to photos already in Local": "Palavras-chave e predefinições valem só para arquivos novos, não para fotos que já estão em Local"
 }
