@@ -15,7 +15,8 @@
 //! 6. Apply each photo's XMP sidecar (or a raw/DNG file's embedded XMP): the sidecar wins for
 //!    metadata and develop settings are restored (see [`crate::sidecar`]). Its capture time fills
 //!    in when the file has none (read before step 5, so it also files and names the copy).
-//! 7. Optionally apply a preset and add keywords (the import dialog's options).
+//! 7. Optionally apply a preset, then a batch-edit recipe (one more History step), and add
+//!    keywords (the import dialog's options).
 //! 8. Commit all new photos as one undoable op. (Undoing a move removes the catalog records;
 //!    the files stay at the destination — undo never moves files back over a card.)
 //! 9. Copy and Move rename sequences use checked platform-sized numbers: the last number is usable once, and any
@@ -121,6 +122,16 @@ pub struct ImportOptions {
     pub metadata_preset: Option<String>,
     /// Copy: raws are copied as DNG (Copy as DNG).
     pub convert_dng: bool,
+    /// A batch-edit recipe: develop control id / value pairs (e.g. `light.exposure` → 0.5),
+    /// applied to every imported photo *after* its XMP sidecar, camera default and import preset,
+    /// as one more History step (`Import adjustments`). Only the named controls change; the recipe
+    /// is a snapshot taken when the import starts, so editing a preset afterwards cannot change it.
+    /// It names plain adjustments only (no white balance, geometry or crop: `cmd::check_recipe`),
+    /// and [`ImportJob::new`] refuses anything else.
+    /// Empty (the default) = no recipe. A photo the library already has keeps its own settings:
+    /// one skipped as a duplicate, restored from Recently Deleted, or joined from a browsed
+    /// folder (Local) is never touched, as the preset and keywords never are.
+    pub recipe: Vec<(String, f64)>,
     /// Import files whose content the library already has as new photos (Lightroom's "Don't
     /// Import Suspected Duplicates" unchecked). A file at a path the library already lists, or one
     /// in Recently Deleted, is still handled as a duplicate.
@@ -400,10 +411,6 @@ pub fn apply_import_defaults(s: &Session, p: &mut Photo) {
     }
 }
 
-pub fn is_supported(path: &Path) -> bool {
-    path.extension().is_some_and(|e| EXTENSIONS.contains(&e.to_string_lossy().to_lowercase().as_str()))
-}
-
 /// The web file picker's accept list, derived from [`EXTENSIONS`]. Each extension
 /// is listed in both cases: browsers' `accept` matching is case-insensitive per
 /// spec, but some implementations (e.g. Windows/Edge) match case-sensitively and
@@ -440,6 +447,15 @@ pub fn accept_list() -> String {
     out
 }
 
+/// An XMP sidecar (`.xmp`, any letter case): read with its photo on import, never a photo itself.
+fn is_xmp_sidecar(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xmp"))
+}
+
+pub fn is_supported(path: &Path) -> bool {
+    path.extension().is_some_and(|e| EXTENSIONS.contains(&e.to_string_lossy().to_lowercase().as_str()))
+}
+
 /// Expand files and folders (recursively) into supported files. `skip` (e.g. the library folder)
 /// is never descended into. Each folder's walk is bounded ([`crate::walk::Limits::default`]); a
 /// walk that stops at a bound is logged.
@@ -458,19 +474,57 @@ pub(crate) fn expand_noting(
     paths: &[String],
     skip: Option<&Path>,
     limits: crate::walk::Limits,
-    mut note: Option<crate::walk::NoteFolder>,
+    note: Option<crate::walk::NoteFolder>,
 ) -> (Vec<String>, bool) {
-    let mut out = Vec::new();
-    let mut truncated = false;
+    let e = expand_report_noting(paths, skip, limits, note);
+    (e.files, e.truncated)
+}
+
+/// What expanding import sources found, and what the walks left out ([`expand_report`]), so a
+/// review can say that it did not see everything.
+#[derive(Clone, Debug, Default)]
+pub struct Expansion {
+    /// Supported files, folders walked recursively and deduplicated by path, in walk order.
+    pub files: Vec<String>,
+    /// A walk stopped at a depth or entry bound: there may be more files.
+    pub truncated: bool,
+    /// Folders whose contents couldn't be listed (permissions, a folder that vanished or went offline).
+    pub unreadable: usize,
+    /// Files found inside the folders walked that are not a supported type (see [`is_supported`]),
+    /// not counting XMP sidecars, which the import reads with their photos. A file named directly
+    /// is attempted whatever its extension and is never counted here. Both counts add up over the
+    /// sources, so a folder named twice (or inside another source) counts twice.
+    pub unsupported: usize,
+}
+
+/// [`expand_within`] keeping the walks' diagnostics. A walk that stops at a bound is logged here
+/// (once per folder), as it always was.
+pub fn expand_report(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits) -> Expansion {
+    expand_report_noting(paths, skip, limits, None)
+}
+
+/// ([`expand_report`], handing the listing of every folder that is walked to `note`, as
+/// [`expand_noting`] does.)
+fn expand_report_noting(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits, mut note: Option<crate::walk::NoteFolder>) -> Expansion {
+    let mut out = Expansion::default();
     for p in paths {
         let p = Path::new(p);
         if skip.is_some_and(|s| p == s) {
             continue;
         }
         if p.is_dir() {
+            // XMP sidecars are read with their photos, not skipped: they are left out of the count
+            let mut sidecars = 0usize;
+            let keep = |f: &Path| {
+                let keep = is_supported(f);
+                if !keep && is_xmp_sidecar(f) {
+                    sidecars = sidecars.saturating_add(1);
+                }
+                keep
+            };
             let w = match note.as_mut() {
-                Some(note) => crate::walk::files_in_noting(p, skip, limits, is_supported, &mut **note),
-                None => crate::walk::files_in(p, skip, limits, is_supported),
+                Some(note) => crate::walk::files_in_noting(p, skip, limits, keep, &mut **note),
+                None => crate::walk::files_in(p, skip, limits, keep),
             };
             if w.truncated {
                 log::warn!(
@@ -481,16 +535,18 @@ pub(crate) fn expand_noting(
                     limits.max_depth
                 );
             }
-            truncated |= w.truncated;
-            out.extend(w.files.into_iter().map(|f| f.to_string_lossy().to_string()));
+            out.truncated |= w.truncated;
+            out.unreadable = out.unreadable.saturating_add(w.unreadable);
+            out.unsupported = out.unsupported.saturating_add(w.skipped.saturating_sub(sidecars));
+            out.files.extend(w.files.into_iter().map(|f| f.to_string_lossy().to_string()));
         } else {
             // explicitly named files are attempted even with an unknown extension (sniffed)
-            out.push(p.to_string_lossy().to_string());
+            out.files.push(p.to_string_lossy().to_string());
         }
     }
     let mut seen = std::collections::HashSet::new();
-    out.retain(|p| seen.insert(p.clone()));
-    (out, truncated)
+    out.files.retain(|p| seen.insert(p.clone()));
+    out
 }
 
 /// What a path given on the command line at launch becomes ([`launch_path`]).
@@ -748,6 +804,12 @@ pub struct ScanProgress {
 pub struct ScanOutput {
     pub candidates: Vec<ImportCandidate>,
     pub probes: HashMap<String, ProbeInfo>,
+    /// A folder walk stopped at a depth or entry bound: there may be more photos ([`Expansion`]).
+    pub truncated: bool,
+    /// Folders whose contents couldn't be listed.
+    pub unreadable: usize,
+    /// Files inside the folders that are not a supported photo type (XMP sidecars not counted).
+    pub unsupported: usize,
 }
 
 impl ScanInput {
@@ -775,20 +837,32 @@ impl ScanInput {
 /// against the library and earlier candidates). Nothing is added; the probes are kept for the
 /// import that follows.
 pub fn scan(s: &mut Session, paths: &[String]) -> Vec<ImportCandidate> {
+    scan_report(s, paths).candidates
+}
+
+/// [`scan`] keeping what the walks left out. The probes are already kept in the session for the
+/// import that follows, so `probes` of the output is empty.
+pub fn scan_report(s: &mut Session, paths: &[String]) -> ScanOutput {
     let (input, paths) = ScanInput::new(s, paths);
-    let out = scan_with(input, &paths, &ScanProgress::default());
-    s.import_probes = out.probes;
-    out.candidates
+    let mut out = scan_with(input, &paths, &ScanProgress::default());
+    s.import_probes = std::mem::take(&mut out.probes);
+    out
 }
 
 /// [`scan`] without the session, so it can run on a worker thread. Stops early (returning what it
 /// has) when `progress.cancel` is set.
 pub fn scan_with(input: ScanInput, paths: &[String], progress: &ScanProgress) -> ScanOutput {
-    let files = expand(paths, input.skip.as_deref());
-    scan_files(input, files, progress)
+    let expansion = expand_report(paths, input.skip.as_deref(), crate::walk::Limits::default());
+    let mut out = scan_files(input, expansion.files, progress);
+    out.truncated = expansion.truncated;
+    out.unreadable = expansion.unreadable;
+    out.unsupported = expansion.unsupported;
+    out
 }
 
-/// [`scan_with`] for files that were found already (`paths` expanded, [`expand`]).
+/// [`scan_with`] for files that were found already (`paths` expanded, [`expand`]). The walks'
+/// diagnostics ([`ScanOutput::truncated`] and friends) are left empty: who expanded the paths has
+/// them ([`expand_report`]).
 pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &ScanProgress) -> ScanOutput {
     use std::sync::atomic::Ordering::Relaxed;
     let by_path = library_files(&input.library, &files);
@@ -876,7 +950,8 @@ pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &Sc
         }
         out.push(c);
     }
-    ScanOutput { candidates: out, probes: kept }
+    // (the walks' diagnostics are [`scan_with`]'s: these files were found already)
+    ScanOutput { candidates: out, probes: kept, truncated: false, unreadable: 0, unsupported: 0 }
 }
 
 /// Import files/folders. See the module docs.
@@ -1036,6 +1111,8 @@ impl ImportJob {
     /// Snapshot what an import with `opts` needs from the session (no file-system calls). Takes
     /// the probes a preceding scan left ([`Session::import_probes`]).
     pub fn new(s: &mut Session, opts: ImportOptions) -> crate::Result<Self> {
+        // a recipe is checked before any file is read or placed, not when the photos are committed
+        crate::cmd::check_recipe(&opts.recipe).map_err(|e| crate::cmd::bad("library.import", e))?;
         let mode = opts.mode;
         // Only a library on disk has an `Originals/` folder. The browser build keeps the bytes of
         // every added file in its own storage already, so "copy" there means "add".
@@ -1689,6 +1766,19 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     p.develop = d.clone();
                     p.edited = Some(now.clone());
                     p.history.push(lcc_catalog::HistoryStep { label, settings: d });
+                }
+                // the batch-edit recipe goes on top of everything above (sidecar, camera default,
+                // preset): only the controls it names change, through the same specs the sliders use
+                if !opts.recipe.is_empty() {
+                    let mut d = (*p.develop).clone();
+                    for (id, v) in &opts.recipe {
+                        // (`ImportJob::new` refused any id `set` would not write, and `set` clamps to the range)
+                        lcc_develop::controls::set(&mut d, id, *v);
+                    }
+                    let d = std::sync::Arc::new(d);
+                    p.develop = d.clone();
+                    p.edited = Some(now.clone());
+                    p.history.push(lcc_catalog::HistoryStep { label: "Import adjustments".into(), settings: d });
                 }
                 report.imported.push(id.0);
                 p.local = opts.local;
