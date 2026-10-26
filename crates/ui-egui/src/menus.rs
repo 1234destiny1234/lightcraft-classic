@@ -288,6 +288,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("file.restoreLibrary", "Restore Library from Backup…", None, "File>Libraries"),
     ("photo.locate", "Locate Missing File…", None, ""),
     ("dialog.saveMetadataPreset", "Save Metadata Preset…", None, ""),
+    // the keywords ⇧K adds or removes, typed with commas between them
+    ("dialog.keywordShortcut", "Set Keyword Shortcut…", Some("Cmd+Alt+Shift+K"), ""),
     ("app.quit", "Quit {app}", Some("Cmd+Q"), "File"),
     ("file.importPresets", "Import Profiles & Presets…", None, "File>More Imports"),
     ("file.exportPresets", "Export Presets…", None, "File>More Exports"),
@@ -2002,6 +2004,11 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         }
         "app.quit" => {
             app.ui.quit = true;
+            Ok(Value::Null)
+        }
+        "dialog.keywordShortcut" => {
+            let now = app.session.keyword_shortcut.join(", ");
+            crate::panels::dialogs::prompt(app, "Set Keyword Shortcut", "Separated by commas", &now, "keyword.setShortcut", json!({}), "keywords");
             Ok(Value::Null)
         }
         "dialog.saveMetadataPreset" => {
