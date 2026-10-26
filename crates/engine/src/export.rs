@@ -1818,6 +1818,8 @@ enum Work {
         remove_location: bool,
         label: String,
         size: (usize, usize),
+        /// The photo's camera-profile choice (`profile.camera`): a DNG carries the colour the photo renders with.
+        camera: String,
     },
 }
 
@@ -1896,6 +1898,7 @@ fn prepare_guarded(
         // the file's bytes; a DNG also decodes the raw data (16-bit samples) and writes it again
         let weight = (p.file_size as usize).saturating_add(if dng.is_some() { full_px.saturating_mul(6) } else { 0 });
         let work = Work::File {
+            camera: p.develop.profile.camera.clone(),
             path: path.clone(),
             read: session.media.file_bytes.clone(),
             packet: crate::sidecar::sidecar_packet_with(p, &session.catalog, removes_location(p, &session.catalog, o)),
@@ -2011,7 +2014,7 @@ impl PreparedExport {
                     video_file: None,
                 })
             }
-            Work::File { path, read, packet, dng, quality, lossy_edge, label, size, remove_location } => {
+            Work::File { path, read, packet, dng, quality, lossy_edge, label, size, remove_location, camera } => {
                 let bytes = match &read {
                     Some(r) => r(&path)?,
                     None => std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?,
@@ -2058,7 +2061,8 @@ impl PreparedExport {
                     return Err(format!("{label}: DNG export needs a raw photo"));
                 }
                 let mut raw = lcc_raw::decode(&bytes).map_err(|e| format!("{label}: {e}"))?;
-                crate::camera_preview::with_starting_colour(&mut raw, &bytes);
+                // the colour the photo renders with: its chosen .dcp or calibration look, else the starting colour
+                crate::colour_export::with_photo_colour(&mut raw, &bytes, &camera);
                 drop(bytes);
                 let compression = match dng {
                     DngCompression::Lossless => lcc_raw::DngCompression::Lj92 { tile: 256 },
