@@ -53,6 +53,25 @@ fn source_path(p: &Photo) -> Option<&str> {
 struct Reader {
     db: Database,
 }
+/// Most bytes of history-step or snapshot settings decoded from one table. They are archived, and an archive holds at
+/// most [`crate::lightroom_archive::MAX_ARCHIVE_BYTES`] of JSON, so this keeps all a catalog can archive while a
+/// hostile one can't make the reader allocate without bound (each row alone may decode to 16 MiB).
+const MAX_DECODED_SETTINGS: usize = crate::lightroom_archive::MAX_ARCHIVE_BYTES as usize;
+/// Set (to `true`) on a history-step or snapshot row read past [`MAX_DECODED_SETTINGS`], whose settings were left
+/// undecoded. Not a Lightroom column: it tells the archive's reader why the row has no `text`, and keeps the row out
+/// of the per-image "could not be read" count, since the table's one warning already covers it.
+const OVER_DECODE_BUDGET: &str = "_overDecodeBudget";
+
+/// The column of table `name` that Lightroom Classic 13 and later store as compressed text (see [`decode_compressed`]),
+/// and what a warning calls one and several of its rows.
+fn compressed_settings(name: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    match name {
+        "Adobe_libraryImageDevelopHistoryStep" => Some(("text", "history step", "history steps")),
+        "Adobe_libraryImageDevelopSnapshot" => Some(("text", "snapshot", "snapshots")),
+        _ => None,
+    }
+}
+
 impl Reader {
     /// Stream `name`'s rows to `f`, one at a time: the table is never collected whole, so a catalog's large develop,
     /// history and metadata tables cost only what `f` keeps, and its pages are read from the file one at a time. A
@@ -131,14 +150,51 @@ impl Reader {
 
     /// An optional per-image table (history steps, snapshots), streamed into rows grouped by their `image` column.
     fn grouped(&self, name: &str, warnings: &mut Vec<String>, cancel: &AtomicBool) -> Result<HashMap<i64, Vec<Row>>, String> {
+        self.grouped_within(name, MAX_DECODED_SETTINGS, warnings, cancel)
+    }
+
+    /// [`Self::grouped`], with the table's compressed settings column ([`compressed_settings`]) decoded within
+    /// `budget` bytes for the whole table: each value is charged its declared length before it is inflated, even one
+    /// that then fails to decode. A value that can't be decoded is left out of its row with a warning naming the
+    /// image, and those past the budget with one warning for all. Other BLOB columns are always left out.
+    fn grouped_within(&self, name: &str, budget: usize, warnings: &mut Vec<String>, cancel: &AtomicBool) -> Result<HashMap<i64, Vec<Row>>, String> {
+        let compressed = compressed_settings(name);
         let mut out: HashMap<i64, Vec<Row>> = HashMap::new();
-        let read = self.each_row(name, false, false, cancel, |r, _| {
+        let mut decoding = Vec::new();
+        let mut left = budget;
+        let mut over_budget = 0usize;
+        let read = self.each_row(name, false, false, cancel, |mut r, blobs| {
+            if let Some((settings, what, _)) = compressed {
+                for (column, bytes) in blobs.into_iter().filter(|(column, _)| *column == settings) {
+                    // charged at its declared length before it is inflated (which never goes past that length), so
+                    // a row that then fails to decode counts too; past the budget, the rest aren't inflated at all
+                    let declared = compressed_len(&bytes);
+                    if declared.is_some_and(|n| over_budget > 0 || n > left) {
+                        over_budget += 1;
+                        r.insert(OVER_DECODE_BUDGET.to_string(), Value::Bool(true));
+                        continue;
+                    }
+                    left -= declared.unwrap_or(0);
+                    match decode_compressed(&bytes, "settings") {
+                        Ok(text) => {
+                            r.insert(column.to_string(), Value::String(text));
+                        }
+                        Err(why) => decoding.push(format!("image {}: {what} {}: {why}", number(&r, "image"), number(&r, "id_local"))),
+                    }
+                }
+            }
             out.entry(number(&r, "image")).or_default().push(r);
             Ok(())
         });
         if let Err(error) = read {
             self.skip_optional(name, error, warnings, cancel)?;
             out.clear();
+            return Ok(out);
+        }
+        warnings.extend(decoding);
+        if let (Some((_, one, many)), 1..) = (compressed, over_budget) {
+            let what = if over_budget == 1 { one } else { many };
+            warnings.push(format!("{over_budget} {what} read without their settings: more than {} MiB of settings in {name}", budget >> 20));
         }
         Ok(out)
     }
@@ -174,7 +230,7 @@ impl Reader {
                 if column != "xmp" {
                     continue;
                 }
-                match decode_xmp_bytes(&bytes) {
+                match decode_compressed(&bytes, "XMP") {
                     Ok(packet) => {
                         r.insert(column.to_string(), Value::String(packet));
                     }
@@ -361,17 +417,27 @@ fn xmp(v: Option<&Value>) -> Result<String, String> {
     }
 }
 
-fn decode_xmp_bytes(bytes: &[u8]) -> Result<String, String> {
-    let size = bytes.get(..4).and_then(|s| <[u8; 4]>::try_from(s).ok()).map(u32::from_be_bytes).ok_or("truncated XMP header")?;
-    if size > 16 << 20 {
-        return Err("XMP packet exceeds 16 MiB".into());
+/// The decoded length [`decode_compressed`] reads from `bytes`' header, when it has one of at most 16 MiB.
+fn compressed_len(bytes: &[u8]) -> Option<usize> {
+    let size = bytes.get(..4).and_then(|s| <[u8; 4]>::try_from(s).ok()).map(u32::from_be_bytes)?;
+    usize::try_from(size).ok().filter(|size| *size <= 16 << 20)
+}
+
+/// Lightroom's compressed text (`Adobe_AdditionalMetadata.xmp`, and history-step and snapshot settings since Lightroom
+/// Classic 13): the decoded length as 4 big-endian bytes, then a zlib stream, at most 16 MiB decoded. Errors name it
+/// `what`.
+fn decode_compressed(bytes: &[u8], what: &str) -> Result<String, String> {
+    if bytes.len() < 4 {
+        return Err(format!("truncated {what} header"));
     }
-    let decoded = miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(bytes.get(4..).ok_or("truncated XMP")?, 16 << 20)
-        .map_err(|_| "invalid compressed XMP")?;
-    if decoded.len() != size as usize {
-        return Err("XMP packet length mismatch".into());
+    let size = compressed_len(bytes).ok_or_else(|| format!("{what} longer than 16 MiB"))?;
+    // inflated no further than its declared length: a stream that goes on is invalid, at no more cost than a valid one
+    let decoded = miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(bytes.get(4..).ok_or_else(|| format!("truncated {what}"))?, size)
+        .map_err(|_| format!("invalid compressed {what}"))?;
+    if decoded.len() != size {
+        return Err(format!("{what} length mismatch"));
     }
-    String::from_utf8(decoded).map_err(|e| e.to_string())
+    String::from_utf8(decoded).map_err(|e| format!("{what} not UTF-8: {e}"))
 }
 
 #[cfg(test)]
@@ -861,7 +927,8 @@ fn history_steps(
     current: &Arc<lcc_develop::DevelopSettings>,
     map: impl Fn(&str) -> Result<(Value, Vec<String>), String>,
 ) -> (Vec<lcc_catalog::HistoryStep>, usize) {
-    let mut ordered: Vec<&Row> = rows.iter().filter(|r| !text(r, "text").is_empty()).collect();
+    let rows: Vec<&Row> = rows.iter().filter(|r| !r.contains_key(OVER_DECODE_BUDGET)).collect();
+    let mut ordered: Vec<&Row> = rows.iter().copied().filter(|r| !text(r, "text").is_empty()).collect();
     let skipped_empty = rows.len() - ordered.len();
     let when = |r: &Row| r.get("dateCreated").and_then(Value::as_f64).filter(|n| n.is_finite()).unwrap_or(0.0);
     ordered.sort_by(|a, b| when(a).total_cmp(&when(b)).then(number(a, "id_local").cmp(&number(b, "id_local"))));
@@ -899,7 +966,7 @@ fn snapshot_versions(
     now: &str,
     map: impl Fn(&str) -> Result<(Value, Vec<String>), String>,
 ) -> (Vec<lcc_catalog::Version>, usize) {
-    let mut ordered: Vec<&Row> = rows.iter().collect();
+    let mut ordered: Vec<&Row> = rows.iter().filter(|r| !r.contains_key(OVER_DECODE_BUDGET)).collect();
     ordered.sort_by_key(|r| number(r, "id_local"));
     let mut skipped = 0;
     let mut versions = Vec::new();
@@ -1057,7 +1124,7 @@ fn apply(s: &mut crate::Session, data: CatalogImport, update_existing: bool) -> 
     let archive_dir = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.join("Interop"));
     let index_path = archive_dir.as_ref().map(|p| p.join("lightroom-index.json"));
     let mut index = load_index(index_path.as_deref())?;
-    let archive_path = archive_dir.as_ref().map(|dir| crate::lightroom_archive::store(dir, &data).map_err(error)).transpose()?;
+    let archive_path = archive_dir.as_ref().map(|dir| crate::lightroom_archive::store(dir, &data).map_err(|e| error(e.to_string()))).transpose()?;
     let undo0 = s.undo.len();
     let existing: HashMap<_, _> =
         s.catalog.photos().filter(|p| p.copy_of.is_none()).filter_map(|p| source_path(p).map(|path| (key(path), p.id))).collect();
@@ -1229,7 +1296,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, mut data: CatalogImport, co
             }
             let (steps, skipped) = history_steps(&src.history, &base, &p.develop, |t| mapped_settings(t, target, aspect, orientation, stored_aspect));
             if skipped > 0 {
-                warnings.push(format!("image {}: {skipped} Lightroom history step(s) could not be read; kept in the archive", src.source_id));
+                warnings.push(format!("image {}: {skipped} Lightroom history step(s) could not be read; left out of History", src.source_id));
             }
             if !steps.is_empty() {
                 history_imported += steps.len();
@@ -1238,7 +1305,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, mut data: CatalogImport, co
             let (versions, skipped) =
                 snapshot_versions(&src.snapshots, &base, &now, |t| mapped_settings(t, target, aspect, orientation, stored_aspect));
             if skipped > 0 {
-                warnings.push(format!("image {}: {skipped} Lightroom snapshot(s) could not be read; kept in the archive", src.source_id));
+                warnings.push(format!("image {}: {skipped} Lightroom snapshot(s) could not be read; left out of Versions", src.source_id));
             }
             if !versions.is_empty() {
                 snapshots_imported += versions.len();
@@ -1703,6 +1770,81 @@ mod tests {
         assert_eq!(*master.history[1].settings, *master.develop);
         assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("1 Lightroom history step")));
         assert_eq!(r["historySteps"], 4, "2 master steps + the copy's 1 step and its final state");
+    }
+
+    /// The history steps of a catalog file written with `steps`, read with a settings budget of 1 MiB.
+    fn steps_within_one_mib(tag: &str, steps: Vec<Vec<crate::lightroom_fixture::Field>>) -> (Vec<Row>, Vec<String>) {
+        use crate::lightroom_fixture::{self as fixture, Table};
+        let dir = fixture::dir(tag);
+        let catalog = dir.join("test.lrcat");
+        fixture::write(&catalog, &[Table { name: "Adobe_libraryImageDevelopHistoryStep", columns: fixture::HISTORY_COLUMNS, rows: steps }]);
+        let reader = Reader { db: Database::open_with_wal(std::fs::read(&catalog).unwrap(), &[]).unwrap() };
+        let _ = std::fs::remove_dir_all(dir);
+        let mut warnings = Vec::new();
+        let grouped = reader.grouped_within("Adobe_libraryImageDevelopHistoryStep", 1 << 20, &mut warnings, &AtomicBool::new(false)).unwrap();
+        let mut rows: Vec<Row> = grouped.into_values().flatten().collect();
+        rows.sort_by_key(|r| number(r, "id_local"));
+        (rows, warnings)
+    }
+
+    /// A catalog whose settings decode to more than the budget keeps every row, decodes the settings that fit, and
+    /// says once how many it left out, instead of allocating whatever its BLOBs inflate to.
+    #[test]
+    fn settings_past_the_decode_budget_are_left_out_with_one_warning() {
+        use crate::lightroom_fixture::{self as fixture, Field};
+        let big = "x".repeat(512 << 10);
+        let steps = (1..=4).map(|id| fixture::history_step(id, 1, id as f64, "Step", Field::Blob(fixture::compressed(&big)))).collect();
+        let (rows, warnings) = steps_within_one_mib("history-budget", steps);
+        assert_eq!(rows.len(), 4, "every step is still read");
+        assert_eq!(rows.iter().filter(|r| r.contains_key("text")).count(), 2, "the two steps within 1 MiB keep their settings");
+        assert_eq!(warnings, ["2 history steps read without their settings: more than 1 MiB of settings in Adobe_libraryImageDevelopHistoryStep"]);
+    }
+
+    /// Rows read past the budget get no History entry or version, and aren't counted again in each image's "could not
+    /// be read" warning: the table's one warning covers them.
+    #[test]
+    fn rows_past_the_decode_budget_are_not_counted_as_unreadable() {
+        use crate::lightroom_fixture::{self as fixture, Field};
+        let big = "x".repeat(512 << 10);
+        let steps = (1..=4).map(|id| fixture::history_step(id, 1, id as f64, "Step", Field::Blob(fixture::compressed(&big)))).collect();
+        let (rows, _) = steps_within_one_mib("history-budget-count", steps);
+        let base = Arc::new(lcc_develop::DevelopSettings::default());
+        let (history, skipped) = history_steps(&rows, &base, &base, |_| Ok((json!({}), Vec::new())));
+        assert_eq!((history.len(), skipped), (2, 0), "the two steps within the budget import; the rest aren't unreadable");
+        let (versions, skipped) = snapshot_versions(&rows, &base, "now", |_| Ok((json!({}), Vec::new())));
+        assert_eq!((versions.len(), skipped), (2, 0), "the same for snapshots");
+    }
+
+    /// A stream that inflates past the length its header declares is stopped there, not inflated up to 16 MiB first.
+    #[test]
+    fn a_stream_longer_than_its_declared_length_is_stopped_at_that_length() {
+        let mut bytes = 10u32.to_be_bytes().to_vec();
+        bytes.extend(miniz_oxide::deflate::compress_to_vec_zlib(&[b'x'; 1024], 6));
+        assert_eq!(decode_compressed(&bytes, "settings"), Err("invalid compressed settings".to_string()));
+        let mut exact = 1024u32.to_be_bytes().to_vec();
+        exact.extend(miniz_oxide::deflate::compress_to_vec_zlib(&[b'x'; 1024], 6));
+        assert_eq!(decode_compressed(&exact, "settings").map(|text| text.len()), Ok(1024), "exactly its length decodes");
+    }
+
+    /// Settings that fail to decode still cost their declared length, so a catalog of damaged rows can't make the
+    /// reader inflate without bound: past the budget, the rest are left out without being inflated.
+    #[test]
+    fn settings_that_fail_to_decode_still_count_against_the_budget() {
+        use crate::lightroom_fixture::{self as fixture, Field};
+        let mut damaged = (512u32 << 10).to_be_bytes().to_vec();
+        damaged.extend([1, 2, 3]);
+        let steps = (1..=4).map(|id| fixture::history_step(id, 1, id as f64, "Step", Field::Blob(damaged.clone()))).collect();
+        let (rows, warnings) = steps_within_one_mib("history-budget-bad", steps);
+        assert_eq!(rows.len(), 4, "every step is still read");
+        assert_eq!(
+            warnings,
+            [
+                "image 1: history step 1: invalid compressed settings",
+                "image 1: history step 2: invalid compressed settings",
+                "2 history steps read without their settings: more than 1 MiB of settings in Adobe_libraryImageDevelopHistoryStep",
+            ],
+            "the two damaged steps within 1 MiB are tried; the other two aren't"
+        );
     }
 
     /// A crafted `.lrcat` that names a program as a photo's original gets no record for it, so

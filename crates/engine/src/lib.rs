@@ -1700,6 +1700,8 @@ fn op_moves_files(op: &Op) -> bool {
 }
 
 #[cfg(test)]
+mod lightroom_fixture;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_album_loops;
@@ -1789,6 +1791,8 @@ mod tests_libops;
 mod tests_library;
 #[cfg(test)]
 mod tests_lightroom_folder;
+#[cfg(test)]
+mod tests_lightroom_history;
 #[cfg(test)]
 mod tests_mask_effects;
 #[cfg(test)]
