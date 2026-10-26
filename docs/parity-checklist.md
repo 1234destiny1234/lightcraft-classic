@@ -935,6 +935,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-26 | patch | LR-IMP-FORMATS: Canon CRX (CR3) decodes every tile's planes and every C-RAW subband in parallel and places samples by row in parallel; the same samples on all 35 corpus CR3s (6.0 → 3.8 s in all); status unchanged |
 | 2026-10-26 | minor | LRC-LIB-LIBFOLDERS: a Folders folder's or disk's menu has Export Folder… and Export Folder with Preset ▸ (upstream #2956); status unchanged (✅) |
 | 2026-10-26 | minor | LRC-LIB-LIBFOLDERS: Copy Path in every folder menu; a disk's row gains Show in Finder and New Folder on Disk…, a Local row New Folder on Disk…; a folder can be made in a disk's root (upstream #2959); status unchanged (✅) |
 | 2026-10-26 | minor | LR-EDIT-DETAIL-DENOISE: AI Denoise follows Auto Sync in one undo step, starts at import above an ISO, and shows one batch row (upstream #2932); status unchanged (🟡) |
