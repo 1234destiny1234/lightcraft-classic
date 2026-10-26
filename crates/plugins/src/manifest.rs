@@ -17,6 +17,16 @@ pub const MAX_FIELDS: usize = 32;
 pub const MAX_DESTINATIONS: usize = 16;
 /// Most custom metadata fields one plug-in may declare.
 pub const MAX_METADATA_FIELDS: usize = 32;
+/// Most host features one plug-in may require.
+pub const MAX_REQUIRES: usize = 64;
+/// Longest `version` the host reads.
+pub const MAX_VERSION_BYTES: usize = 64;
+
+/// The host features this version of the app has, by name. A plug-in lists the ones it uses in
+/// `requires` and isn't installed (or loaded) where one is missing. Every manifest field,
+/// permission group or host call added from now on gets a name here; what the host had before
+/// `requires` existed is the baseline and has none.
+pub const HOST_FEATURES: &[&str] = &[];
 
 /// The manifest a plug-in returns from `lcc_manifest`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -26,8 +36,12 @@ pub struct Manifest {
     pub id: String,
     /// Display name.
     pub name: String,
+    /// Semver `MAJOR.MINOR.PATCH` (checked on install, see [`Manifest::semver`]).
     #[serde(default)]
     pub version: String,
+    /// Host features the plug-in uses ([`HOST_FEATURES`]): a minimum, never a maximum.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<String>,
     #[serde(default)]
     pub description: String,
     #[serde(default)]
@@ -157,6 +171,23 @@ pub enum FieldKind {
     },
 }
 
+/// A plug-in version as semver (`MAJOR.MINOR.PATCH`, optionally `-pre` and `+build`), or why it isn't one.
+pub fn parse_version(v: &str) -> std::result::Result<semver::Version, String> {
+    let form = "it must be MAJOR.MINOR.PATCH, e.g. 1.4.0";
+    if v.is_empty() {
+        return Err(format!("no version: {form}"));
+    }
+    if v.len() > MAX_VERSION_BYTES {
+        return Err(format!("version is {} bytes (limit {MAX_VERSION_BYTES}): {form}", v.len()));
+    }
+    semver::Version::parse(v).map_err(|e| format!("version {v:?} is not semver ({e}): {form}"))
+}
+
+/// At most 64 characters of `s`, for messages about hostile input.
+fn short(s: &str) -> String {
+    s.chars().take(64).collect()
+}
+
 fn valid_id(id: &str) -> bool {
     (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
@@ -179,6 +210,15 @@ impl Manifest {
         }
         if self.name.trim().is_empty() || self.name.len() > 128 {
             return bad("name must be 1-128 bytes".into());
+        }
+        if self.requires.len() > MAX_REQUIRES {
+            return bad(format!("at most {MAX_REQUIRES} names in requires"));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for r in &self.requires {
+            if !valid_id(r) || !seen.insert(r.as_str()) {
+                return bad(format!("requires: {:?} is invalid or repeated (names are 1-64 characters of A-Z a-z 0-9 . _ -)", short(r)));
+            }
         }
         self.permissions.validate().map_err(Error::Manifest)?;
         if self.commands.len() > MAX_COMMANDS {
@@ -230,6 +270,16 @@ impl Manifest {
             f.as_field().validate().map_err(|e| Error::Manifest(format!("metadata field: {e}")))?;
         }
         Ok(())
+    }
+
+    /// The features in `requires` that `known` lacks, in order.
+    pub fn missing_features(&self, known: &[impl AsRef<str>]) -> Vec<String> {
+        self.requires.iter().filter(|r| !known.iter().any(|k| k.as_ref() == r.as_str())).cloned().collect()
+    }
+
+    /// `version` as semver, or why it isn't one.
+    pub fn semver(&self) -> std::result::Result<semver::Version, String> {
+        parse_version(&self.version)
     }
 
     pub fn command(&self, id: &str) -> Option<&CommandDecl> {
@@ -337,7 +387,7 @@ mod tests {
     fn parses_a_full_manifest() {
         let m = Manifest::parse(
             json!({
-                "id": "org.example.geo", "name": "Geo", "version": "1.0",
+                "id": "org.example.geo", "name": "Geo", "version": "1.0.0",
                 "permissions": {"catalog": true, "network": ["api.example.com"]},
                 "commands": [{"id": "lookup", "label": "Look Up Places", "menu": "Metadata",
                     "dialog": [{"key": "radius", "label": "Radius", "type": "number", "min": 0, "max": 10, "default": 1},

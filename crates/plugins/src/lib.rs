@@ -35,8 +35,8 @@ mod safe_io;
 mod store;
 
 pub use context::{HostApi, NoHost};
-pub use manager::{Installed, Manager, PendingCall};
-pub use manifest::{CommandDecl, DestinationDecl, Field, FieldKind, Hooks, Manifest, MetadataField, PublishDecl};
+pub use manager::{Failed, Installed, Manager, PendingCall};
+pub use manifest::{CommandDecl, DestinationDecl, Field, FieldKind, HOST_FEATURES, Hooks, Manifest, MetadataField, PublishDecl};
 pub use permissions::{FsRoot, Permissions};
 pub use runtime::{ABI_VERSION, Limits, Outcome, Plugin};
 pub use store::NamespaceStore;
@@ -50,6 +50,12 @@ pub enum Error {
     Abi(String),
     #[error("plug-in manifest: {0}")]
     Manifest(String),
+    /// The plug-in requires host features this version of the app doesn't have.
+    #[error("{}", missing_message(.0))]
+    Unsupported(Vec<String>),
+    /// An older version than the installed one, not confirmed.
+    #[error("version {new} is older than the installed version {installed}; confirm to install it anyway (allowDowngrade)")]
+    Downgrade { installed: String, new: String },
     #[error("plug-in trapped: {0}")]
     Trap(String),
     #[error("plug-in exceeded its {0}")]
@@ -69,3 +75,14 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// "needs `a` and `b`, which this version of the app doesn't have".
+fn missing_message(missing: &[String]) -> String {
+    let names: Vec<String> = missing.iter().map(|m| format!("`{m}`")).collect();
+    let list = match names.as_slice() {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    };
+    format!("the plug-in needs {list}, which this version of the app doesn't have")
+}

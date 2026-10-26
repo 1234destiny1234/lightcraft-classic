@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 
 use crate::Session;
 
-fn invert_module(id: &str) -> Vec<u8> {
+pub(crate) fn invert_module(id: &str) -> Vec<u8> {
     let manifest = format!(
         r#"{{"id":"{id}","name":"Invert","version":"1","kind":"filter","params":{{"amount":{{"type":"number","min":0,"max":1,"default":1}}}}}}"#
     );

@@ -53,6 +53,50 @@ each message, and at most 10 000 host calls. A module that breaks any of these, 
 bad JSON fails with an error and is logged; the app keeps running. A module can have no imports
 other than the three below (no WASI).
 
+## Compatibility: `requires` and `version`
+
+The ABI version (below) only changes for a breaking change. Everything added to it since is
+named, and a plug-in lists the names it uses in **`requires`**, so a version of the app that lacks
+one refuses it clearly instead of failing in confusing ways (a permission that never appears, a
+hook that's never called, a host call that fails as an unknown method).
+
+- **The host's list** is `lcc_plugins::HOST_FEATURES`, and `plugin.list` returns it as
+  `host: {abi, features}`. Everything the host had when `requires` arrived is the baseline and
+  has no name; the list starts empty. Every manifest field, permission group or host call added
+  from then on gets a name there in the change that adds it, and its documentation here says
+  which name to require.
+- **Names** are `[A-Za-z0-9._-]{1,64}`, at most 64, none repeated; anything else is a manifest
+  error. A name is a minimum, never a maximum.
+- **Installing** a plug-in that requires a name the host doesn't know is refused, naming each
+  missing feature ("needs `jobs`, which this version of the app doesn't have"), and nothing is
+  written. `plugin.inspectFile` lists them as `missing`, and the install dialog shows them with
+  no Install button.
+- **An installed plug-in** that requires a name the host no longer knows (the app was
+  downgraded) doesn't load: `plugin.list` lists it under `failed` with `missing`. Its entry in
+  `plugins.json` (enabled state and grant) and its data are kept, so it loads as before once the
+  app is updated again.
+- **Removing** a plug-in that didn't load (it needs missing features, or its module can't be read)
+  works like any other: each `failed` row gives its `id`, `plugin.uninstall {id}` deletes its
+  module, its `plugins.json` entry and its data, and the Plug-in Manager shows a Remove button on
+  the row.
+- Versions of the app from before `requires` ignore it, like any field they don't know: the check
+  protects from this version on.
+
+**`version`** is required and is semver: `MAJOR.MINOR.PATCH`, optionally with a pre-release
+(`2.0.0-beta.1`) and build metadata (`+build.7`). Installing refuses a missing or invalid one
+(`plugin.inspectFile` gives the reason as `versionError`). A module installed before this rule
+without a valid version still loads, and its log says so.
+
+**Downgrades** need confirming. Versions compare by semver precedence: a pre-release comes before
+its release, and build metadata is ignored. Installing a lower version than the installed one is
+refused unless `plugin.install` gets `allowDowngrade: true`; `plugin.inspectFile` says
+`downgrade: true`, and the install dialog shows both versions and an *Install Older Version*
+button. The older version keeps the grant, cut back to what it asks for, and its log says
+"downgraded from X to Y". The same version again is a repair and installs without asking.
+
+Pixel filters (below) have their own manifest, shared with PhotoCraft, and none of this applies to
+them.
+
 ## The ABI
 
 All messages are UTF-8 JSON. An `i64` result packs `len << 32 | ptr`, pointing into the module's
@@ -148,7 +192,9 @@ The manifest fields:
 | Field | Meaning |
 |---|---|
 | `id` | stable, `[A-Za-z0-9._-]{1,64}`, reverse-DNS style; an install with the same id is an update |
-| `name`, `version`, `description`, `author` | shown in the Plug-in Manager |
+| `version` | required, semver `MAJOR.MINOR.PATCH` (see [Compatibility](#compatibility-requires-and-version)) |
+| `requires` | `[names]`: the host features the plug-in uses beyond the baseline (see [Compatibility](#compatibility-requires-and-version)) |
+| `name`, `description`, `author` | shown in the Plug-in Manager |
 | `permissions` | what the plug-in asks for (see [Permissions](#permissions)); ask for as little as possible |
 | `commands` | `[{id, label, menu?, dialog?}]`, File ▸ Plug-ins ▸ `name` ▸ `menu` ▸ `label` |
 | `hooks` | `{export?: true, metadata?: true}` |
@@ -201,12 +247,14 @@ The manifest fields:
   (*Install…* shows every permission for approval) or `<cli> commands plugin.install`.
 - Drive it without the UI: `plugin.run`, `plugin.exportTo`, `plugin.setField`, `plugin.log` from
   the CLI, the control channel or MCP.
+- Raise `version` with every release you hand out, and list in `requires` each host feature you
+  use beyond the baseline.
 - Distribute the `.wasm` file. There is no store and no signing yet: tell users what each
   permission is for.
 
 ## Engine commands
 
-`plugin.list`, `plugin.inspectFile {path}`, `plugin.install {path, grant?}`,
+`plugin.list`, `plugin.inspectFile {path}`, `plugin.install {path, grant?, allowDowngrade?}`,
 `plugin.uninstall {id}`, `plugin.enable {id, enabled}`, `plugin.grant {id, grant}`,
 `plugin.log {id}`, `plugin.commands`, `plugin.run {plugin, command, args?, ids?}`,
 `plugin.suggestMetadata {ids?}`, `plugin.postExport {files}`, `plugin.publishServices`,
