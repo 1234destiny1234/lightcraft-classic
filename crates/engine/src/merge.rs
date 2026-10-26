@@ -911,6 +911,8 @@ impl Session {
         info["id"] = json!(id.0);
         info["path"] = json!(path);
         info["bytes"] = json!(out.dng.len());
+        // a repeated identical merge gives the verified result it already made (no new file, edits kept)
+        info["reused"] = json!(reused);
         Ok(info)
     }
 
