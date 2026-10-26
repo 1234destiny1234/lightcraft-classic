@@ -595,6 +595,7 @@ fn options(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
                 .small(),
         );
     }
+    crate::import::recipe_section(app, ui, d);
     let mut albums = crate::album_picker::entries_from(&app.session.catalog, |_| None);
     albums.retain(|a| a.folder || !a.smart);
     d.album = d.album.filter(|id| albums.iter().any(|a| a.id == *id && !a.folder));

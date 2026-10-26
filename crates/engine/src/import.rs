@@ -15,7 +15,8 @@
 //! 6. Apply each photo's XMP sidecar (or a raw/DNG file's embedded XMP): the sidecar wins for
 //!    metadata and develop settings are restored (see [`crate::sidecar`]). Its capture time fills
 //!    in when the file has none (read before step 5, so it also files and names the copy).
-//! 7. Optionally apply a preset and add keywords (the import dialog's options).
+//! 7. Optionally apply a preset, then a batch-edit recipe (one more History step), and add
+//!    keywords (the import dialog's options).
 //! 8. Commit all new photos as one undoable op. (Undoing a move removes the catalog records;
 //!    the files stay at the destination — undo never moves files back over a card.)
 //! 9. Copy and Move rename sequences use checked platform-sized numbers: the last number is usable once, and any
@@ -121,6 +122,16 @@ pub struct ImportOptions {
     pub metadata_preset: Option<String>,
     /// Copy: raws are copied as DNG (Copy as DNG).
     pub convert_dng: bool,
+    /// A batch-edit recipe: develop control id / value pairs (e.g. `light.exposure` → 0.5),
+    /// applied to every imported photo *after* its XMP sidecar, camera default and import preset,
+    /// as one more History step (`Import adjustments`). Only the named controls change; the recipe
+    /// is a snapshot taken when the import starts, so editing a preset afterwards cannot change it.
+    /// It names plain adjustments only (no white balance, geometry or crop: `cmd::check_recipe`),
+    /// and [`ImportJob::new`] refuses anything else.
+    /// Empty (the default) = no recipe. A photo the library already has keeps its own settings:
+    /// one skipped as a duplicate, restored from Recently Deleted, or joined from a browsed
+    /// folder (Local) is never touched, as the preset and keywords never are.
+    pub recipe: Vec<(String, f64)>,
     /// Import files whose content the library already has as new photos (Lightroom's "Don't
     /// Import Suspected Duplicates" unchecked). A file at a path the library already lists, or one
     /// in Recently Deleted, is still handled as a duplicate.
@@ -1100,6 +1111,8 @@ impl ImportJob {
     /// Snapshot what an import with `opts` needs from the session (no file-system calls). Takes
     /// the probes a preceding scan left ([`Session::import_probes`]).
     pub fn new(s: &mut Session, opts: ImportOptions) -> crate::Result<Self> {
+        // a recipe is checked before any file is read or placed, not when the photos are committed
+        crate::cmd::check_recipe(&opts.recipe).map_err(|e| crate::cmd::bad("library.import", e))?;
         let mode = opts.mode;
         // Only a library on disk has an `Originals/` folder. The browser build keeps the bytes of
         // every added file in its own storage already, so "copy" there means "add".
@@ -1753,6 +1766,19 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     p.develop = d.clone();
                     p.edited = Some(now.clone());
                     p.history.push(lcc_catalog::HistoryStep { label, settings: d });
+                }
+                // the batch-edit recipe goes on top of everything above (sidecar, camera default,
+                // preset): only the controls it names change, through the same specs the sliders use
+                if !opts.recipe.is_empty() {
+                    let mut d = (*p.develop).clone();
+                    for (id, v) in &opts.recipe {
+                        // (`ImportJob::new` refused any id `set` would not write, and `set` clamps to the range)
+                        lcc_develop::controls::set(&mut d, id, *v);
+                    }
+                    let d = std::sync::Arc::new(d);
+                    p.develop = d.clone();
+                    p.edited = Some(now.clone());
+                    p.history.push(lcc_catalog::HistoryStep { label: "Import adjustments".into(), settings: d });
                 }
                 report.imported.push(id.0);
                 p.local = opts.local;

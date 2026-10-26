@@ -199,6 +199,8 @@ mod tests_immich_ui;
 #[cfg(test)]
 mod tests_import_metadata_preset;
 #[cfg(test)]
+mod tests_import_recipe;
+#[cfg(test)]
 mod tests_import_report;
 #[cfg(test)]
 mod tests_import_scan_note;
