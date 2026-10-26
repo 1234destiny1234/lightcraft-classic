@@ -2341,5 +2341,6 @@
   "This place is kept in Local already": "Tämä paikka on jo säilytetty Paikallisessa",
   "Only a place at the top of Local can be removed from it": "Paikallisesta voi poistaa vain sen ylimmän tason paikan",
   "Copy Path": "Kopioi polku",
-  "Path copied": "Polku kopioitu"
+  "Path copied": "Polku kopioitu",
+  "Same Content as Another Photo": "Sama sisältö kuin toisella kuvalla"
 }
