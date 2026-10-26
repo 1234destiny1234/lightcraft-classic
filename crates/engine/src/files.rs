@@ -207,6 +207,20 @@ fn ext_upper(name: &str) -> String {
     std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_uppercase()).unwrap_or_default()
 }
 
+/// The lens correction for a raw file's bytes with the lens the user `picked` ([`crate::lens_profiles::resolve_picked`])
+/// → (the correction, whether it is the file's own). Not a raw: an error.
+pub fn lens_for_bytes(bytes: &[u8], picked: Option<&crate::lens_profiles::GivenLens>) -> Result<(Option<lcc_develop::EmbeddedLens>, bool), String> {
+    if lcc_raw::probe(bytes).is_none() {
+        return Err("not a raw file".into());
+    }
+    let raw = lcc_raw::probe_info(bytes).map_err(|e| e.to_string())?;
+    let mut m = lcc_meta::extract(bytes);
+    m.fill_missing(&raw.metadata);
+    let resolved = crate::lens_profiles::resolve_picked(&raw, || m.clone(), picked);
+    let from_file = matches!(resolved, Some((_, crate::lens_profiles::Applied::Embedded)));
+    Ok((resolved.map(|(l, _)| l), from_file))
+}
+
 /// Probe a file's bytes: kind, dimensions (oriented), metadata. No pixel data is decompressed:
 /// raws are described from their headers ([`lcc_raw::probe_info`]), other images too
 /// ([`lcc_codecs::read_header`], which refuses truncated files but can't see damage inside
