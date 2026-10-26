@@ -2226,5 +2226,12 @@
   "Only a place at the top of Local can be removed from it": "只有本機最上層的位置才能從本機移除",
   "Copy Path": "複製路徑",
   "Path copied": "已複製路徑",
-  "Same Content as Another Photo": "與另一張照片內容相同"
+  "Same Content as Another Photo": "與另一張照片內容相同",
+  "less than a minute left": "剩餘不到一分鐘",
+  "cancelled": "已取消",
+  "Hide each photo": "隱藏各張照片",
+  "AI Denoise from": "AI 降噪起始 ISO",
+  "New raw photos shot at this ISO or above start with AI Denoise on, and their denoised pictures are made in the background after the import. Needs a denoise model (Settings, AI Denoise).": "以此 ISO 或更高拍攝的新 RAW 照片會開啟 AI 降噪，匯入後在背景產生降噪後的影像。需要降噪模型（設定，AI 降噪）。",
+  "Photos and previews kept in memory, so the photos you go back to show at once. Automatic uses a quarter of this computer's memory, up to 16 GB. Choose more for big shoots, but leave some for other apps.": "照片與預覽保存在記憶體中，返回查看的照片可立即顯示。自動使用本機記憶體的四分之一，最多 16 GB。大型拍攝可選擇更多，但請為其他應用程式留出空間。",
+  "Finding skin and faces to retouch": "正在尋找要修飾的皮膚和臉部"
 }

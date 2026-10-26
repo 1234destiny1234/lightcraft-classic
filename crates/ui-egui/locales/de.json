@@ -3509,5 +3509,12 @@
   "Only a place at the top of Local can be removed from it": "Nur ein Ort ganz oben in „Lokal“ kann daraus entfernt werden",
   "Copy Path": "Pfad kopieren",
   "Path copied": "Pfad kopiert",
-  "Same Content as Another Photo": "Gleicher Inhalt wie ein anderes Foto"
+  "Same Content as Another Photo": "Gleicher Inhalt wie ein anderes Foto",
+  "less than a minute left": "weniger als eine Minute übrig",
+  "cancelled": "abgebrochen",
+  "Hide each photo": "Einzelne Fotos ausblenden",
+  "AI Denoise from": "KI-Entrauschen ab",
+  "New raw photos shot at this ISO or above start with AI Denoise on, and their denoised pictures are made in the background after the import. Needs a denoise model (Settings, AI Denoise).": "Neue Raw-Fotos ab diesem ISO-Wert starten mit KI-Entrauschen, und ihre entrauschten Bilder werden nach dem Import im Hintergrund erstellt. Benötigt ein Entrauschungsmodell (Einstellungen, KI-Entrauschen).",
+  "Photos and previews kept in memory, so the photos you go back to show at once. Automatic uses a quarter of this computer's memory, up to 16 GB. Choose more for big shoots, but leave some for other apps.": "Fotos und Vorschauen im Arbeitsspeicher, damit Fotos, zu denen Sie zurückkehren, sofort erscheinen. Automatisch nutzt ein Viertel des Arbeitsspeichers dieses Computers, höchstens 16 GB. Wählen Sie mehr für große Shootings, aber lassen Sie anderen Apps etwas übrig.",
+  "Finding skin and faces to retouch": "Haut und Gesichter zum Retuschieren suchen"
 }

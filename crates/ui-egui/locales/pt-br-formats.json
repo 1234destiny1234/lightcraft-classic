@@ -308,5 +308,11 @@
   "Where should the Lightroom catalog “{catalog}” go?": "Para onde vai o catálogo do Lightroom “{catalog}”?",
   "Merge into the open library “{library}” ({count} photo{})": "Mesclar na biblioteca aberta “{library}” ({count} foto{})",
   "{n} file{} skipped (not a supported photo type)": "Arquivos ignorados (tipo de foto sem suporte): {n}{:.0}",
-  "{n} folder{} could not be read": "Pastas que não puderam ser lidas: {n}{:.0}"
+  "{n} folder{} could not be read": "Pastas que não puderam ser lidas: {n}{:.0}",
+  "about {n} min left": "faltam cerca de {n} min",
+  "about {h} h {m} min left": "faltam cerca de {h} h {m} min",
+  "{n} done": "{n} prontas",
+  ", {n} failed": ", {n} com falha",
+  "{n} failed": "{n} com falha",
+  "Show each photo ({n})": "Mostrar cada foto ({n})"
 }
