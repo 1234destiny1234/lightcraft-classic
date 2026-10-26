@@ -448,8 +448,8 @@ pub struct Session {
     pub keyword_sets: Vec<cmd::keywords::KeywordSet>,
     pub keyword_set: Option<String>,
     pub recent_keywords: Vec<String>,
-    /// The keyword ⇧K toggles on the selected photos (Keywording ▸ keyword shortcut).
-    pub keyword_shortcut: Option<String>,
+    /// The keywords ⇧K adds to or removes from the selected photos (Set Keyword Shortcut…).
+    pub keyword_shortcut: Vec<String>,
     /// Keyword attributes (synonyms, export options, person) and keywords created before any
     /// photo has them, by keyword path (Keyword List).
     /// Before/After: the "before" settings chosen per photo (this session; default: the photo's
@@ -648,7 +648,7 @@ impl Session {
             keyword_sets: Vec::new(),
             keyword_set: None,
             recent_keywords: Vec::new(),
-            keyword_shortcut: None,
+            keyword_shortcut: Vec::new(),
             before: Default::default(),
             import_probes: Default::default(),
             folder_changes: None,
