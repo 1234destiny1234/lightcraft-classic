@@ -128,7 +128,7 @@ fn set_visible(workspace: &mut Workspace, panel: Panel, visible: bool) -> Result
         return apply(workspace, Action::Close { panel });
     }
     validate(workspace)?;
-    // Without a recorded place craft-ui opens the panel at the right edge; LightCraft puts it
+    // Without a recorded place craft-ui opens the panel at the right edge; the app puts it
     // beside the photo instead.
     if workspace.hidden.iter().any(|(hidden, _)| *hidden == panel) {
         let mut next = workspace.clone();
@@ -304,7 +304,7 @@ pub fn show(app: &mut crate::LccApp, ui: &mut egui::Ui) {
     app.ui.docking = Some(workspace.clone());
     let mut style = DockStyle::from_ui(ui);
     style.min_pane = 96.0;
-    // The side panels are frames whose widths LightCraft tracks; dock columns are not offered.
+    // The side panels are frames whose widths the app tracks; dock columns are not offered.
     style.new_dock_zones = false;
     style.float_label = crate::i18n::tr("Float panel").into();
     style.close_label = crate::i18n::tr("Close panel").into();
