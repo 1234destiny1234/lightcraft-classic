@@ -196,8 +196,8 @@ walks the drive.
   is binned from the whole frame, and only the fitted image is read back (2560 → 1728 px: 11.4 →
   3.7 ms with the fit, against the CPU's `fit_rgba8` after a full readback). It matches `fit_rgba8`
   within 1 LSB (`the_display_fit_on_the_device_matches_the_cpus`). Overlays, a window that spots
-  grew, HDR renders and a monitor profile's conversion keep the CPU fit. The photo's cached view
-  then holds the fitted image.
+  grew, HDR renders and a monitor profile's conversion keep the CPU fit. A render at rest reads the full
+  image back with the fitted one, for the photo's view preview; a drag's updates cache the fitted one.
 - Per-stage hybrid: defringe and spot removal (rare, CPU-only for now) download the resampled image,
   run on the CPU and upload; heuristic mask shapes (Sky, Subject, Background, …) and brushes of more
   than 4096 dabs are evaluated on the CPU and uploaded; sources over the buffer limit are resampled

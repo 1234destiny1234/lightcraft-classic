@@ -53,10 +53,10 @@ per full-quality update, which leaves the slider dragging a frozen picture. So a
 `ui.inspect` → `perf.adjustQuality` reports the decision: `idle` (no drag, or the setting is off),
 `full`, `draft` (falling back, slider moving) or `settled` (falling back, slider still).
 
-## Historical measurements
+## Measurements
 
-The following measurements predate the 26.44 integration refresh. They describe
-their original runs; they are not guarantees for current main or every RAW.
+Measured on 2026-10-24 and 2026-10-25, before main's 26.44 changes; see the pull request for the A/B
+against main of that time.
 
 Kaan88's warmed measurements at Fit in a 1600 × 1000 window on an RTX 4070 Ti SUPER (DX12), HDR
 output off. Latency includes control-channel dispatch; update rates are Main-render completions
@@ -106,19 +106,16 @@ cover `HqDrag` itself, including hostile clocks and timings.
 
 Sources: own design, on the existing render scheduling (`DragScale`'s timing and verdicts).
 
-## Cache and first-zoom limits
+## The view preview and the first zoom
 
-A GPU-fitted view can be stored in the size-independent view cache at its drawn
-resolution. The CPU display fit runs after caching, so that path can keep a larger
-preview. Cached stand-ins therefore do not necessarily have identical dimensions
-or bytes before and after GPU fitting. Settled views and exports use their normal
-render requests; the GPU-fit equivalence test permits at most one output level of
-difference for its tested inputs.
+The photo's view preview (the size-independent view cache, in memory and on disk with a library) keeps
+the render at the level it was made, not the size it is drawn. A render at rest that the GPU fits to the
+drawn size reads its full image back too, for that cache (about 3 ms at 2560 px). A high quality drag's
+updates don't: each would pay those 3 ms, and in HDR they held updates back by a frame, so a drag's last
+update caches its drawn size until the next render at rest replaces it (`RenderJob::drawn_view_cache`).
+The GPU fit matches the CPU's within one output level.
 
-Original preparation after a short look is opportunistic. A large RAW can still
-be decoding when the user zooms, and tile-ring completion is distinct from the
-time the visible area becomes sharp. The 100 MP GFX100S case did not consistently
-improve in the 2026-10-26 review. Full-resolution decoding, concurrent source work
-and memory pressure remain follow-up measurements; delaying warming alone did not
-establish a causal fix. Benchmark updates belong with their exact base revision,
-quality state, native-window setup and timing definition in PR #506.
+Preparing the original after a look is opportunistic: it waits for 1.5 s with nothing else to render,
+and a 100 MP raw can still be decoding when the zoom comes, which then waits for it as before (on the
+GFX100S one run measured no gain, a later one 6.8 → 4.4 s). What a zoom shows first is the tiles' work; the ring of tiles
+around the view finishes later.

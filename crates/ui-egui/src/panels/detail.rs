@@ -1036,7 +1036,9 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             job.with_hidden_grading(app.ui.grading_hidden_for(id))
         })
     } else {
-        rest_job(app, id, (rw, rh), fit_px, overlay, crop_tool)
+        // (a high quality drag's updates leave their drawn-size image in the view cache: reading the
+        // full render back as well costs each update more than the fit saved; at rest it is kept)
+        rest_job(app, id, (rw, rh), fit_px, overlay, crop_tool).map(|job| if interacting { job.with_drawn_view_cache() } else { job })
     };
     if !hdr_drafts && let Some(job) = main_job {
         app.renderer.request(Slot::Main, job, 100);
@@ -4805,6 +4807,7 @@ mod tests {
     fn hdr_view_job_key_includes_headroom() {
         // A headroom change must produce a different render key so the texture is re-uploaded (P2-4).
         let base = lcc_engine::media::RenderJob {
+            drawn_view_cache: false,
             cache_generation: 0,
             request_id: 1,
             source_key: None,

@@ -1303,6 +1303,13 @@ fn the_display_fit_on_the_device_matches_the_cpus() {
         assert_eq!(on_device.histogram.total, whole.histogram.total, "{fit:?}: the whole render's histogram");
         assert_eq!(on_device.histogram.luma, whole.histogram.luma, "{fit:?}");
     }
+    // kept for a view cache: the fitted image as above, and the full render as it is
+    let (fitted, full) = lcc_gpu::try_render_fitted_keeping_full(&src, &info, &s, &req, None, (640, 480)).expect("gpu render");
+    let alone = lcc_gpu::try_render_fitted(&src, &info, &s, &req, None, Some((640, 480))).expect("gpu render");
+    assert_eq!(fitted.image, alone.image, "the same fitted image");
+    assert_eq!(full.as_ref(), Some(&whole.image), "the full render read back with it");
+    let (_, none) = lcc_gpu::try_render_fitted_keeping_full(&src, &info, &s, &req, None, (4000, 4000)).expect("gpu render");
+    assert!(none.is_none(), "nothing fitted: the render is the full image");
     let larger = lcc_gpu::try_render_fitted(&src, &info, &s, &req, None, Some((4000, 4000))).expect("gpu render");
     assert_eq!((larger.image.width, larger.image.height), (whole.image.width, whole.image.height), "never enlarged");
     let overlay = RenderRequest { overlay: lcc_pipeline::Overlay::Spots(50), ..req };

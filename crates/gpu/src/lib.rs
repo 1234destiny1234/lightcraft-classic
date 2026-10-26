@@ -509,7 +509,30 @@ pub fn try_render_fitted(
     stages: Option<&StageCache>,
     fit: Option<(usize, usize)>,
 ) -> Result<Rendered, Fallback> {
-    try_render_with(src, info, s, req, stages, fit, None)
+    try_render_with(src, info, s, req, stages, fit.map(|size| Fit { size, full: None }), None)
+}
+
+/// The display fit asked of a render: the size the image is drawn at, and where to put the
+/// full-size image too when the caller keeps that (left `None` when no fit was made).
+pub(crate) struct Fit<'a> {
+    pub size: (usize, usize),
+    pub full: Option<&'a mut Option<lcc_raster::Rgba8>>,
+}
+
+/// [`try_render_fitted`] that also reads back the full-size render when it fits one: for a view
+/// whose render is kept at its own level (the photo's view preview) while only the fitted image
+/// is drawn. The second value is `None` when nothing was fitted (the render is the full image).
+pub fn try_render_fitted_keeping_full(
+    src: &Arc<Rgb32f>,
+    info: &SourceInfo,
+    s: &DevelopSettings,
+    req: &RenderRequest,
+    stages: Option<&StageCache>,
+    fit: (usize, usize),
+) -> Result<(Rendered, Option<lcc_raster::Rgba8>), Fallback> {
+    let mut full = None;
+    let r = try_render_with(src, info, s, req, stages, Some(Fit { size: fit, full: Some(&mut full) }), None)?;
+    Ok((r, full))
 }
 
 /// [`try_render`] of an HDR render ([`lcc_pipeline::OutputDepth::F32Hdr`]) for an HDR display:
@@ -538,7 +561,7 @@ fn try_render_with(
     s: &DevelopSettings,
     req: &RenderRequest,
     stages: Option<&StageCache>,
-    fit: Option<(usize, usize)>,
+    mut fit: Option<Fit<'_>>,
     mut texels: Option<(f32, &mut Vec<u16>)>,
 ) -> Result<Rendered, Fallback> {
     #[cfg(not(target_arch = "wasm32"))]
@@ -576,6 +599,7 @@ fn try_render_with(
                 let _scope = ctx::RenderScope::new(gpu);
                 let errors = ctx::ErrorScopes::push(gpu);
                 let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let fit = fit.as_mut().map(|f| Fit { size: f.size, full: f.full.as_deref_mut() });
                     render::render(gpu, src, info, s, req, ext.as_deref(), fault, fit, texels.as_mut().map(|(h, t)| (*h, &mut **t)))
                 }));
                 (r, errors.pop())

@@ -2924,6 +2924,7 @@ mod extended_linear_tests {
         r.set_surface_extended_linear(true);
 
         let job = RenderJob {
+            drawn_view_cache: false,
             cache_generation: 0,
             request_id: 1,
             source_key: None,
