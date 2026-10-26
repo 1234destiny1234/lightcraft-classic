@@ -1554,7 +1554,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 close = true;
             }
-            Err(e) if matches!(dlg, Dialog::MovePhotos { .. }) => {
+            // a prompt (Rename Folder, …) that is refused closes and says why
+            Err(e) if matches!(dlg, Dialog::MovePhotos { .. } | Dialog::TextPrompt { .. }) => {
                 app.toast(ctx, e);
                 close = true;
             }
