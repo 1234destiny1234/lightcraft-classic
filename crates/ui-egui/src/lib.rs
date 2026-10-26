@@ -201,6 +201,8 @@ mod tests_import_metadata_preset;
 #[cfg(test)]
 mod tests_import_report;
 #[cfg(test)]
+mod tests_import_scan_note;
+#[cfg(test)]
 mod tests_import_screen;
 #[cfg(test)]
 mod tests_info_dialogs;

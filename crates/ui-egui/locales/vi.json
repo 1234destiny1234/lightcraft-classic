@@ -2238,5 +2238,6 @@
   "A copy of a photo in Recently Deleted stays out either way.": "Bản sao của ảnh trong Đã xóa gần đây vẫn không được đưa vào dù chọn thế nào.",
   "For scripts and agents: `folder.scanChanges` now returns `duplicates` as a list of those files, each with the photo it matches (`existing`), where it used to return a count; `library.importPreview` still returns a number under `duplicates`, and `folder.synchronize` takes `importDuplicates`.": "Dành cho tập lệnh và tác nhân: `folder.scanChanges` giờ trả về `duplicates` dưới dạng danh sách các tệp đó, mỗi tệp kèm ảnh mà nó khớp (`existing`), trước đây là một con số; `library.importPreview` vẫn trả về một số trong `duplicates`, và `folder.synchronize` nhận `importDuplicates`.",
   "A file with the same content as a photo of the library, under another name or in another folder. Untick to bring such files in as photos of their own. Remembered for the next Synchronize.": "Tệp có nội dung giống một ảnh trong thư viện, dưới tên khác hoặc ở thư mục khác. Bỏ chọn để đưa các tệp như vậy vào thành ảnh riêng. Được nhớ cho lần đồng bộ tiếp theo.",
-  "Keywords and presets apply to new files only, not to photos already in Local": "Từ khóa và cài đặt sẵn chỉ áp dụng cho tệp mới, không áp dụng cho ảnh đã có trong Cục bộ"
+  "Keywords and presets apply to new files only, not to photos already in Local": "Từ khóa và cài đặt sẵn chỉ áp dụng cho tệp mới, không áp dụng cho ảnh đã có trong Cục bộ",
+  "Stopped at the scan limit: there may be more photos": "Đã dừng ở giới hạn quét: có thể còn ảnh khác"
 }
