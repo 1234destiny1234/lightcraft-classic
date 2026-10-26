@@ -62,7 +62,38 @@ the fork's own form (or noted for later), SKIP = not taken. "Stacked" = built on
 Closed upstream without merging.
 
 | PR | Title | Decision | Reason | Fork PR |
+| 2949 | LR-PREF-GENERAL: the Settings tab bar, filter, choices and questions can be read in every theme (stacked on #2906) | SKIP | draft stacked on a chain of unmerged settings/theme PRs; revisit once they land |  |
+| 2998 | KEYC-COMPARE: Shift+Up/Down and Ctrl+Shift+arrows extend the grid selection | ADOPT | keyboard selection of grid rows | fork #611 |
+| 3002 | LR-META-EXIF: TIFF keeps shared child IFDs and multi-string ASCII values | ADOPT | mostly already in Chromaforge; the copy's entry and byte charge added | fork #609 |
+| 3003 | LR-EDIT-EFFECTS-GRAIN: grain skips a degenerate frame instead of producing NaN pixels | SKIP | already in Chromaforge |  |
+| 3004 | LR-IMP-FORMATS: decode compressed Samsung SRW (32770, 32772, 32773) | SKIP | Chromaforge already decodes compressed SRW (`vendor::srwc`) |  |
+| 3005 | fix(gpu): LR-BEHAV-GPU: bounded blur work per pixel so large radii can't trigger a GPU reset | SKIP | already in Chromaforge |  |
+| 3006 | CLI-HOSTILE: render --set refuses inf / NaN instead of dropping the value | SKIP | already in Chromaforge |  |
+| 3007 | Never crash: CR2 slice widths that overflow are an error; XMP attribute unescape in one pass | ADOPT | remaining parts: usize conversion of slice widths, leading-zero references | fork #609 |
+| 3008 | security(raster): fallible image allocation; no panic on empty images or zip_map size mismatch | ADOPT | remaining parts: checked zip_map index, 32-bit-safe MAX_IMAGE_BYTES | fork #609 |
+| 3009 | LR-MERGE-HDRPANO: a repeated identical HDR merge reuses the verified output | ADOPT | same idea as #435, already in Chromaforge; the `reused` result field added | fork #611 |
+| 3010 | #366: SAM 3 mirrors accept a local folder; tokenizer files pinned | ADOPT | local mirrors and pins were in; `file://` percent escapes added | fork #611 |
+| 3011 | security(codecs): refuse decodes with no pixels; checked JPEG sample counts | ADOPT | code already in; the zero-size header test added | fork #609 |
+| 3012 | #2361: lens corrections crop inside the corrected photo | ADOPT | already in except the estimated-CA constrain | fork #611 |
+| 3013 | LR-EDIT-OPTICS-PROFILE: lens profiles for compact cameras with a built-in lens | ADOPT | remaining parts: no-make cameras, overflow guard, exact-name lookup without the mount fallback | fork #611 |
+| 3014 | MENU-CTX-GRID: the photo menu's rows, built from the menu bar's model | LEARN | a photo context menu built from the menu bar's model is the right shape; too large to port while the docking rework lands, revisit with #3026 |  |
+| 3015 | Never crash: an oversize export size is an error, not a multiply overflow | SKIP | already in Chromaforge |  |
+| 3016 | LRC-LIB-LIBFOLDERS: a date folder inside the library can be renamed | ADOPT | imported date folders can be renamed; refused prompts say why | fork #611 |
+| 3017 | LR-IMP-FORMATS: decode AVIF on import (pure-Rust AV1 decoder) | SKIP | Chromaforge already decodes AVIF (`codecs::avif`) |  |
+| 3018 | perf(catalog): box Photo::embedded_lens (~240 MB less per 1M photos) | LEARN | worthwhile memory saving; touches many call sites, do it with the next catalog memory pass |  |
+| 3019 | LR-BEHAV-WINDOW: remember where the window was, not only its size (#2967) | SKIP | already in Chromaforge (`window_place`) |  |
+| 3020 | Originals: on Windows a hard link to an original counts as that original | ADOPT | Windows hard links via the same-file crate | fork #611 |
+| 3021 | Clean-room Canon CRW decode, EOS D60 colour matrices | SKIP | Chromaforge already decodes CRW (`vendor::crw`) and ships dcraw's matrices |  |
+| 3023 | LR-MASK-OBJECTS: recover from SAM worker accept errors | SKIP | already in Chromaforge (accept errors are logged and retried) |  |
+| 3024 | LRC-LIB-PEOPLE: Start the face scan's progress over in another library (#2995) | ADOPT | progress row resets with the library | fork #611 |
+| 3026 | MENU-CTX-GRID: the photo menu offers the Photo menu's actions, grouped by task (stacked on #3014) | LEARN | see #3014 |  |
+| 3027 | LR-PROF-CAMERACOLOR: docs count 9 bundled camera profiles, not 5 | SKIP | upstream's doc counts; Chromaforge's docs count its own bundle |  |
+| 3030 | LR-BEHAV-MULTISELECT: click selection as in Lightroom Classic (frame click selects alone, Shift/Ctrl keep the active photo) | LEARN | Classic click semantics worth matching; grid/filmstrip code is being reworked by the docking cherry-picks, port after |  |
+| 3031 | KEY-INFO, LR-BEHAV-PANEL-RESIZE: panels come back as they were (closing a tool, pressing a panel key again) | LEARN | panel restore behaviour; collides with the docking rework, revisit after it lands |  |
+| 3034 | LR-PREF-INTERFACE: Settings › Interface size, Auto or 50–300% | LEARN | an interface size setting is useful; settings UI is in flux with the docking/craft-ui work, revisit |  |
+| 3035 | i18n(it): launch library chooser, Lightroom import destination and new settings | ADOPT | only the strings Chromaforge has, product name as `{app}` | fork #611 |
 |---|---|---|---|---|
-| 435 | Reuse verified HDR merge results without changing existing edits | LEARN | reuse an identical HDR merge result instead of writing a duplicate DNG (#430); upstream asked for a minimal fix and closed it: worth doing in the fork as that minimal fix | — |
+| 435 | Reuse verified HDR merge results without changing existing edits | LEARN | reuse an identical HDR merge result instead of writing a duplicate DNG (#430); upstream asked for a minimal fix and closed it: worth doing in the fork as that minimal fix; already in Chromaforge (commits 101efb1ae, 6459531cf), `reused` field added with #3009 | fork #611 |
+| 2999 | Clean room crw format decode | SKIP | closed; Chromaforge already decodes CRW | |
 | 1589 | Shrink the app chrome to PhotoCraft control scale | SKIP | shrinks the chrome to another app's control scale; closed upstream pending its scale decision (#2962), and the fork keeps the Lightroom-parity scale | — |
-| 1848 | gpu: renders queue for device memory; out of memory never retires the GPU (#1764) | LEARN | GPU out-of-memory should queue renders and fall back to the CPU instead of retiring the GPU (#1764); closed unmerged; the fork has its own `crates/gpumem` budget, revisit if OOM retirements are reported | — |
+| 1848 | gpu: renders queue for device memory; out of memory never retires the GPU (#1764) | LEARN | GPU out-of-memory should queue renders and fall back to the CPU instead of retiring the GPU (#1764); closed unmerged; the fork has its own `crates/gpumem` budget, revisit if OOM retirements are reported; already in Chromaforge as `crates/gpu/src/budget.rs` (commit 6c4864f6a) | in main (6c4864f6a) |
