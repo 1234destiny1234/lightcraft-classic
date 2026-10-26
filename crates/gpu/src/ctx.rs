@@ -348,7 +348,8 @@ pub struct Gpu {
     pub queue: wgpu::Queue,
     pub info: wgpu::AdapterInfo,
     kernels: HashMap<&'static str, Kernel>,
-    dummy: wgpu::Buffer,
+    /// An unused binding's placeholder, one per binding slot.
+    dummy: Vec<wgpu::Buffer>,
     /// Recycled buffers (see [`Buf`]).
     free: std::sync::Mutex<Vec<Tracked>>,
     /// Largest storage buffer the device accepts (bytes).
@@ -458,12 +459,19 @@ impl Gpu {
             }
         };
         let build_ms = started.elapsed().as_millis();
-        let dummy = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("dummy"),
-            size: 16,
-            usage: wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
+        // one placeholder per binding slot: a kernel may leave a read-only and a read-write
+        // binding unused, and one buffer can't be both in a dispatch
+        let nbuf = kernels.values().map(|k| k.nbuf).max().unwrap_or(0);
+        let dummy = (0..nbuf)
+            .map(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("dummy"),
+                    size: 16,
+                    usage: wgpu::BufferUsages::STORAGE,
+                    mapped_at_creation: false,
+                })
+            })
+            .collect();
         let max_buffer = limits.max_storage_buffer_binding_size.min(limits.max_buffer_size);
         log::info!("gpu: {} ({:?}), {} kernels in {build_ms} ms, buffers ≤ {} MiB", info.name, info.backend, kernels.len(), max_buffer >> 20);
         Ok(Gpu { device, queue, info, kernels, dummy, free: Default::default(), max_buffer })
@@ -690,7 +698,10 @@ impl Gpu {
         });
         let mut entries = vec![wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() }];
         for (i, b) in bufs.iter().enumerate() {
-            let buf = b.map(|b| b.raw()).unwrap_or(&self.dummy);
+            let Some(buf) = b.map(|b| b.raw()).or_else(|| self.dummy.get(i)) else {
+                fail(FailKind::Fatal, format!("{name}: no placeholder for binding {i}"));
+                return;
+            };
             entries.push(wgpu::BindGroupEntry { binding: i as u32 + 1, resource: buf.as_entire_binding() });
         }
         let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout: &k.layout, entries: &entries });
