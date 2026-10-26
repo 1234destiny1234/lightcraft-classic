@@ -273,8 +273,8 @@ pub(crate) fn unescape_attr(s: &str) -> String {
             _ => 1,
         };
         let zeros = b.iter().skip(digits).take_while(|&&c| c == b'0').count();
-        let skip = digits + zeros.saturating_sub(1);
-        let end = b.iter().skip(skip).take(12).position(|&c| c == b';').map(|j| j + skip);
+        let skip = digits.saturating_add(zeros.saturating_sub(1));
+        let end = b.iter().skip(skip).take(12).position(|&c| c == b';').map(|j| j.saturating_add(skip));
         match end.and_then(|j| entity(&rest[1..j]).map(|c| (c, j))) {
             Some((c, j)) => {
                 out.push(c);
