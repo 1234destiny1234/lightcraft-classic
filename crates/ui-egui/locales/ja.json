@@ -2409,5 +2409,6 @@
   "Why?": "理由は？",
   "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "AI ノイズ除去にはモデルが必要ですが、インストールされていません。それまでは「ディテール」の「輝度」と「カラー」でノイズを軽減できます。",
   "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "このバージョンには AI ノイズ除去モデルが含まれておらず、まだここからダウンロードすることもできません。",
-  "No AI Denoise model is installed": "AI ノイズ除去モデルはインストールされていません"
+  "No AI Denoise model is installed": "AI ノイズ除去モデルはインストールされていません",
+  "Keywords and presets apply to new files only, not to photos already in Local": "キーワードとプリセットは新しいファイルにのみ適用され、すでにローカルにある写真には適用されません"
 }
