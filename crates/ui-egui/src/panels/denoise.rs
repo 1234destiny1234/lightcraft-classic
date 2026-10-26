@@ -129,9 +129,9 @@ fn watch_downloads(app: &mut LccApp, ctx: &egui::Context) {
     ctx.request_repaint_after(std::time::Duration::from_millis(120));
 }
 
-/// Per-photo AI Denoise switch, including a request waiting for model installation.
+/// Per-photo AI Denoise switch.
 pub fn detail_toggle(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, on: bool, applicable: bool) {
-    let mut enabled = on || crate::model_setup::denoise_requested(app, id);
+    let mut enabled = on;
     egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 6, bottom: 2 }).show(ui, |ui| {
         let mut r = ui.add_enabled(applicable, egui::Checkbox::new(&mut enabled, crate::i18n::tr("AI Denoise")));
         if !applicable && let Some((why, detail)) = not_applicable(app, id) {
@@ -143,7 +143,8 @@ pub fn detail_toggle(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, on: bool,
         }
         register(ui.ctx(), "denoise:enabled", r.rect);
         if r.changed() {
-            let _ = app.run("denoise.toggle", json!({"id": id.0, "enabled": enabled}));
+            let params = if app.session.active() == Some(id) { json!({"enabled": enabled}) } else { json!({"id": id.0, "enabled": enabled}) };
+            let _ = app.run("denoise.toggle", params);
         }
     });
 }
@@ -188,29 +189,24 @@ pub fn detail_status(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, amount: f
                 });
             }
         }
-        PhotoState::NoModel => {
-            egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-                note(ui, "AI Denoise needs a model. Install one in Settings.", t.text_dim);
-                ui.add_space(2.0);
-                let r = ui.small_button(crate::i18n::tr("Set up AI Denoise…"));
-                register(ui.ctx(), "denoise:setup", r.rect);
-                if r.clicked() {
-                    let _ = app.run("denoise.toggle", json!({"id": id.0, "enabled": true}));
-                }
-            });
-        }
         // Waiting, in line and being made are passing states of background work: they add no line here (it would
         // push every control under it down and back up while the user drags a slider); the activity stack shows the
         // progress, with the photo's file name.
         PhotoState::Idle => {
-            if amount > 0.0 && app.session.denoise_auto() {
+            let held = app.session.denoise_held(id);
+            if amount > 0.0 && app.session.denoise_auto() && !held {
                 // the pump has not met this photo yet: let it come round soon instead of waiting out its pause
                 let now = ui.ctx().input(|i| i.time);
                 app.caches.denoise.next_pump = app.caches.denoise.next_pump.min(now + 0.05);
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(60));
             } else if amount > 0.0 {
                 egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-                    note(ui, "Its denoised picture is not made yet, and pictures are not made on their own (Settings, AI Denoise).", t.text_dim);
+                    let why = if held {
+                        "Its denoised picture is not made yet: AI Denoise was stopped for it."
+                    } else {
+                        "Its denoised picture is not made yet, and pictures are not made on their own (Settings, AI Denoise)."
+                    };
+                    note(ui, why, t.text_dim);
                     ui.add_space(2.0);
                     let r = ui.small_button(crate::i18n::tr("Make it now"));
                     register(ui.ctx(), "denoise:make", r.rect);
@@ -241,20 +237,26 @@ pub fn detail_status(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, amount: f
 pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let list = models(app, ui.ctx());
     heading(ui, t, "AI Denoise");
-    crate::model_setup::notice(app, ui, "denoise");
     if list["dir"].is_null() {
-        hint(ui, t, "This build has nowhere to keep denoise models, so AI Denoise is not available. (The desktop app has.)");
+        hint(
+            ui,
+            t,
+            "AI Denoise runs automatically with the built-in denoiser. This build has nowhere to keep other denoise models. (The desktop app has.)",
+        );
         return;
     }
     hint(
         ui,
         t,
-        "Cleans noise out of raw photos with an AI model, before the picture is built: the AI Denoise Amount slider under Detail sets how much of it you see. \
+        "Cleans noise out of raw photos before the picture is built: the AI Denoise Amount slider under Detail sets how much of it you see. \
          Your files are never changed and no extra files are made in your library: the cleaned picture is cached data that is made again when needed.",
     );
     let runtime = list["runtime"].as_bool() == Some(true);
+    if list["model"].is_null() {
+        hint(ui, t, "In use: the built-in denoiser. It needs nothing installed, so turning AI Denoise on just works.");
+    }
     if !runtime {
-        hint(ui, t, "This build cannot run denoise models.");
+        hint(ui, t, "This build cannot run other denoise models.");
     }
     let all: Vec<Value> = list["models"].as_array().cloned().unwrap_or_default();
     let downloads = app
@@ -262,7 +264,10 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         .execute("denoise.models.downloads", &json!({}))
         .map(|v| v["downloads"].as_array().cloned().unwrap_or_default())
         .unwrap_or_default();
-    heading(ui, t, "Models");
+    heading(ui, t, "Other models (optional)");
+    if all.is_empty() {
+        hint(ui, t, "Only if you were given a {app} denoise model (a folder with a .onnx file and denoise-model.json):");
+    }
     let installing = downloads.iter().any(|d| d["id"] == "local-install" && d["state"].as_str() == Some("installing"));
     let r = crate::button::Button::new("Install from file…")
         .enabled(runtime && app.services.pick_denoise_model.is_some())
@@ -283,9 +288,6 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     if let Some(why) = &app.caches.denoise.rejected {
         hint(ui, t, why);
     }
-    if all.is_empty() {
-        hint(ui, t, "Install your own ONNX model with denoise-model.json beside it. This build offers no model downloads.");
-    }
     if let Some(job) = downloads.iter().find(|d| d["id"] == "local-install") {
         match job["state"].as_str() {
             Some("installing") => hint(ui, t, "Checking and installing the model…"),
@@ -298,7 +300,7 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         model_row(app, ui, t, m, dl, runtime);
     }
     if all.iter().all(|m| m["selected"] != true) && all.iter().any(|m| m["installed"] == true) {
-        hint(ui, t, "AI Denoise is off: press Use on a model.");
+        hint(ui, t, "The built-in denoiser is in use: press Use on a model to use that instead.");
     }
     hint(ui, t, "Works on raw files from cameras with a standard (Bayer) sensor. Other files keep their normal noise reduction.");
     work_section(app, ui, t, &list);
@@ -491,7 +493,7 @@ fn model_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, m: &Value, dl: Opt
                         app.caches.denoise.epoch += 1;
                     }
                     if selected {
-                        let r = ui.button(tr("Turn off"));
+                        let r = ui.button(tr("Stop using"));
                         register(ui.ctx(), format!("denoise:off:{id}"), r.rect);
                         if r.clicked() {
                             let _ = app.run("denoise.models.select", json!({"id": null}));

@@ -60,13 +60,28 @@ pub fn find_bindable(id: &str) -> Option<&'static Bindable> {
 
 /// The shortcut `id` has now: the user's choice (`""` = none), else the declared one. An entry
 /// that doesn't parse (a hand-edited `ui.json`, a modifier-only key saved by an older build) is
-/// ignored.
+/// ignored. The declared shortcut yields to a saved entry that gives its key to another known
+/// command other than its contextual partner.
 pub fn binding<'a>(keymap: &'a Keymap, id: &str, default: Option<&'a str>) -> Option<&'a str> {
     match keymap.get(id) {
         Some(sc) if sc.is_empty() => None,
         Some(sc) if parse(sc).is_some() => Some(sc.as_str()),
-        _ => default,
+        _ => default.filter(|sc| !assigned_elsewhere(keymap, id, sc)),
     }
+}
+
+/// Whether the keymap gives the key `sc` to a known command other than `id` and its contextual
+/// partner.
+fn assigned_elsewhere(keymap: &Keymap, id: &str, sc: &str) -> bool {
+    let Some(key) = parse(sc) else { return false };
+    saved_keys(keymap)
+        .any(|(other, k)| other != id && k == key && !CONTEXTUAL.iter().any(|(x, y)| (*x == id && *y == other) || (*y == id && *x == other)))
+}
+
+/// The keys the keymap gives to known commands, with each command's id. Entries for commands this
+/// build doesn't know and entries that don't parse are ignored.
+pub(crate) fn saved_keys(keymap: &Keymap) -> impl Iterator<Item = (&str, (Modifiers, Key))> {
+    keymap.iter().filter(|(id, _)| find_bindable(id).is_some()).filter_map(|(id, sc)| Some((id.as_str(), parse(sc)?)))
 }
 
 /// The effective shortcut of command `id` (`None` for unknown commands).
@@ -389,9 +404,9 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
     // The grid navigation keys act on the photos in view, so they wait while the full-screen preview
     // covers the grid: a key must not move the selection onto photos nobody can see.
     let grid_navigation = grid && !app.ui.fullscreen;
-    // keys the user gave to a command: the fixed bindings below (aliases, ratings) yield to them;
-    // so do keys the active set gives a command (Classic's ⇧E is the secondary loupe, not export)
-    let taken: Vec<(Modifiers, Key)> = keymap.values().filter_map(|s| parse(s)).chain(classic::taken()).collect();
+    // keys the user gave to a known command: the fixed bindings below (aliases, ratings) yield to
+    // them; so do keys the active set gives a command (Classic's ⇧E is the secondary loupe, not export)
+    let taken: Vec<(Modifiers, Key)> = saved_keys(keymap).map(|(_, k)| k).chain(classic::taken()).collect();
     // an open popup (a menu, a date picker's calendar) closes on Esc itself: Esc's command (Back,
     // which also closes dialogs) waits until nothing is open
     let popup_open = egui::Popup::is_any_open(ctx);
@@ -458,10 +473,20 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                     fire.push(id.to_string());
                 }
             }
-            // Shift+← / Shift+→: the previous / next photo of the view joins the selection
-            for (key, step) in [(Key::ArrowLeft, -1i64), (Key::ArrowRight, 1)] {
-                if matches(i, Modifiers::SHIFT, key) && !taken.contains(&(Modifiers::SHIFT, key)) {
-                    fire.push(format!("grid:extend:{step}"));
+            // Shift+arrows and Ctrl+Shift+arrows (as in the Windows file manager, where Ctrl keeps a
+            // scattered selection; here Shift already adds to the selection, so both do the same):
+            // ← / → add the previous / next photo of the view, ↑ / ↓ every photo up to the cell above /
+            // below the active one
+            for mods in [Modifiers::SHIFT, Modifiers::COMMAND | Modifiers::SHIFT] {
+                for (key, id) in [
+                    (Key::ArrowLeft, "grid:extend:-1"),
+                    (Key::ArrowRight, "grid:extend:1"),
+                    (Key::ArrowUp, "grid:extend:up"),
+                    (Key::ArrowDown, "grid:extend:down"),
+                ] {
+                    if matches(i, mods, key) && !taken.contains(&(mods, key)) {
+                        fire.push(id.to_string());
+                    }
                 }
             }
         }
@@ -527,7 +552,7 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                 crate::i18n::tr_format!("Rated {}", "★".repeat(n.parse().unwrap_or(0)))
             };
             app.toast(ctx, label);
-        } else if matches!(f.as_str(), "photo.decreaseRating" | "photo.increaseRating") {
+        } else if matches!(f.as_str(), "photo.decreaseRating" | "photo.increaseRating" | "photo.clearLabel") {
             cull(app, &f, json!({}), false);
         } else if let Some(l) = f.strip_prefix("label:") {
             cull(app, "photo.label", json!({"label": l, "toggle": true}), false);
@@ -540,6 +565,32 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
             let edge = if f == "grid:first" { vis.first() } else { vis.last() };
             if let Some(id) = edge {
                 let _ = app.run("library.select", json!({"ids": [id.0], "active": id.0}));
+            }
+        } else if f == "grid:extend:up" || f == "grid:extend:down" {
+            // Shift+↑ / Shift+↓ in a grid: every photo from the active one to the cell above / below it
+            // (the layout's nearest cell, as plain ↑ / ↓ move to) joins the selection; the cell reached
+            // becomes the active photo. In the top / bottom row, or while the grid isn't laid out for the
+            // photos in view, the key does nothing.
+            let down = f == "grid:extend:down";
+            let reach = crate::panels::grid::row_distance(app, down).and_then(|d| usize::try_from(d).ok()).unwrap_or(0);
+            let vis = app.session.visible_cloned();
+            let run: Vec<u64> = app
+                .session
+                .active()
+                .and_then(|active| vis.iter().position(|p| *p == active))
+                .and_then(|pos| {
+                    if down {
+                        let end = pos.checked_add(reach)?;
+                        Some(vis.get(pos.checked_add(1)?..=end)?.iter().map(|p| p.0).collect())
+                    } else {
+                        // nearest the active photo first, so the cell reached is the last one added
+                        Some(vis.get(pos.checked_sub(reach)?..pos)?.iter().rev().map(|p| p.0).collect())
+                    }
+                })
+                .filter(|_| reach > 0)
+                .unwrap_or_default();
+            if !run.is_empty() {
+                let _ = app.run("library.select", json!({"ids": run, "mode": "add"}));
             }
         } else if let Some(step) = f.strip_prefix("grid:extend:") {
             // Shift+← / Shift+→ in a grid: the neighbour of the active photo joins the selection and
@@ -584,8 +635,8 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                 let _ = app.run("view.infoOverlay", json!({}));
                 continue;
             }
-            // Delete acts on what's being edited: the active mask in the Masking panel; never the
-            // photo while retouching (spots are removed from their own panel).
+            // Delete acts on what's being edited: the active mask in the Masking panel, the selected
+            // spot or red-eye correction; never the photo while retouching.
             if f == "photo.delete" {
                 use crate::state::RightPanel as R;
                 match app.ui.right {
@@ -617,7 +668,13 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                         }
                         continue;
                     }
-                    R::RedEye => continue,
+                    R::RedEye => {
+                        let eyes = app.session.active().and_then(|id| app.session.develop_of(id)).map(|d| d.red_eye.len()).unwrap_or(0);
+                        if app.ui.eye < eyes {
+                            let _ = app.run("redeye.delete", json!({"index": app.ui.eye}));
+                        }
+                        continue;
+                    }
                     _ => {}
                 }
                 // in an album, Delete takes the photos out of the album only, as in Lightroom: they
@@ -633,8 +690,9 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
             if f == "album.toggleTarget"
                 || (f == "tool.brush" && matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid))
             {
-                if let Ok(r) = app.run("album.toggleTarget", json!({})) {
-                    let n = app.session.selected().len();
+                // `added` is null when nothing was left to toggle (the selected photos are gone): nothing to say
+                if let Some(r) = app.run("album.toggleTarget", json!({})).ok().filter(|r| r["added"].is_boolean()) {
+                    let n = r["toggled"].as_u64().unwrap_or(0);
                     let what = crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n);
                     let name = r["name"].as_str().unwrap_or("Quick Collection").to_string();
                     app.toast(
@@ -916,6 +974,50 @@ mod tests {
         }
     }
 
+    /// A saved keymap entry that gives a key to one command (kept from before another command
+    /// declared that key) wins: the press runs that command alone, and the other command's declared
+    /// key comes back once the entry is gone.
+    #[test]
+    fn a_saved_key_wins_over_another_commands_declared_key() {
+        use lcc_catalog::{Flag, PhotoId};
+        let mut h = library();
+        h.app.ui.settings.keymap.insert("photo.increaseRating".into(), "P".into());
+        assert_eq!(super::shortcut_of(&h.app.ui.settings.keymap, "photo.pick"), None);
+        assert_eq!(super::conflicts(&h.app.ui.settings.keymap, "view.survey", "P"), vec!["photo.increaseRating"]);
+        key(&mut h, "P", false);
+        let photo = h.app.session.catalog.photo(PhotoId(1)).unwrap();
+        assert_eq!(photo.rating, 1, "the saved key raised the rating");
+        assert_eq!(photo.flag, Flag::None, "Flag as Pick's declared key yielded");
+        // with the entry gone, P picks again
+        h.app.ui.settings.keymap.remove("photo.increaseRating");
+        assert_eq!(super::shortcut_of(&h.app.ui.settings.keymap, "photo.pick"), Some("P"));
+        key(&mut h, "P", false);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().flag, Flag::Pick);
+        // a contextual partner's saved key does not silence the other side
+        h.app.ui.settings.keymap.insert("crop.rotateAspect".into(), "X".into());
+        assert_eq!(super::shortcut_of(&h.app.ui.settings.keymap, "photo.reject"), Some("X"));
+        // nor does an entry for a command this build doesn't know
+        h.app.ui.settings.keymap.insert("no.suchCommand".into(), "U".into());
+        assert_eq!(super::shortcut_of(&h.app.ui.settings.keymap, "photo.unflag"), Some("U"));
+    }
+
+    /// Keymap entries for commands this build doesn't know take no key: an alias, a rating key and
+    /// a declared shortcut on the same keys keep working.
+    #[test]
+    fn junk_keymap_entries_leave_aliases_ratings_and_declared_keys() {
+        use lcc_catalog::{Flag, PhotoId};
+        let mut h = library();
+        for (id, sc) in [("no.suchCommand", "Shift+X"), ("no.otherCommand", "5"), ("no.thirdCommand", "P")] {
+            h.app.ui.settings.keymap.insert(id.into(), sc.into());
+        }
+        key(&mut h, "5", false);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().rating, 5, "5 still rates");
+        key(&mut h, "P", false);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().flag, Flag::Pick, "P still picks");
+        key(&mut h, "X", true);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().flag, Flag::Reject, "Shift+X still rejects");
+    }
+
     #[test]
     fn classic_f6_and_f7_toggle_the_filmstrip_and_left_panel() {
         let mut h = library();
@@ -1078,30 +1180,30 @@ mod tests {
         for shift in [false, true] {
             for (k, name) in [("6", "Red"), ("7", "Yellow"), ("8", "Green"), ("9", "Blue")] {
                 h.app.session.execute("library.select", &json!({"ids": [1]})).unwrap();
-                h.app.ui.toast = None;
+                h.app.ui.toasts.clear();
                 key(&mut h, k, shift);
-                assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some(format!("{name} Label").as_str()));
-                assert_eq!(h.app.ui.toast.as_ref().and_then(|t| t.2), h.app.session.catalog.photo(PhotoId(1)).unwrap().label);
+                assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some(format!("{name} Label").as_str()));
+                assert_eq!(h.app.ui.toast().and_then(|t| t.2), h.app.session.catalog.photo(PhotoId(1)).unwrap().label);
                 assert_eq!(h.app.session.active(), Some(PhotoId(if shift { 2 } else { 1 })));
             }
         }
         // Menus and the Info-panel swatches dispatch the same command, including purple/clear.
         h.app.run("photo.label", json!({"label": "purple"})).unwrap();
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Purple Label"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Purple Label"));
         h.app.run("photo.label", json!({"label": "none"})).unwrap();
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
-        assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.2.is_none()), "clear uses neutral feedback");
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert!(h.app.ui.toast().is_some_and(|t| t.2.is_none()), "clear uses neutral feedback");
         h.app.session.execute("label.setNames", &json!({"names": {"red": "Needs review"}})).unwrap();
         key(&mut h, "6", false);
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Needs review Label"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Needs review Label"));
         // Native menu callbacks run before logic() catches up to the current frame's clock.
         let now = h.view.ctx.input(|i| i.time);
         h.app.last_time = now - 10.0;
         h.app.run("photo.label", json!({"label": "blue"})).unwrap();
-        assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.1 > now), "menu feedback must survive an idle gap");
-        h.app.ui.toast = None;
+        assert!(h.app.ui.toast().is_some_and(|t| t.1 > now), "menu feedback must survive an idle gap");
+        h.app.ui.toasts.clear();
         assert!(h.app.run("photo.label", json!({"label": "invalid"})).is_err());
-        assert!(h.app.ui.toast.is_none(), "failed actions must not announce success");
+        assert!(h.app.ui.toast().is_none(), "failed actions must not announce success");
     }
 
     #[test]
@@ -1114,23 +1216,23 @@ mod tests {
         // Press 6 to assign Red
         key(&mut h, "6", false);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, Some(ColorLabel::Red));
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Red Label"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Red Label"));
 
         // Press 6 again to toggle off (issue #412)
         key(&mut h, "6", false);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
-        assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.2.is_none()));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert!(h.app.ui.toast().is_some_and(|t| t.2.is_none()));
 
         // Press 7 to assign Yellow
         key(&mut h, "7", false);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, Some(ColorLabel::Yellow));
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Yellow Label"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Yellow Label"));
 
         // Press 7 again to toggle off
         key(&mut h, "7", false);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Color label cleared"));
 
         // Shift+8 (Green) assigns Green and advances to photo 2
         key(&mut h, "8", true);
@@ -1141,7 +1243,7 @@ mod tests {
         h.app.session.execute("library.select", &json!({"ids": [1]})).unwrap();
         key(&mut h, "8", true);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Color label cleared"));
         assert_eq!(h.app.session.active(), Some(PhotoId(2)));
     }
 
@@ -1508,6 +1610,10 @@ mod relative_rating_tests;
 #[cfg(test)]
 #[path = "shortcuts/tests_flag_cycle.rs"]
 mod flag_cycle_tests;
+
+#[cfg(test)]
+#[path = "shortcuts/tests_clear_label.rs"]
+mod clear_label_tests;
 
 #[cfg(test)]
 #[path = "shortcuts/tests_enable_filters.rs"]

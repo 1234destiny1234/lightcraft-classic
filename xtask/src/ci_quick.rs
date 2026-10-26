@@ -40,6 +40,7 @@ const EMBEDDED: &[(&str, &[&str])] = &[
     ("brand.toml", &["lcc-brand"]),
     ("contributors/", &["lcc-ui-egui"]),
     ("docs/whats-new.md", &["lcc-ui-egui"]),
+    ("docs/midi/smc-mixer.toml", &["lcc-engine", "lcc-ui-egui"]),
     ("docs/raw/coverage-sweep.tsv", &["lcc-raw"]),
     ("docs/raf-corpus.sha256", &["lcc-raw"]),
     ("xtask/src/main.rs", &["lcc-raw"]),

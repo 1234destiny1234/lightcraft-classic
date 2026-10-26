@@ -62,7 +62,9 @@ pub fn start(app: &mut LccApp, mut items: Vec<PreparedExport>, opts: ExportOptio
     let cancel = Arc::new(AtomicBool::new(false));
     let (tx, rx) = channel();
     let (p, c) = (progress.clone(), cancel.clone());
-    let guard = app.session.activity.start("export", "Exporting", Cancel::Flag(cancel.clone()));
+    // one batch row: the photos done, the time left; the export says how it went itself
+    let guard = app.session.activity.start_batch("export", "Exporting", Cancel::Flag(cancel.clone()));
+    guard.reports_itself();
     guard.progress(0, total as u64);
     let row = guard.handle();
     // video clips stop within a frame on ✕ and show how far the movie is
@@ -259,6 +261,14 @@ pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
         Ok(r) => {
             let cancelled = matches!(&r, Ok((_, _, true)));
             let total = task.total;
+            // the batch's summary (`activity.list` → finished): photos placed, the failures and why
+            if let Ok((files, _, _)) = &r {
+                task.guard.progress(files.len() as u64, total as u64);
+                for f in files.iter().filter(|f| f.get("error").is_some()) {
+                    let name = f.get("file").and_then(Value::as_str).unwrap_or("");
+                    task.guard.count_failed(&format!("{name}: {}", f["error"].as_str().unwrap_or("error")));
+                }
+            }
             #[cfg(not(target_arch = "wasm32"))]
             let destination = task.plugin_destination.clone();
             app.export = None;
@@ -350,7 +360,7 @@ mod contact_sheet_tests {
             picker: Some(Box::new(move |req| {
                 requests.lock().unwrap().push(req);
                 let (tx, rx) = channel();
-                tx.send(vec!["Contact Sheet.pdf".into()]).unwrap();
+                tx.send(Ok(vec!["Contact Sheet.pdf".into()])).unwrap();
                 Ok(rx)
             })),
             write_shared: Some(Arc::new(move |path, data| {
@@ -381,7 +391,7 @@ mod contact_sheet_tests {
         let ctx = egui::Context::default();
         crate::pick::poll(&mut app, &ctx);
         assert!(app.pending_picks.is_empty());
-        assert!(app.export.is_some(), "picker did not start export: {:?}", app.ui.toast);
+        assert!(app.export.is_some(), "picker did not start export: {:?}", app.ui.toasts);
         // a hang guard, not a speed check: the render queues behind other tests' demo scenes (generated one at a
         // time process-wide), which on a loaded machine takes minutes
         let deadline = Instant::now() + Duration::from_secs(300);
@@ -394,7 +404,7 @@ mod contact_sheet_tests {
             assert!(Instant::now() < deadline, "export did not finish");
             std::thread::sleep(Duration::from_millis(10));
         }
-        let result = app.last_export_result.as_ref().unwrap_or_else(|| panic!("export failed: {:?}", app.ui.toast));
+        let result = app.last_export_result.as_ref().unwrap_or_else(|| panic!("export failed: {:?}", app.ui.toasts));
         let req = asked.lock().unwrap();
         assert_eq!(req[0].kind, PickKind::Save);
         assert_eq!(req[0].filter.as_ref().unwrap().1, &["pdf"]);

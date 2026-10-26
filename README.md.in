@@ -448,7 +448,7 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 - **As a day-to-day Lightroom replacement we're nearer 60–70%.** It's great for JPEG/DNG and most Nikon / Sony /
   older-Canon raws on one machine.
 - **The biggest gaps:**
-  - **camera colour calibration:** Sony, Nikon, Panasonic, Fujifilm and Canon CR3 raws have guarded estimates from their camera JPEGs, with built-in profiles for eleven bodies (ILCA-99M2, ILCE-7CR, ILCE-7M4, X-H2S, X-T4, Nikon Z 6II, Z 8, D5300, D750, D780, D90), matrices fitted to measured spectral sensitivities for 52 more (Profile ▸ Calibrated camera colour), and your own `.dcp` camera profiles import; a measured calibration database of our own is missing, and other raws retain a neutral matrix;
+  - **camera colour calibration:** Sony, Nikon, Panasonic, Fujifilm and Canon CR3 raws have guarded estimates from their camera JPEGs, with built-in profiles for twelve bodies (ILCA-99M2, ILCE-7CR, ILCE-7M4, ILCE-7RM5, X-H2S, X-T4, Nikon Z 6II, Z 8, D5300, D750, D780, D90), matrices fitted to measured spectral sensitivities for 52 more (Profile ▸ Calibrated camera colour), dcraw's matrices for about 550 more models, and your own `.dcp` camera profiles import; colour-chart and Lightroom-matched calibration tools exist, but a measured calibration database of our own is still missing;
   - **per-model raw verification:** 596 of 1,446 models (41%) are verified on real files, so about 7 in 8 photographers shoot a verified body; other bodies are unverified, see [docs/raw-parity.md](docs/raw-parity.md);
   - **AI quality:** Subject / Background (BiRefNet) and Object (SAM 3) masks are optional downloads; sky is still heuristic, denoise quality is unverified;
   - **network libraries:** a preview reads the raw's header and its embedded JPEG only (56.5 MB → 5.9 MB, 10 s → 1 s on the test share), but the *developed* picture still needs the sensor data over the wire; see [docs/raw-preview-reads.md](docs/raw-preview-reads.md);
@@ -464,7 +464,7 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 | Masking: brush (A/B presets, density), linear, radial, luminance/colour range, per-mask feather and Curve, add/subtract/intersect; AI Subject / Background (BiRefNet) and Object (SAM 3), optional downloads | ✅ |
 | Crop, straighten tool + auto straighten, flip, rotate, aspect ratios, overlays | ✅ |
 | Profiles (Color, Neutral, Vivid, Landscape, Portrait, Monochrome: our own looks), presets, versions, history, copy/paste/sync settings and metadata, Auto Sync, per-photo Auto | ✅ |
-| Camera colour: DNG files use their own matrices; import your own `.dcp` profiles | ✅ DNG, `.dcp` import · 🟡 built-in profiles for eleven bodies, spectral matrices for 52 more; measured calibration database missing |
+| Camera colour: DNG files use their own matrices; import your own `.dcp` profiles | ✅ DNG, `.dcp` import · 🟡 built-in profiles for eleven bodies, spectral matrices for 52 more, dcraw matrices for ~550; chart / Lightroom calibration tools; measured calibration database missing |
 | Native macOS menu bar (generated from the command registry), control channel + every widget addressable, headless UI snapshots | ✅ |
 | RAW: DNG, CR2, CR3 (lossless CRX Bayer and version 0x100/0x200 C-RAW), ARW, NEF (uncompressed + lossless/lossy compressed), Fujifilm RAF (uncompressed + lossless/lossy compressed, Bayer + X-Trans), Panasonic RW2 / Leica RWL / Panasonic RAW (every raw format, DMC-LX1 to DC-S1RM2), Pentax PEF, Olympus ORF (uncompressed + compressed), Samsung SRW (uncompressed + compressed), CR3 tiled C-RAW, Minolta MRW, Sony ARW v1, packed NEF, SuperCCD RAF, Canon CRW, Epson ERF, Mamiya MEF; AVIF import; embedded previews for every format incl. CR3; 596 models verified | 🟡 · per-model verification continues |
 | Detail: sharpening, luminance + colour noise reduction | ✅ · AI Denoise, Super Resolution ⬜ |
@@ -477,7 +477,7 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 | Output: Print (printer ICC, intent, BPC, Print Adjustment, 16-bit, `ipps://`, driver options), Book (PDF, pair kerning), Slideshow (PDF/JPEG/video with music), Web (HTML galleries, SFTP), publish services with grid sections | ✅ |
 | MCP server (headless or live app, persistent libraries), CLI, control channel | ✅ |
 | XMP sidecars (read/write, auto-write), reading `crs:` develop settings, preset files (`.lcpreset`, XMP presets) | ✅ |
-| Optics (distortion, vignetting, auto + manual CA, defringe, lens corrections embedded in DNG files and Panasonic / Leica RW2 / RWL distortion data), Geometry (transforms, Constrain Crop), Upright (Auto/Level/Vertical/Full/Guided) | ✅ · lensfun-format lens database set up or downloaded from Settings ▸ Lens profiles 🟡 · lens profiles of our own ⬜ |
+| Optics (distortion, vignetting, auto + manual CA, defringe, lens corrections embedded in DNG files and Panasonic / Leica RW2 / RWL distortion data), Geometry (transforms, Constrain Crop), Upright (Auto/Level/Vertical/Full/Guided) | ✅ · lensfun-format lens database set up or downloaded from Settings ▸ Lens profiles, with a lens picker for manual or misnamed lenses 🟡 · lens profiles of our own ⬜ |
 | Photo Merge: HDR (auto-align, deghost), Panorama (spherical/cylindrical/perspective, boundary warp, auto crop), HDR Panorama → DNG | ✅ |
 | GPU pipeline (wgpu compute, CPU-exact within 1/255), CPU fallback on device limits / errors | ✅ · WebGPU in the browser 🚧 |
 | Video: MP4/MOV/MKV/WebM/TS/MXF decode (H.264, HEVC, VP9, AV1, ProRes, DNxHR, APV, MPEG-2), playback, trim, poster frame, Capture Frame, global grading, H.264 / ProRes export with audio | 🟡 · local adjustments and hardware decode on video ⬜ |
@@ -497,8 +497,10 @@ egui frontend is one swappable crate; nothing below it knows a UI exists. `mcp` 
 
 Humans and agents follow the same rules, so read [AGENTS.md](AGENTS.md) first. The short version:
 
-- **Clean-room.** Never read Adobe binaries or GPL raw/photo code (darktable, RawTherapee, LibRaw, rawspeed, dcraw…);
-  work from public specs and black-box observation.
+- **Clean-room.** Never read Adobe binaries or GPL / LGPL raw and photo code (darktable, RawTherapee, LibRaw,
+  rawspeed…); work from public specs and black-box observation. One exception: dcraw's functions outside its
+  RESTRICTED (Foveon) block, which its author releases free for all uses, may serve as a reference under the dcraw
+  reference policy in [AGENTS.md](AGENTS.md#clean-room-sources-in-addition-to-the-non-negotiables).
 - **No Adobe assets, ever:** no icons, screenshots, presets, profiles, LUTs or fonts from Adobe products. Every
   image, icon and font in the repo is original, public domain, Creative Commons, OFL or permissively licensed, and has
   an entry in [assets/ATTRIBUTION.md](assets/ATTRIBUTION.md) added in the same commit. New fonts go to

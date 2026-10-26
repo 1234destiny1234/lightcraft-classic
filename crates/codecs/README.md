@@ -32,6 +32,11 @@ let found = gainmap::read_jpeg(&bytes);                  // ours, cameras', Ligh
 gainmap::apply(&mut base_linear, w, h, &found.gain, &found.meta, 1.0)?;
 ```
 
+For already decoded legacy Apple gain maps, `gainmap::apple::{Metadata, apply}` provides a
+separate ratio-based reconstruction helper. It is not wired into JPEG/HEIF import. See
+[Apple gain maps](../../docs/apple-gain-maps.md) for the mathematical contract, limitations,
+and an optional macOS Core Image comparison probe.
+
 Thumbnail fallback decoding limits the source to 64 million pixels by default.
 Non-JPEG decoders allocate at source resolution before resizing, even for a tiny
 thumbnail. Use `decode_thumbnail_with` and `ThumbnailOptions::max_pixels` to set
@@ -46,7 +51,7 @@ CRW, MRW, X3F) are detected so the engine can route them to `lcc-raw`; `decode` 
 
 | Format | Decode | Encode | Notes |
 |---|---|---|---|
-| JPEG | yes (zune-jpeg; jpeg-decoder for DCT scaling, CMYK/YCCK, 12-bit, non-interleaved scans) | yes (jpeg-encoder, baseline, 4:4:4/4:2:2/4:2:0) | EXIF (APP1), XMP (APP1, ≤ 64 KiB), ICC (APP2, multi-chunk), Adobe APP14, MPF previews |
+| JPEG | yes (zune-jpeg; jpeg-decoder for DCT scaling, CMYK/YCCK, 12-bit, non-interleaved scans) | yes (jpeg-encoder, baseline, 4:4:4/4:2:2/4:2:0) | EXIF (APP1), XMP (APP1, ≤ 64 KiB), ICC (APP2; only complete, consistently counted, uniquely numbered chunk sequences are assembled; malformed profiles use the existing unsupported-profile fallback), Adobe APP14, MPF previews |
 | PNG | yes, 1–16-bit, palette, tRNS, interlaced | 8/16-bit, gray/GA/RGB/RGBA | iCCP, eXIf, iTXt XMP; sRGB/cICP/cHRM/gAMA honoured when no ICC |
 | TIFF | 8/16-bit int (32/64-bit int kept to 16 bits), 16/32/64-bit float, gray/RGB/CMYK/palette, alpha (assoc./unassoc.), planar, LZW/Deflate/PackBits/JPEG | 8/16-bit, 32-bit float; none/LZW/Deflate/PackBits | ICC (34675), XMP (700), Orientation; first IFD only; EXIF not written (use `lcc-tiff`) |
 | WebP | lossy + lossless, alpha, first frame of animations | lossless only | ICCP/EXIF/XMP chunks |

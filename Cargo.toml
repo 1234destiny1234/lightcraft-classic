@@ -5,15 +5,15 @@ members = ["crates/*", "apps/*", "xtask"]
 exclude = ["vendor"]
 
 [workspace.package]
-version = "26.43.7"
+version = "26.44.0"
 edition = "2024"
 license = "MIT"
 rust-version = "1.95"
 repository = "https://example.invalid/repo"
 
 [workspace.dependencies]
-craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "5c874d51eeb3de70e735c8ce87a59a7dedd47675", features = ["serde"] }
-craft-docpath = { version = "0.1.0", git = "https://github.com/storytold/craft-libs", rev = "82a24b006eefa036b43c09a67fb9a3fbd17ffe63" }
+craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "4dc543cb449cc232e4c3d58f78a05c1ab169db9e", features = ["serde"] }
+craft-docpath = { version = "0.1.0", git = "https://github.com/storytold/craft-libs", rev = "4dc543cb449cc232e4c3d58f78a05c1ab169db9e" }
 # internal
 lcc-brand = { path = "crates/brand" }
 lcc-notes = { path = "crates/notes" }
@@ -92,6 +92,7 @@ getrandom = "0.3"
 # All date/time conversion goes through chrono (no hand-rolled calendar code beyond the 400-year range extension; CLAUDE.md).
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 rayon = "1"
+same-file = "1" # lcc-catalog reads a file's volume serial number and file index with it on Windows
 proptest = "1"
 bytemuck = { version = "1", features = ["derive"] }
 half = { version = "2", default-features = false } # f32 → f16 for the HDR loupe texture
@@ -150,6 +151,9 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 # Appearance Mode ▸ Auto). Pure Rust; the version accesskit already brings in, pinned to it.
 zbus = "=5.19.0"
 web-time = "1"
+# MIDI controller input (Windows: WinMM, macOS: CoreMIDI; no C code compiled). Not built on Linux: its ALSA backend is C.
+midir = "0.10"
+toml = "1"
 
 # web (apps/web)
 wasm-bindgen = "0.2.129"

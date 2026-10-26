@@ -171,6 +171,30 @@ fn find_set(s: &Session, name: &str) -> Option<KeywordSet> {
     s.keyword_sets.iter().find(|x| same_set(&x.name, name)).cloned().or_else(|| builtin(name))
 }
 
+/// The keyword shortcut's keywords from `keywords` (a list, or one text with commas between them)
+/// or the older single `keyword`. Each is cleaned, a new name goes inside the default parent as the
+/// Keywording box puts it, each is kept once whatever its case, empty ones are dropped. The text
+/// Set Keyword Shortcut… shows (the keywords joined with ", ") keeps them as they are, so a name
+/// with a comma survives being confirmed unchanged.
+fn shortcut_keywords(s: &Session, p: &Value) -> Vec<String> {
+    let now = &s.keyword_shortcut;
+    let typed: Vec<String> = match p.get("keywords").or_else(|| p.get("keyword")) {
+        Some(Value::String(text)) if !now.is_empty() && text.trim() == now.join(", ") => return now.clone(),
+        Some(Value::String(text)) if p.get("keywords").is_some() => text.split(',').map(str::to_string).collect(),
+        Some(Value::String(text)) => vec![text.clone()],
+        Some(Value::Array(list)) => list.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+        _ => Vec::new(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for k in typed {
+        let k = s.catalog.typed_keyword(&k);
+        if !k.is_empty() && !out.iter().any(|x| lcc_catalog::keywords::same(x, &k)) {
+            out.push(k);
+        }
+    }
+    out
+}
+
 /// The nine keywords ⌥1–⌥9 apply: the current set's, or the recent ones.
 pub fn current_keywords(s: &Session) -> Vec<String> {
     let set = s.keyword_set.as_deref().and_then(|n| find_set(s, n));
@@ -197,6 +221,16 @@ pub fn keyword_sets_json(s: &Session) -> Value {
     })
 }
 
+/// Make the set `step` places after the current one current, in the Keyword Set menu's order
+/// (Recent Keywords, then the saved sets), wrapping around from the last to the first and back.
+fn step_set(s: &mut Session, step: isize) -> Result<Value> {
+    let at = s.keyword_set.as_deref().and_then(|n| s.keyword_sets.iter().position(|x| same_set(&x.name, n))).map_or(0, |i| i + 1);
+    let next = (at as isize + step).rem_euclid(s.keyword_sets.len() as isize + 1) as usize;
+    s.keyword_set = next.checked_sub(1).and_then(|i| s.keyword_sets.get(i)).map(|x| x.name.clone());
+    s.save_prefs()?;
+    Ok(keyword_sets_json(s))
+}
+
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(query "keyword.sets", "Keyword Sets", [], None, "{} → {sets: [{name, keywords}], current, keywords: the nine ⌥1–⌥9 apply}", always, |s, _| Ok(keyword_sets_json(s))),
@@ -210,6 +244,24 @@ pub fn specs() -> Vec<CommandSpec> {
             s.save_prefs()?;
             Ok(keyword_sets_json(s))
         }),
+        cmd!(
+            "keyword.nextSet",
+            "Next Keyword Set",
+            [],
+            Some("Alt+0"),
+            "{}: the set after the current one (after the last, Recent Keywords)",
+            always,
+            |s, _| step_set(s, 1)
+        ),
+        cmd!(
+            "keyword.previousSet",
+            "Previous Keyword Set",
+            [],
+            Some("Alt+Shift+0"),
+            "{}: the set before the current one (before Recent Keywords, the last)",
+            always,
+            |s, _| step_set(s, -1)
+        ),
         cmd!(
             "keyword.saveSet",
             "Save Keyword Set",
@@ -319,18 +371,20 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(r)
             }
         ),
+        cmd!(query "keyword.shortcut", "Keyword Shortcut", [], None, "{} → {keywords: the keyword shortcut's, which ⇧K adds or removes}", always, |s, _| {
+            Ok(json!({"keywords": s.keyword_shortcut}))
+        }),
         cmd!(
             "keyword.setShortcut",
             "Set Keyword Shortcut",
             [],
-            Some("Alt+Shift+K"),
-            "{keyword} (empty or null clears it) — the keyword ⇧K toggles on the selected photos → {shortcut}",
+            None,
+            "{keywords: [..] or \"a, b\" (none clears it); keyword: one (older form)} — the keywords ⇧K adds to or removes from the selected photos; a new name goes inside the default parent → {keywords}",
             always,
             |s, p| {
-                let k = str_param(p, "keyword").map(clean).filter(|k| !k.is_empty());
-                s.keyword_shortcut = k;
+                s.keyword_shortcut = shortcut_keywords(s, p);
                 s.save_prefs()?;
-                Ok(json!({"shortcut": s.keyword_shortcut}))
+                Ok(json!({"keywords": s.keyword_shortcut}))
             }
         ),
         cmd!(
@@ -338,17 +392,20 @@ pub fn specs() -> Vec<CommandSpec> {
             "Add Keyword Shortcut",
             ["Metadata"],
             Some("Shift+K"),
-            "{ids?} — the keyword shortcut: added to the target photos, or removed when they all have it",
+            "{ids?} — the keyword shortcut's keywords: removed from the target photos when every one has them all, else added → {changed, keywords, added}",
             super::has_selection,
             |s, p| {
-                let k = s.keyword_shortcut.clone().ok_or_else(|| bad("keyword.toggleShortcut", "no keyword shortcut: set one first (⌥⇧K)"))?;
+                let keywords = s.keyword_shortcut.clone();
+                if keywords.is_empty() {
+                    return Err(bad("keyword.toggleShortcut", "no keyword shortcut: set one first (⌘⌥⇧K)"));
+                }
                 let ids = s.targets(p)?;
-                let all = !ids.is_empty()
-                    && ids.iter().all(|id| s.catalog.photo(*id).is_some_and(|ph| ph.meta.keywords.iter().any(|x| x.eq_ignore_ascii_case(&k))));
+                let has = |ph: &lcc_catalog::Photo, k: &str| ph.meta.keywords.iter().any(|x| lcc_catalog::keywords::same(&clean(x), &clean(k)));
+                let all = !ids.is_empty() && ids.iter().all(|id| s.catalog.photo(*id).is_some_and(|ph| keywords.iter().all(|k| has(ph, k))));
                 let ids: Vec<u64> = ids.iter().map(|i| i.0).collect();
                 let key = if all { "removeKeywords" } else { "addKeywords" };
-                let mut r = s.execute("photo.setMeta", &json!({"ids": ids, key: [k.clone()]}))?;
-                r["keyword"] = json!(k);
+                let mut r = s.execute("photo.setMeta", &json!({"ids": ids, key: keywords}))?;
+                r["keywords"] = json!(keywords);
                 r["added"] = json!(!all);
                 Ok(r)
             }

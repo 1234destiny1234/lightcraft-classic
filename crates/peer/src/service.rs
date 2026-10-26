@@ -799,6 +799,8 @@ mod tests {
         wait("a to see b", || a.status().found.iter().any(|f| f.device_id == b_id));
         a.pair(&b_id).unwrap();
         wait("b to show the code", || b.status().pairing.as_ref().is_some_and(|p| p.stage == Stage::Confirm));
+        // both show the code before anyone answers, as two people pairing see it
+        wait("a to show the code", || a.status().pairing.as_ref().is_some_and(|p| p.stage == Stage::Confirm));
         // b refuses first: once a confirms, b's pairing may already have moved on.
         b.confirm(false).unwrap();
         let _ = a.confirm(true);

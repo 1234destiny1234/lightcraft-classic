@@ -57,7 +57,7 @@ pub fn mirrors(env: Option<&str>, file: Option<&Path>, defaults: &[&str]) -> Vec
     let mut add = |s: &str| {
         let s = s.trim();
         // a local folder (an absolute path) is the same as its `file://` URL
-        let s = if Path::new(s).is_absolute() { format!("file://{s}") } else { s.to_string() };
+        let s = if Path::new(s).is_absolute() { format!("file://{}", s.replace('%', "%25")) } else { s.to_string() };
         let s = s.trim_end_matches('/');
         let usable = local_path(s).is_some() || Url::parse(s).is_ok();
         if !s.is_empty() && usable && !out.iter().any(|m| m == s) && out.len() < MAX_MIRRORS {
@@ -298,10 +298,15 @@ fn validate_files(files: &[FileSpec<'_>]) -> Result<u64, DownloadError> {
     Ok(total)
 }
 
-/// The bearer token to send to `url`: only a non-empty one, only over https, and only to the host the download began
-/// at (`origin`), never to the host a redirect leads to.
-fn bearer<'a>(token: Option<&'a str>, url: &Url, origin: &str) -> Option<&'a str> {
-    token.map(str::trim).filter(|t| !t.is_empty() && url.tls && url.host == origin)
+/// The bearer token to send to `url`: only a non-empty one, only over https, and only to the host and port the
+/// download began at (`origin`), never to another host or another port of it a redirect leads to (issue #2140).
+fn bearer<'a>(token: Option<&'a str>, url: &Url, origin: (&str, u16)) -> Option<&'a str> {
+    token.map(str::trim).filter(|t| !t.is_empty() && url.tls && (url.host.as_str(), url.port) == origin)
+}
+
+/// `host` is this computer (`localhost`, a loopback address).
+fn is_loopback(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost") || host.trim_matches(['[', ']']).parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
 /// A mirror for messages (no query string: it may hold a token).
@@ -386,15 +391,20 @@ fn fetch_file(
     } else if fetched {
         let limits = Limits { connect: opts.connect_timeout, stall: opts.stall_timeout, cancel };
         let mut url = Url::parse(url).map_err(|e| Fail::NextMirror(e.to_string()))?;
-        let origin = url.host.clone();
+        let origin = (url.host.clone(), url.port);
         let mut redirects = 0;
         let mut resp = loop {
+            // nothing checks an unpinned file but the connection: https only, also after a redirect, unless the mirror
+            // is this computer itself (issue #2140)
+            if f.sha256.is_none() && !url.tls && !is_loopback(&url.host) {
+                return Err(Fail::NextMirror("a file without a pinned SHA-256 is downloaded over https only".into()));
+            }
             let mut headers = vec![];
             if have > 0 {
                 headers.push(("Range", format!("bytes={have}-")));
             }
             // a token for the configured host only (never sent on to a redirect's host)
-            if let Some(t) = bearer(opts.token_env.and_then(lcc_brand::env).as_deref(), &url, &origin) {
+            if let Some(t) = bearer(opts.token_env.and_then(lcc_brand::env).as_deref(), &url, (&origin.0, origin.1)) {
                 headers.push(("Authorization", format!("Bearer {t}")));
             }
             let r = http::get(&url, &headers, &limits).map_err(http_fail)?;
@@ -512,8 +522,27 @@ fn fetch_file(
 fn local_path(url: &str) -> Option<PathBuf> {
     let rest = url.strip_prefix("file://")?;
     let rest = if rest.get(2..3) == Some(":") { rest.strip_prefix('/').unwrap_or(rest) } else { rest };
-    let p = PathBuf::from(rest);
+    let rest = percent_decode(rest)?;
+    let p = PathBuf::from(&rest);
     if p.is_absolute() && !rest.chars().any(char::is_control) { Some(p) } else { None }
+}
+
+/// Decode `%XX` escapes (a `file://` URL's path); `None` for a broken escape or non-UTF-8 result.
+fn percent_decode(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while let Some(&c) = b.get(i) {
+        if c == b'%' {
+            let hex = std::str::from_utf8(b.get(i + 1..i + 3)?).ok()?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 /// Copy a file from a local mirror into `part` (from the start; it is checked afterwards like a download).

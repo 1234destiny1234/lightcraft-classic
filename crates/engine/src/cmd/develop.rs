@@ -33,6 +33,47 @@ pub(super) fn groups_param(p: &Value, c: &str) -> Result<Option<Vec<SettingsGrou
     }
 }
 
+/// The leaves of `a` that differ from `b` (same shape), as a partial JSON object: `None` when they
+/// are equal. Used to store only what a batch-edit recipe names, so applying the saved preset
+/// later never overrides the settings the recipe doesn't name.
+fn partial_diff(a: &Value, b: &Value) -> Option<Value> {
+    match (a, b) {
+        (Value::Object(x), Value::Object(y)) => {
+            let mut out = serde_json::Map::new();
+            for (k, v) in x {
+                if let Some(d) = partial_diff(v, y.get(k).unwrap_or(&Value::Null)) {
+                    out.insert(k.clone(), d);
+                }
+            }
+            (!out.is_empty()).then_some(Value::Object(out))
+        }
+        (x, y) => (x != y).then(|| x.clone()),
+    }
+}
+
+/// The partial settings a batch-edit recipe names, with the values the import would give (clamped
+/// by the control specs). Each named control is compared with the same control at a value it is not
+/// set to, so a control the recipe sets to its default (a reset) is stored too, and nothing else is.
+/// `None` when the recipe names nothing that is stored, or a control that cannot be written.
+fn recipe_partial(recipe: &[(String, f64)]) -> Option<Value> {
+    let (mut named, mut other) = (DevelopSettings::default(), DevelopSettings::default());
+    for (id, v) in recipe {
+        if !controls::set(&mut named, id, *v) {
+            return None;
+        }
+    }
+    for (id, _) in recipe {
+        let (spec, now) = (controls::find(id)?, controls::get(&named, id)?);
+        if !controls::set(&mut other, id, if now > spec.min { spec.min } else { spec.max }) {
+            return None;
+        }
+    }
+    partial_diff(&named.to_json(), &other.to_json())
+}
+
+/// The longest name or group a saved recipe preset may have (characters).
+const MAX_PRESET_TEXT: usize = 100;
+
 fn crop_dims(s: &Session, id: PhotoId) -> (f64, f64) {
     let p = s.catalog.photo(id);
     let (w, h) = p.map(|p| (p.width.max(1) as f64, p.height.max(1) as f64)).unwrap_or((3.0, 2.0));
@@ -50,6 +91,80 @@ fn refit_crop_angle(touched: bool, before: CropGeometry, d: &mut DevelopSettings
 }
 
 const CROP_ANGLE: &str = "crop.angle";
+
+/// Whether a white balance mode renders its own white instead of the numbers stored on the photo: `As Shot`
+/// renders the source's as-shot white, and on a raw edited in Kelvin a named preset renders its own Kelvin / tint
+/// ([`WbMode::preset`]). Either way a number written into `temp` / `tint` is stored but read by nothing, so the
+/// panel shows the number while the render uses the mode's white. `Custom` reads its stored numbers, and so does
+/// `Auto` on such a raw: its white is resolved and stored when the mode is set (`develop.wb`), not at render time.
+fn wb_mode_ignores_its_numbers(mode: WbMode, info: &lcc_pipeline::SourceInfo) -> bool {
+    mode == WbMode::AsShot || (info.raw && !info.relative_wb && mode.preset().is_some())
+}
+
+/// Bring a photo's settings onto the scale and mode a white balance partial names, so a one-field partial means
+/// what it says (issue #2910, and its review). `None` when the partial needs no such preparation: it names both
+/// numbers, neither, or a mode of its own. [`merge_settings_for_photo`] and `preset.apply` both start here, and
+/// both finish with `normalize_wb` so the photo ends on the scale it is edited on.
+pub(crate) fn prepare_photo_for_wb_partial(d: &DevelopSettings, partial: &Value, info: &lcc_pipeline::SourceInfo) -> Option<DevelopSettings> {
+    let mut d = (*d).clone();
+    let wb = partial.get("wb").and_then(Value::as_object);
+    // the partial names one of the two numbers, and not both or neither
+    let one_field = wb.is_some_and(|wb| wb.contains_key("temp") != wb.contains_key("tint"));
+    if !one_field {
+        return None;
+    }
+    // a photo whose source is edited in Kelvin is the one with two scales to trip over
+    let kelvin_source = info.raw && !info.relative_wb;
+    // the scale the partial's numbers are written on: an unmentioned scale means the relative scale, as `merged` reads it
+    let partial_scale = match wb.as_ref().and_then(|wb| wb.get("scale")).and_then(Value::as_str) {
+        Some("kelvin") => lcc_develop::WbScale::Kelvin,
+        _ => lcc_develop::WbScale::Legacy,
+    };
+    // put the photo onto the scale it is edited on: its values marked Kelvin, or a look still on the relative
+    // scale converted to the Kelvin / tint that renders the same
+    lcc_pipeline::local::normalize_wb(&mut d, info);
+    // a mode that answers its own white would swallow the partial's number: write the white the photo really
+    // renders as Custom values, so the number means what it says and the other field carries that white's look
+    if !wb.is_some_and(|wb| wb.contains_key("mode")) && wb_mode_ignores_its_numbers(d.wb.mode, info) {
+        let (t, tint) = lcc_pipeline::local::effective_wb(info, &d);
+        (d.wb.mode, d.wb.temp, d.wb.tint) = (WbMode::Custom, t, tint);
+    }
+    if kelvin_source && partial_scale == lcc_develop::WbScale::Legacy {
+        // and onto the partial's scale, so the field the partial leaves out is the photo's own look read there
+        let as_shot = (info.as_shot_temp, info.as_shot_tint);
+        let (kt, ktint) = lcc_pipeline::local::effective_wb(info, &d);
+        if let Some((lt, ltint)) = lcc_pipeline::local::kelvin_to_legacy(kt, ktint, as_shot) {
+            (d.wb.mode, d.wb.temp, d.wb.tint, d.wb.scale) = (WbMode::Custom, lt, ltint, lcc_develop::WbScale::Legacy);
+        }
+    }
+    Some(d)
+}
+
+/// Merge a partial settings JSON into a photo's settings (issue #2910). `DevelopSettings::merged` keeps a white
+/// balance that names no scale on the relative scale; on a photo edited in Kelvin the field the partial does not
+/// name (a partial with only `temp`, or only `tint`) would then be read on the other scale, giving a white neither
+/// the photo nor the partial asked for. A one-field white balance partial is therefore resolved against the photo
+/// first: the photo's white balance is brought onto the partial's scale with the photo's as-shot white
+/// (`kelvin_to_legacy` / `legacy_to_kelvin` via `normalize_wb`), the partial merges unchanged, and the result lands
+/// back on the photo's editing scale (`normalize_wb`), where the kept field carries the look the photo had.
+/// Partials naming both fields, or neither, mean the same as before. A photo whose white balance mode renders its
+/// own white — `As Shot`, or a named preset on a raw edited in Kelvin — has that white written out as Custom values
+/// first ([`wb_mode_ignores_its_numbers`]), because a mode that answers its own white would otherwise store the
+/// partial's number without any render reading it; a partial that names a `mode` itself stays authoritative.
+pub(crate) fn merge_settings_for_photo(
+    d: &DevelopSettings,
+    partial: &Value,
+    info: &lcc_pipeline::SourceInfo,
+) -> std::result::Result<DevelopSettings, serde_json::Error> {
+    let prepared = prepare_photo_for_wb_partial(d, partial, info);
+    let on_kelvin_scale = prepared.is_some() && info.raw && !info.relative_wb;
+    let mut out = prepared.as_ref().unwrap_or(d).merged(partial)?;
+    if on_kelvin_scale {
+        // and the result back onto the scale this photo is edited on
+        lcc_pipeline::local::normalize_wb(&mut out, info);
+    }
+    Ok(out)
+}
 
 /// `v` as a list of numbers; `None` unless it is an array of nothing but numbers.
 fn numbers(v: Option<&Value>) -> Option<Vec<f64>> {
@@ -256,8 +371,10 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("develop.merge", "Apply Settings JSON", [], None, "{settings: partial DevelopSettings JSON, label?}", has_active, |s, p| {
             let partial = p.get("settings").cloned().ok_or_else(|| bad("develop.merge", "missing settings"))?;
             let label = str_param(p, "label").unwrap_or("Edit").to_string();
+            let id = active(s, "develop.merge")?;
+            let info = s.source_info(id);
             edit(s, "develop.merge", &label, |d| {
-                *d = d.merged(&partial).map_err(|e| bad("develop.merge", e.to_string()))?;
+                *d = merge_settings_for_photo(d, &partial, &info).map_err(|e| bad("develop.merge", e.to_string()))?;
                 Ok(())
             })
         }),
@@ -814,20 +931,21 @@ pub fn specs() -> Vec<CommandSpec> {
             "Upright",
             [],
             None,
-            "{mode: off|auto|guided|level|vertical|full} — analyses the photo (line segments → vanishing points) and stores the correction; run again to update after lens changes",
+            "{mode: off|auto|guided|level|vertical|full} — analyses the photo (line segments → vanishing points) and stores the correction; run again to update after lens changes → {mode, transform, note (why the mode found nothing to correct, when it didn't)}",
             has_active,
             |s, p| {
                 let mode: Upright =
                     serde_json::from_value(p.get("mode").cloned().unwrap_or(json!("auto"))).map_err(|e| bad("geometry.upright", e.to_string()))?;
                 let id = active(s, "geometry.upright")?;
                 let d = s.develop_of(id).unwrap_or_default();
-                let transform = match mode {
-                    Upright::Off | Upright::Guided => None,
+                let (transform, note) = match mode {
+                    Upright::Off | Upright::Guided => (None, None),
                     m => {
                         let src = s.source_now(id, SourceLevel::Preview).map_err(|e| bad("geometry.upright", e))?;
                         let info = s.source_info(id);
                         let aux = lcc_pipeline::source_stage::aux_source(&src, &info, &d);
-                        Some(lcc_pipeline::upright::auto_transform(aux.as_deref().unwrap_or(&src), &info, &d, m))
+                        let a = lcc_pipeline::upright::analyze_source(aux.as_deref().unwrap_or(&src), &info, &d);
+                        (Some(lcc_pipeline::upright::solve(m, &a)), lcc_pipeline::upright::shortfall(m, &a))
                     }
                 };
                 edit(s, "geometry.upright", "Upright", |d| {
@@ -835,7 +953,17 @@ pub fn specs() -> Vec<CommandSpec> {
                     d.geometry.upright_transform = transform;
                     Ok(())
                 })?;
-                Ok(json!({"mode": mode, "transform": transform}))
+                // say why when the mode can't do what it says, instead of nothing happening
+                let note = note.map(|why| {
+                    let what = match mode {
+                        Upright::Level => "No level correction",
+                        Upright::Vertical => "No vertical correction",
+                        Upright::Full => "No full correction",
+                        _ => "No Upright correction",
+                    };
+                    format!("{what}: {why}. Try Guided: draw lines along what should be vertical.")
+                });
+                Ok(json!({"mode": mode, "transform": transform, "note": note}))
             }
         ),
         cmd!(
@@ -1090,7 +1218,20 @@ pub fn specs() -> Vec<CommandSpec> {
             let ops = ids
                 .iter()
                 .filter_map(|id| s.develop_of(*id).map(|d| (*id, d)))
-                .filter_map(|(id, d)| s.develop_op(id, preset.apply(&d, amount), &format!("Preset: {}", preset.name)))
+                .filter_map(|(id, d)| {
+                    // a hand-written preset may name one white balance number only, and then it means the same as
+                    // a partial: bring the photo onto that scale first, with its own as-shot white, and put the
+                    // result back on the scale the photo is edited on (issue #2910) — the merge `develop.merge` uses
+                    let info = s.source_info(id);
+                    let prepared = prepare_photo_for_wb_partial(&d, &preset.settings, &info);
+                    let on_kelvin_scale = prepared.is_some() && info.raw && !info.relative_wb;
+                    let base: &DevelopSettings = prepared.as_ref().unwrap_or(&d);
+                    let mut next = preset.apply(base, amount);
+                    if on_kelvin_scale {
+                        lcc_pipeline::local::normalize_wb(&mut next, &info);
+                    }
+                    s.develop_op(id, next, &format!("Preset: {}", preset.name))
+                })
                 .collect::<Vec<_>>();
             s.commit(&format!("Preset: {}", preset.name), Op::Batch { ops })?;
             ok()
@@ -1106,6 +1247,41 @@ pub fn specs() -> Vec<CommandSpec> {
             s.presets.push(Preset::from_settings(&pid, name, group, &d, &groups));
             Ok(json!({"id": pid}))
         }),
+        cmd!(
+            "preset.saveRecipe",
+            "Save Import Recipe as Preset",
+            [],
+            None,
+            "{name (up to 100 characters), group?: default Import Recipes, recipe: [{id: a plain develop control (develop.controls; no white balance, geometry or crop), value}]} → {id, name} — save a batch-edit recipe (as library.import takes it) as a user preset, so it can be reused from the Preset list; only the settings the recipe names are stored, so applying it later never overrides the rest. The preset gets an id no other preset has; saving the same recipe under the same name and group again returns the preset that already is",
+            always,
+            |s, p| {
+                const C: &str = "preset.saveRecipe";
+                let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing name"))?.to_string();
+                let group = str_param(p, "group").map(str::trim).filter(|g| !g.is_empty()).unwrap_or("Import Recipes").to_string();
+                if name.chars().count() > MAX_PRESET_TEXT || group.chars().count() > MAX_PRESET_TEXT {
+                    return Err(bad(C, format!("a name or group is at most {MAX_PRESET_TEXT} characters")));
+                }
+                let recipe = super::recipe_param(p, C)?;
+                if recipe.is_empty() {
+                    return Err(bad(C, "the recipe is empty"));
+                }
+                let settings = recipe_partial(&recipe).ok_or_else(|| bad(C, "the recipe sets nothing a preset can store"))?;
+                // presets get their ids as imported ones do (`user.<group>-<name>`, then -2, -3…): an id from the list's
+                // length repeats once a preset is deleted, and the first preset with an id is the one that gets applied
+                let preset = Preset { id: String::new(), name, group, settings, favorite: false, builtin: false };
+                let id = match s.add_presets(vec![preset.clone()]).into_iter().next() {
+                    Some(id) => id,
+                    // the same recipe under the same name and group is already a preset
+                    None => s
+                        .presets
+                        .iter()
+                        .find(|q| q.name == preset.name && q.group == preset.group && q.settings == preset.settings)
+                        .map(|q| q.id.clone())
+                        .ok_or_else(|| bad(C, "the preset could not be saved"))?,
+                };
+                Ok(json!({"id": id, "name": preset.name}))
+            }
+        ),
         cmd!("preset.delete", "Delete Preset", [], None, "{id}", always, |s, p| {
             let pid = str_param(p, "id").ok_or_else(|| bad("preset.delete", "missing id"))?;
             let i = s.presets.iter().position(|x| x.id == pid).ok_or_else(|| bad("preset.delete", "unknown preset"))?;
@@ -1449,5 +1625,37 @@ fn has_history_after(s: &Session) -> std::result::Result<(), String> {
         Ok(())
     } else {
         Err("at the latest History step".into())
+    }
+}
+
+#[cfg(test)]
+mod recipe_tests {
+    use super::*;
+
+    /// Equal settings differ nowhere, so there is nothing to store; a difference comes back with
+    /// its path only.
+    #[test]
+    fn partial_diff_is_the_changed_leaves_only() {
+        let a = json!({"light": {"exposure": 1.0, "contrast": 0.0}, "color": {"vibrance": 5.0}});
+        assert_eq!(partial_diff(&a, &a), None);
+        let b = json!({"light": {"exposure": 0.0, "contrast": 0.0}, "color": {"vibrance": 5.0}});
+        assert_eq!(partial_diff(&a, &b), Some(json!({"light": {"exposure": 1.0}})));
+        assert_eq!(partial_diff(&a, &json!({})), Some(a.clone()), "a leaf the other side lacks is a difference");
+    }
+
+    fn recipe(items: &[(&str, f64)]) -> Vec<(String, f64)> {
+        items.iter().map(|(id, v)| (id.to_string(), *v)).collect()
+    }
+
+    /// A recipe that names nothing, or a control `set` would drop (a per-photo instance on fresh
+    /// settings), stores nothing: the command answers with an error, not an empty preset.
+    #[test]
+    fn a_recipe_that_stores_nothing_is_none() {
+        assert_eq!(recipe_partial(&[]), None);
+        assert_eq!(recipe_partial(&recipe(&[("pointColor.0.hueShift", 5.0)])), None, "set returns false for it");
+        assert_eq!(recipe_partial(&recipe(&[("nope.nope", 5.0)])), None);
+        assert_eq!(recipe_partial(&recipe(&[("light.exposure", 0.5)])), Some(json!({"light": {"exposure": 0.5}})));
+        // a reset to the control's default is stored
+        assert_eq!(recipe_partial(&recipe(&[("light.exposure", 0.0)])), Some(json!({"light": {"exposure": 0.0}})));
     }
 }

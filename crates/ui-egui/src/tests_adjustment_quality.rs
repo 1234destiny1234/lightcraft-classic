@@ -408,7 +408,7 @@ struct HistogramTrace {
 
 fn trace_histogram_over_a_drag(h: &mut Headless) -> HistogramTrace {
     let ctx = h.view.ctx.clone();
-    let shown = |h: &mut Headless| shape(&crate::panels::edit::shown_histogram(&mut h.app, &ctx, PhotoId(1)));
+    let shown = |h: &mut Headless| shape(&crate::panels::edit::shown_histogram(&mut h.app, &ctx, PhotoId(1), lcc_raster::HistogramMode::RgbOverlap));
     // (the panel draws every frame: each step asks it for what it shows)
     let frames = |h: &mut Headless, n: usize| {
         let mut seen = Vec::new();

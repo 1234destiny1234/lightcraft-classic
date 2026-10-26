@@ -51,6 +51,13 @@ jobs:
       CARGO_BUILD_JOBS: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # the pinned fonts, as release.yml checks them out: a craft-fonts checkout left on the runner by an
+      # earlier run is never updated by packaging/windows/fonts.ps1 and can lack a required face
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: storytold/craft-fonts
+          ref: b4ce3ee090ea4b06791e9501ea2f8e6f746d5cd3 # same pin as release.yml
+          path: craft-fonts
       - name: Low priority, persistent build cache
         shell: pwsh
         run: |
@@ -114,6 +121,7 @@ jobs:
         shell: pwsh
         env:
           DIST: ${{ github.workspace }}\dist\arm64
+          CRAFT_FONTS_DIR: ${{ github.workspace }}\craft-fonts
         run: ./packaging/windows/package.ps1 -Arch arm64
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

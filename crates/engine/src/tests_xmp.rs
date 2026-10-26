@@ -317,6 +317,80 @@ fn a_crs_change_after_a_read_is_taken_with_auto_write_on() {
     let _ = std::fs::remove_dir_all(&src);
 }
 
+/// A sidecar with keywords as Lightroom Classic and darktable write them: names in `dc:subject`,
+/// paths in `lr:hierarchicalSubject`.
+const KEYWORDED: &str = r#"<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:lr="http://ns.adobe.com/lightroom/1.0/"
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+    xmp:Rating="0" crs:Exposure2012="+0.40">
+   <dc:subject><rdf:Bag><rdf:li>Places</rdf:li><rdf:li>Italy</rdf:li><rdf:li>Rome</rdf:li><rdf:li>sunset</rdf:li></rdf:Bag></dc:subject>
+   <lr:hierarchicalSubject><rdf:Bag><rdf:li>Places|Italy|Rome</rdf:li><rdf:li>sunset</rdf:li></rdf:Bag></lr:hierarchicalSubject>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#;
+
+/// Saving a sidecar keeps keywords where other applications look for them: names in `dc:subject`
+/// and paths in `lr:hierarchicalSubject`, each property once. older versions wrote the paths into
+/// `dc:subject` (`Places|Italy|Rome`), so after any change, even a rating, a search for "Rome" in
+/// another DAM no longer found the photo. A sidecar written that way is put right on the next save,
+/// and keywords added here keep their hierarchy when the sidecar is read back.
+#[test]
+fn saving_a_sidecar_writes_keyword_names_flat_and_paths_hierarchical() {
+    let src = temp_dir("keywords-flat");
+    write_png(&src.join("rome.png"), 8);
+    let sidecar = src.join("rome.xmp");
+    std::fs::write(&sidecar, KEYWORDED).unwrap();
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let id = only(&s);
+    assert_eq!(s.catalog.photo(id).unwrap().meta.keywords, ["Places|Italy|Rome", "sunset"]);
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.execute("photo.rate", &json!({"ids": [id.0], "rating": 3})).unwrap();
+
+    let lists = |text: &str| {
+        let x = lcc_meta::parse_xmp(text).unwrap();
+        (x.metadata.keywords, x.metadata.hierarchical_keywords)
+    };
+    let text = std::fs::read_to_string(&sidecar).unwrap();
+    let (flat, hierarchical) = lists(&text);
+    assert_eq!(flat, ["Places", "Italy", "Rome", "sunset"], "names, not paths, in dc:subject:\n{text}");
+    assert_eq!(hierarchical, ["Places|Italy|Rome", "sunset"], "{text}");
+    assert_eq!(text.matches("<dc:subject>").count(), 1, "{text}");
+    assert_eq!(text.matches("lr:hierarchicalSubject>").count(), 2, "one lr:hierarchicalSubject, opened and closed:\n{text}");
+    assert!(text.contains("<xmp:Rating>3</xmp:Rating>") && text.contains(r#"crs:Exposure2012="+0.40""#), "{text}");
+
+    // a keyword added here keeps its hierarchy through the file
+    s.execute("photo.setMeta", &json!({"ids": [id.0], "keywords": ["Places|Italy|Rome", "sunset", "people|Ada"]})).unwrap();
+    let (flat, hierarchical) = lists(&std::fs::read_to_string(&sidecar).unwrap());
+    assert_eq!(flat, ["Places", "Italy", "Rome", "sunset", "people", "Ada"]);
+    assert_eq!(hierarchical, ["Places|Italy|Rome", "sunset", "people|Ada"]);
+    s.execute("photo.setMeta", &json!({"ids": [id.0], "keywords": []})).unwrap();
+    let text = std::fs::read_to_string(&sidecar).unwrap();
+    assert!(!text.contains("dc:subject") && !text.contains("lr:hierarchicalSubject"), "clearing keywords clears both lists:\n{text}");
+    s.execute("edit.undo", &json!({})).unwrap(); // undo rewrites the sidecar with the three keywords
+    s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(s.catalog.photo(id).unwrap().meta.keywords, ["Places|Italy|Rome", "sunset", "people|Ada"], "read back as written");
+
+    // a sidecar from an older version (paths in dc:subject) reads as paths and is written properly
+    let old = KEYWORDED
+        .replace("<rdf:li>Places</rdf:li><rdf:li>Italy</rdf:li><rdf:li>Rome</rdf:li>", "<rdf:li>Places|Italy|Rome</rdf:li>")
+        .replace("<lr:hierarchicalSubject><rdf:Bag><rdf:li>Places|Italy|Rome</rdf:li><rdf:li>sunset</rdf:li></rdf:Bag></lr:hierarchicalSubject>", "");
+    std::fs::write(&sidecar, old).unwrap();
+    s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(s.catalog.photo(id).unwrap().meta.keywords, ["Places|Italy|Rome", "sunset"]);
+    s.execute("photo.rate", &json!({"ids": [id.0], "rating": 4})).unwrap();
+    let (flat, hierarchical) = lists(&std::fs::read_to_string(&sidecar).unwrap());
+    assert_eq!(flat, ["Places", "Italy", "Rome", "sunset"]);
+    assert_eq!(hierarchical, ["Places|Italy|Rome", "sunset"]);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
 /// Lightroom's default profiles (`Adobe Standard`, `Adobe Color`) are named by nearly every sidecar
 /// and our own starting look stands in for them: importing one gives no camera-profile warning.
 #[test]
@@ -496,6 +570,96 @@ fn regions_from_sidecar_are_read_on_import() {
     assert_eq!(region.name.as_deref(), Some("Jane Doe"));
     assert_eq!(region.kind, lcc_meta::RegionKind::Face);
     assert!((region.rect.width() - 0.3).abs() < 1e-9, "{:?}", region.rect);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// MWG regions as an app that draws on the photo as stored writes them for [`write_turned_jpeg`]'s photo: its stored
+/// 32 × 24 as `AppliedToDimensions` and no box saying how the photo was turned (no `mwg-rs:Rotation`). One face, its
+/// box centred at (0.25, 0.4), 0.1 × 0.15 of that size.
+const STORED_FRAME_REGIONS: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:mwg-rs="http://www.metadataworkinggroup.com/schemas/regions/"
+    xmlns:stArea="http://ns.adobe.com/xmp/sType/Area#"
+    xmlns:stDim="http://ns.adobe.com/xap/1.0/sType/Dimensions#">
+   <mwg-rs:Regions rdf:parseType="Resource">
+    <mwg-rs:AppliedToDimensions rdf:parseType="Resource" stDim:w="32" stDim:h="24" stDim:unit="pixel"/>
+    <mwg-rs:RegionList>
+     <rdf:Bag>
+      <rdf:li rdf:parseType="Resource" mwg-rs:Name="Hannah" mwg-rs:Type="Face">
+       <mwg-rs:Area rdf:parseType="Resource" stArea:x="0.25" stArea:y="0.4" stArea:w="0.1" stArea:h="0.15" stArea:unit="normalized"/>
+      </rdf:li>
+     </rdf:Bag>
+    </mwg-rs:RegionList>
+   </mwg-rs:Regions>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>"#;
+
+/// A JPEG of 32 × 24 pixels stored sideways (Exif orientation 6, shown 24 × 32), with `packet` embedded when given.
+fn write_turned_jpeg(path: &Path, packet: Option<&str>) {
+    let img = lcc_raster::Rgba8::from_fn(32, 24, |x, y| [(x * 7) as u8, (y * 9) as u8, 90, 255]);
+    let exif = lcc_meta::write_exif(&lcc_meta::Metadata { orientation: Some(lcc_meta::Orientation::Rotate90), ..Default::default() });
+    let meta = lcc_codecs::EncodeMeta { exif: Some(&exif), xmp: packet, ..Default::default() };
+    let bytes = lcc_codecs::encode_jpeg(&lcc_codecs::EncodeImage::rgba8(&img), 90, Default::default(), &meta).unwrap();
+    std::fs::write(path, bytes).unwrap();
+}
+
+/// Put more than the first MiB of APP15 segments between the JPEG at `path`'s start and its Exif.
+fn pad_before_exif(path: &Path) {
+    let bytes = std::fs::read(path).unwrap();
+    let mut padded = bytes[..2].to_vec();
+    for _ in 0..17 {
+        padded.extend_from_slice(&[0xFF, 0xEF, 0xFF, 0xFF]);
+        padded.extend(std::iter::repeat_n(0, 0xFFFD));
+    }
+    padded.extend_from_slice(&bytes[2..]);
+    std::fs::write(path, padded).unwrap();
+}
+
+/// The face's box from [`STORED_FRAME_REGIONS`] on the upright photo: turned a quarter turn clockwise with it.
+fn assert_on_the_upright_face(s: &Session, id: PhotoId, when: &str) {
+    let p = s.catalog.photo(id).unwrap();
+    assert_eq!((p.width, p.height), (24, 32), "the photo is upright");
+    let r = p.meta.regions.first().map(|r| r.rect).unwrap_or_default();
+    let want = [0.525, 0.2, 0.675, 0.3];
+    let got = [r.x0, r.y0, r.x1, r.y1];
+    assert!(got.iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-9), "{when}: the box is where the photo as stored had the face: {got:?}");
+    assert_eq!(p.meta.regions.len(), 1, "{when}");
+}
+
+/// Issue #2674: face boxes an app drew on a photo as stored (its sideways size as `AppliedToDimensions`, no
+/// `mwg-rs:Rotation`) land on the faces of the photo as the app shows it, upright: when imported, and when the
+/// file's metadata is read again (the packet itself doesn't say how the photo turns; the file's Exif does). The
+/// image's own size decides, not one the XMP states upright, and the Exif is found past the first MiB of the file.
+#[test]
+fn regions_drawn_on_the_photo_as_stored_land_on_the_upright_photo() {
+    let src = temp_dir("regions-stored-frame");
+    let embedded = src.join("embedded.jpg");
+    write_turned_jpeg(&embedded, Some(STORED_FRAME_REGIONS));
+    let beside = src.join("sidecar.jpg");
+    write_turned_jpeg(&beside, None);
+    std::fs::write(src.join("sidecar.xmp"), STORED_FRAME_REGIONS).unwrap();
+    // an Exif without a pixel size, and an XMP size of the upright photo
+    let stated = src.join("stated.jpg");
+    let upright_size = r#"rdf:about="" xmlns:tiff="http://ns.adobe.com/tiff/1.0/" tiff:ImageWidth="24" tiff:ImageLength="32""#;
+    write_turned_jpeg(&stated, Some(&STORED_FRAME_REGIONS.replace(r#"rdf:about="""#, upright_size)));
+    let late = src.join("late.jpg");
+    write_turned_jpeg(&late, None);
+    pad_before_exif(&late);
+    std::fs::write(src.join("late.xmp"), STORED_FRAME_REGIONS).unwrap();
+    for (file, what) in [(&embedded, "embedded XMP"), (&beside, "sidecar"), (&stated, "upright size in the XMP"), (&late, "Exif after the first MiB")]
+    {
+        let mut s = Session::new().with_fs();
+        let r = s.execute("library.import", &json!({"paths": [file.to_string_lossy()]})).unwrap();
+        assert_eq!(r["imported"].as_array().map(Vec::len), Some(1), "{r}");
+        let id = only(&s);
+        assert_on_the_upright_face(&s, id, &format!("{what}, imported"));
+        let read = s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+        assert_eq!(read["failed"], json!([]), "{read}");
+        assert_eq!(read["read"].as_array().map(Vec::len), Some(1), "{what}: {read}");
+        assert_on_the_upright_face(&s, id, &format!("{what}, read again"));
+    }
     let _ = std::fs::remove_dir_all(&src);
 }
 
@@ -1829,4 +1993,239 @@ fn a_failed_auto_write_waits_and_is_written_on_retry() {
     assert_eq!(s.unsaved_sidecars(), 0);
     std::fs::set_permissions(&src, std::fs::Permissions::from_mode(0o755)).unwrap();
     let _ = std::fs::remove_dir_all(&src);
+}
+
+/// With background sidecar writes on (the desktop app's setting), an edit returns before its sidecar is written; the
+/// write lands on the writer thread, a photo changed again before its write started writes only its newest packet,
+/// and a file that is about to move has its queued write made first, so nothing lands at the old name.
+#[test]
+fn background_sidecar_writes_land_and_never_at_a_stale_path() {
+    let src = temp_dir("auto-background");
+    write_png(&src.join("a.png"), 4);
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.set_background_sidecar_writes(true);
+    for rating in 1..=5 {
+        s.execute("photo.rate", &json!({"rating": rating})).unwrap();
+    }
+    s.flush_sidecar_writes();
+    assert_eq!(s.sidecar_writes_pending(), 0);
+    let sidecar = src.join("a.xmp");
+    assert!(std::fs::read_to_string(&sidecar).unwrap().contains("<xmp:Rating>5</xmp:Rating>"), "the newest rating");
+    assert_eq!(s.unsaved_sidecars(), 0);
+    // an edit queued just before a rename: the write is made before the file (and its sidecar) moves
+    s.execute("photo.rate", &json!({"rating": 2})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    s.execute("photo.rename", &json!({"ids": [id.0], "template": "renamed"})).unwrap();
+    s.flush_sidecar_writes();
+    assert!(!sidecar.exists(), "no sidecar left at the old name");
+    assert!(std::fs::read_to_string(src.join("renamed.xmp")).unwrap().contains("<xmp:Rating>2</xmp:Rating>"));
+    s.set_background_sidecar_writes(false);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// A background write that fails (the folder is read-only, as a network share that went away) waits for a retry,
+/// as a write made in the command does.
+#[cfg(unix)]
+#[test]
+fn a_failed_background_write_waits_for_a_retry() {
+    use std::os::unix::fs::PermissionsExt;
+    let src = temp_dir("auto-background-fail");
+    write_png(&src.join("a.png"), 4);
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.set_background_sidecar_writes(true);
+    std::fs::set_permissions(&src, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(src.join(".probe"), b"x").is_ok() {
+        std::fs::set_permissions(&src, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+    s.execute("photo.rate", &json!({"rating": 4})).unwrap();
+    s.flush_sidecar_writes();
+    assert_eq!(s.unsaved_sidecars(), 1, "the failed write waits");
+    std::fs::set_permissions(&src, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let r = s.execute("library.retrySidecars", &json!({})).unwrap();
+    assert_eq!(r, json!({"written": 1, "waiting": 0}));
+    s.set_background_sidecar_writes(false);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// A background write whose original can't be reached when the edit is made (a share that dropped out) waits for a
+/// retry, as a failed write does: the sidecar mustn't stay behind the edit once the file is back.
+#[test]
+fn a_background_write_with_its_original_away_waits_for_a_retry() {
+    let src = temp_dir("auto-background-away");
+    write_png(&src.join("a.png"), 4);
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.set_background_sidecar_writes(true);
+    s.flush_sidecar_writes();
+    std::fs::rename(src.join("a.png"), src.join("away.png")).unwrap();
+    s.execute("photo.rate", &json!({"rating": 3})).unwrap();
+    s.flush_sidecar_writes();
+    assert_eq!(s.unsaved_sidecars(), 1, "the write waits for the original");
+    std::fs::rename(src.join("away.png"), src.join("a.png")).unwrap();
+    let r = s.execute("library.retrySidecars", &json!({})).unwrap();
+    assert_eq!(r, json!({"written": 1, "waiting": 0}));
+    assert!(std::fs::read_to_string(src.join("a.xmp")).unwrap().contains("<xmp:Rating>3</xmp:Rating>"));
+    s.set_background_sidecar_writes(false);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// Opening another library makes the old one's queued background writes first, and drops its waiting retries: photo
+/// ids are per library, so a failure from the old one must not mark a photo of the new one.
+#[cfg(unix)]
+#[test]
+fn opening_another_library_drains_background_writes_and_old_retries() {
+    use std::os::unix::fs::PermissionsExt;
+    let base = temp_dir("auto-background-switch");
+    let (photos, locked) = (base.join("photos"), base.join("locked"));
+    std::fs::create_dir_all(&photos).unwrap();
+    std::fs::create_dir_all(&locked).unwrap();
+    write_png(&photos.join("a.png"), 4);
+    write_png(&locked.join("b.png"), 5);
+    let mut s = Session::new().with_fs();
+    // both libraries write sidecars automatically (a library that doesn't drops its retries anyway)
+    s.open_library(base.join("two"), false).unwrap();
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.open_library(base.join("one"), false).unwrap();
+    s.execute("library.import", &json!({"paths": [photos.to_string_lossy(), locked.to_string_lossy()]})).unwrap();
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.set_background_sidecar_writes(true);
+    s.flush_sidecar_writes();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(locked.join(".probe"), b"x").is_ok() {
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+    let ids: Vec<u64> = s.catalog.photos().map(|p| p.id.0).collect();
+    s.execute("photo.rate", &json!({"ids": ids, "rating": 4})).unwrap();
+    // the writes are made but not yet taken in when the other library opens
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while s.sidecar_writes_pending() > 0 && std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    s.open_library(base.join("two"), false).unwrap();
+    s.flush_sidecar_writes();
+    assert!(std::fs::read_to_string(photos.join("a.xmp")).unwrap().contains("<xmp:Rating>4</xmp:Rating>"), "written before the switch");
+    assert_eq!(s.unsaved_sidecars(), 0, "the old library's retries don't carry over");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    s.set_background_sidecar_writes(false);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// A write queued while its original was there, whose original is gone by the time the writer gets to it (a share
+/// that dropped out), waits for a retry instead of being dropped: the edit is in the catalog, the sidecar isn't.
+#[cfg(unix)]
+#[test]
+fn a_queued_write_whose_original_went_away_waits_for_a_retry() {
+    let src = temp_dir("auto-background-gone");
+    write_png(&src.join("a.png"), 4);
+    write_png(&src.join("b.png"), 5);
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.set_background_sidecar_writes(true);
+    s.flush_sidecar_writes();
+    let id = |s: &Session, name: &str| s.catalog.photos().find(|p| p.file_name == name).unwrap().id.0;
+    let (a, b) = (id(&s, "a.png"), id(&s, "b.png"));
+    // a.png's sidecar is a FIFO: its write blocks the writer until something opens the other end
+    let fifo = src.join("a.xmp");
+    let _ = std::fs::remove_file(&fifo);
+    if !std::process::Command::new("mkfifo").arg(&fifo).status().is_ok_and(|st| st.success()) {
+        return;
+    }
+    s.execute("photo.rate", &json!({"ids": [a], "rating": 1})).unwrap();
+    s.execute("photo.rate", &json!({"ids": [b], "rating": 2})).unwrap();
+    // b's original goes away while its write waits in the queue
+    std::fs::rename(src.join("b.png"), src.join("away.png")).unwrap();
+    drop(std::fs::OpenOptions::new().write(true).open(&fifo).unwrap());
+    s.flush_sidecar_writes();
+    assert_eq!(s.unsaved_sidecars(), 1, "b's write waits for its original");
+    std::fs::rename(src.join("away.png"), src.join("b.png")).unwrap();
+    let r = s.execute("library.retrySidecars", &json!({})).unwrap();
+    assert_eq!(r, json!({"written": 1, "waiting": 0}));
+    assert!(std::fs::read_to_string(src.join("b.xmp")).unwrap().contains("<xmp:Rating>2</xmp:Rating>"));
+    s.set_background_sidecar_writes(false);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// While a background sidecar write is stuck (a share that stopped answering; here a FIFO nobody writes to), the file
+/// operations it could race refuse with an error that says so, instead of going ahead after the wait: a rename, a
+/// sidecar read or save on request, a change of the sidecar preferences. Once the write lands they work again.
+#[cfg(unix)]
+#[test]
+fn file_operations_refuse_while_a_sidecar_write_is_stuck() {
+    let src = temp_dir("auto-background-stuck");
+    write_png(&src.join("a.png"), 4);
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.set_background_sidecar_writes(true);
+    s.flush_sidecar_writes();
+    s.set_sidecar_flush_limit(std::time::Duration::from_millis(100));
+    let fifo = src.join("a.xmp");
+    let _ = std::fs::remove_file(&fifo);
+    if !std::process::Command::new("mkfifo").arg(&fifo).status().is_ok_and(|st| st.success()) {
+        return;
+    }
+    let id = s.catalog.photos().next().unwrap().id.0;
+    s.execute("photo.rate", &json!({"ids": [id], "rating": 3})).unwrap();
+    for (command, params) in [
+        ("photo.rename", json!({"ids": [id], "template": "renamed"})),
+        ("photo.readMetadataFromFile", json!({"ids": [id]})),
+        ("photo.saveMetadataToFile", json!({"ids": [id]})),
+        ("library.xmpPreferences", json!({"naming": "full"})),
+    ] {
+        let e = s.execute(command, &params).expect_err(command).to_string();
+        assert!(e.contains("still running") && e.contains(&src.to_string_lossy().to_string()), "{command}: {e}");
+    }
+    assert!(src.join("a.png").exists(), "nothing was renamed");
+    // the share answers: the write lands and the rename goes ahead
+    drop(std::fs::OpenOptions::new().write(true).open(&fifo).unwrap());
+    s.set_sidecar_flush_limit(std::time::Duration::from_secs(10));
+    s.execute("photo.rename", &json!({"ids": [id], "template": "renamed"})).unwrap();
+    assert!(std::fs::read_to_string(src.join("renamed.xmp")).unwrap().contains("<xmp:Rating>3</xmp:Rating>"));
+    s.set_background_sidecar_writes(false);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// Opening another library while a background sidecar write of this one is stuck (a share that stopped answering;
+/// here a FIFO nobody writes to) refuses, as the file operations do: the write's result belongs to this library's
+/// photos, so switching would lose it or pin it on a photo of the next library. Once the write lands it opens.
+#[cfg(unix)]
+#[test]
+fn opening_another_library_refuses_while_a_sidecar_write_is_stuck() {
+    let base = temp_dir("auto-background-switch-stuck");
+    let photos = base.join("photos");
+    std::fs::create_dir_all(&photos).unwrap();
+    write_png(&photos.join("a.png"), 4);
+    let mut s = Session::new().with_fs();
+    s.open_library(base.join("one"), false).unwrap();
+    s.execute("library.import", &json!({"paths": [photos.to_string_lossy()]})).unwrap();
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.set_background_sidecar_writes(true);
+    s.flush_sidecar_writes();
+    s.set_sidecar_flush_limit(std::time::Duration::from_millis(100));
+    let fifo = photos.join("a.xmp");
+    let _ = std::fs::remove_file(&fifo);
+    if !std::process::Command::new("mkfifo").arg(&fifo).status().is_ok_and(|st| st.success()) {
+        return;
+    }
+    let id = s.catalog.photos().next().unwrap().id;
+    let smart_dir = s.media.smart_dir.clone();
+    s.execute("photo.rate", &json!({"ids": [id.0], "rating": 5})).unwrap();
+    let e = s.open_library(base.join("two"), false).map(|_| ()).expect_err("refused while the write is stuck").to_string();
+    assert!(e.contains("still running"), "{e}");
+    assert!(s.catalog.photo(id).is_some(), "still the first library");
+    assert_eq!(s.media.smart_dir, smart_dir, "and still its smart previews");
+    drop(std::fs::OpenOptions::new().write(true).open(&fifo).unwrap());
+    s.set_sidecar_flush_limit(std::time::Duration::from_secs(10));
+    s.open_library(base.join("two"), false).unwrap();
+    assert!(std::fs::read_to_string(photos.join("a.xmp")).unwrap().contains("<xmp:Rating>5</xmp:Rating>"));
+    s.set_background_sidecar_writes(false);
+    let _ = std::fs::remove_dir_all(&base);
 }

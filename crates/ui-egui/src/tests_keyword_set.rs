@@ -93,7 +93,7 @@ fn a_set_needs_a_name() {
     open_editor(&mut h);
     ask(&mut h, "ui.clickWidget", json!({"id": "button:dialogOk"}));
     assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::KeywordSet { .. })), "still open");
-    assert!(h.app.ui.toast.is_some(), "and says why");
+    assert!(h.app.ui.toast().is_some(), "and says why");
 }
 
 /// An empty slot is an empty button that does nothing.
@@ -131,7 +131,7 @@ fn a_taken_name_says_so() {
     ask(&mut h, "ui.text", json!({"text": "travel"}));
     ask(&mut h, "ui.clickWidget", json!({"id": "button:dialogOk"}));
     assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::KeywordSet { .. })), "still open");
-    let toast = h.app.ui.toast.clone().map(|t| t.0).unwrap_or_default();
+    let toast = h.app.ui.toast().cloned().map(|t| t.0).unwrap_or_default();
     assert!(toast.starts_with("There is a keyword set"), "{toast}");
     let s = sets(&mut h);
     let travel = s["sets"].as_array().unwrap().iter().find(|x| x["name"] == "Travel").cloned().unwrap();
@@ -189,4 +189,21 @@ fn an_empty_set_shows_nine_empty_slots() {
     // a keyword added fills the first
     ask(&mut h, "engine.execute", json!({"command": "photo.setMeta", "params": {"addKeywords": ["beach"]}}));
     assert!(h.app.widgets.iter().any(|(w, _)| w == "kwSet:1"));
+}
+
+/// ⌥0 / ⌥⇧0 (Alt+0 / Alt+Shift+0) go to the next and the previous keyword set, as in Lightroom
+/// Classic's Library, and ⌥1 then applies the new set's first keyword.
+#[test]
+fn alt_0_and_alt_shift_0_cycle_the_keyword_sets() {
+    let mut h = keywords_panel();
+    h.app.session.execute("keyword.saveSet", &json!({"name": "Weddings", "keywords": ["ceremony"]})).unwrap();
+    h.app.session.execute("keyword.useSet", &json!({"name": "Recent Keywords"})).unwrap();
+    h.settle(SETTLE);
+    ask(&mut h, "ui.key", json!({"key": "0", "alt": true}));
+    assert_eq!(sets(&mut h)["current"], "Weddings", "⌥0: the next set");
+    ask(&mut h, "ui.key", json!({"key": "1", "alt": true}));
+    let id = h.app.session.selected()[0];
+    assert!(h.app.session.catalog.photo(id).unwrap().meta.keywords.iter().any(|k| k == "ceremony"), "⌥1 applied the set's keyword");
+    ask(&mut h, "ui.key", json!({"key": "0", "alt": true, "shift": true}));
+    assert_eq!(sets(&mut h)["current"], "Recent Keywords", "⌥⇧0: the previous set");
 }

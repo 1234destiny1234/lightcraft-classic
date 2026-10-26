@@ -67,7 +67,7 @@ fn example_plugin_end_to_end() {
     let Some(wasm) = build_example() else { return };
     let dir = temp("example");
     let mut m = Manager::open(&dir).unwrap();
-    let info = m.install_bytes(&wasm, Some(Permissions { catalog: true, ..Default::default() })).unwrap().info();
+    let info = m.install_bytes(&wasm, Some(Permissions { catalog: true, ..Default::default() }), false).unwrap().info();
     assert_eq!(info["id"], "org.example.catalog-tools");
     assert_eq!(info["granted"]["catalog"], true);
     let id = "org.example.catalog-tools";
@@ -148,7 +148,7 @@ fn batch_metadata_example_end_to_end() {
     let mut m = Manager::open(&dir).unwrap();
     let id = "org.example.batch-metadata";
     // installed with read access only: the write is refused by the host
-    m.install_bytes(&wasm, Some(Permissions { catalog: true, ..Default::default() })).unwrap();
+    m.install_bytes(&wasm, Some(Permissions { catalog: true, ..Default::default() }), false).unwrap();
     let mut host = FakeLibrary { writes: vec![] };
     let sel: Vec<String> = vec!["7".into(), "8".into(), "9".into()];
     let e = m.run_command(id, "template", &json!({}), &sel, &mut host).unwrap_err();
@@ -183,7 +183,7 @@ fn export_tools_example_hook_and_destination() {
     let dir = temp("export-tools");
     let mut m = Manager::open(&dir).unwrap();
     let id = "org.example.export-tools";
-    m.install_bytes(&wasm, None).unwrap();
+    m.install_bytes(&wasm, None, false).unwrap();
     let file = dir.join("out.jpg");
     std::fs::write(&file, b"123456789").unwrap();
     let files = [json!({"path": file.display().to_string(), "photo": "5"})];
@@ -217,7 +217,7 @@ fn publish_folder_example_publishes_and_removes() {
     let mut m = Manager::open(&dir).unwrap();
     let id = "org.example.publish-folder";
     let grant = Permissions { fs: vec![lcc_plugins::FsRoot { path: root.display().to_string(), write: true }], ..Default::default() };
-    m.install_bytes(&wasm, Some(grant)).unwrap();
+    m.install_bytes(&wasm, Some(grant), false).unwrap();
     std::fs::create_dir_all(root).unwrap();
     let src = dir.join("render.jpg");
     std::fs::write(&src, [0u8, 1, 2, 255]).unwrap();
@@ -243,7 +243,7 @@ fn custom_fields_example_shows_and_edits_fields() {
     let dir = temp("custom-fields");
     let mut m = Manager::open(&dir).unwrap();
     let id = "org.example.custom-fields";
-    m.install_bytes(&wasm, None).unwrap();
+    m.install_bytes(&wasm, None, false).unwrap();
     let mut host = lcc_plugins::NoHost;
     let f = m.metadata_fields("3");
     assert_eq!(f[0]["fields"].as_array().map(Vec::len), Some(4), "{f:?}");

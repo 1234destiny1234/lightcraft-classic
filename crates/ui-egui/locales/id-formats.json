@@ -1,4 +1,7 @@
 {
+  " · aesthetic {:.1}": " · estetika {:.1}",
+  " · eyes {:.0}%": " · mata {:.0}%",
+
   " · {skipped} skipped (file exists)": " · {skipped} dilewati (file sudah ada)",
   " · {} duplicate{} skipped": " · {} duplikat dilewati{:.0}",
   " · {} failed: {}": " · {} gagal: {}",
@@ -299,5 +302,14 @@
   "Drop to review {n} item{} for import": "Jatuhkan untuk meninjau {n} item sebelum impor{:.0}",
   "Inside: {names}": "Di dalam: {names}",
   "Where should the Lightroom catalog “{catalog}” go?": "Ke mana katalog Lightroom “{catalog}” diimpor?",
-  "Merge into the open library “{library}” ({count} photo{})": "Gabungkan ke pustaka yang terbuka “{library}” ({count} foto{:.0})"
+  "Merge into the open library “{library}” ({count} photo{})": "Gabungkan ke pustaka yang terbuka “{library}” ({count} foto{:.0})",
+  "{n} folder{} could not be read": "Folder yang tidak bisa dibaca: {n}{:.0}",
+  "{n} file{} skipped (not a supported photo type)": "File yang dilewati (bukan jenis foto yang didukung): {n}{:.0}",
+  "about {h} h {m} min left": "sekitar {h} j {m} mnt lagi",
+  "about {n} min left": "sekitar {n} mnt lagi",
+  "Adjustments: {n}": "Penyesuaian: {n}",
+  "{n} done": "{n} selesai",
+  ", {n} failed": ", {n} gagal",
+  "{n} failed": "{n} gagal",
+  "Show each photo ({n})": "Tampilkan setiap foto ({n})"
 }

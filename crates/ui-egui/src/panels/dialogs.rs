@@ -415,7 +415,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     let preview = app.session.execute("stack.auto", &json!({"gap": *gap, "preview": true})).unwrap_or_default();
                     let scope = if app.session.selection.ids.len() > 1 { "the selected photos" } else { "the photos in view" };
                     crate::dialog_frame::note(ui,
-                        egui::RichText::new(crate::i18n::tr_format!("Creates {} stacks from {} of {scope}", preview["stacks"], preview["photos"], scope = crate::i18n::tr(scope))).color(t.text_dim),
+                        egui::RichText::new({
+                            let (stacks, photos) = (preview["stacks"].as_u64().unwrap_or(0), preview["photos"].as_u64().unwrap_or(0));
+                            crate::i18n::tr_format!("Creates {stacks} stack{} from {photos} of {scope}", if stacks == 1 { "" } else { "s" }, stacks = stacks, photos = photos, scope = crate::i18n::tr(scope))
+                        }).color(t.text_dim),
                     );
                 }
                 Dialog::Cull { reject_below, pick_best, burst_gap, similarity } => {
@@ -453,7 +456,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     crate::widgets::register(ui.ctx(), "field:cullSimilar", r.rect);
                     clamp_cull_burst(burst_gap, similarity);
                     crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Lower it when a panning or moving burst splits into several groups.")).color(t.text_dim));
-                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus, Eyes Open, Aesthetic and Cull Score.")).color(t.text_dim));
                 }
                 Dialog::WhatsNew => {
                     ui.scope(|ui| {
@@ -1404,6 +1407,23 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Dialog::SamModel { .. } => "Download",
                     Dialog::RenamePerson { from, to, .. } if person_rename_plan(&app.session.catalog, from, to).needs_merge => "Merge",
                     _ if informational => "Close",
+                    // the confirm button names its action (upstream #2075)
+                    Dialog::Export { .. } => {
+                        let n = app.session.selection.ids.len().max(1);
+                        add_label = crate::i18n::tr_format!("{verb} {n} Photo{}", if n == 1 { "" } else { "s" }, verb = crate::i18n::tr("Export"), n = n);
+                        add_label.as_str()
+                    }
+                    Dialog::NewAlbum { .. } | Dialog::NewSmartAlbum { .. } | Dialog::SmartRules { id: None, .. } | Dialog::CreatePreset { .. } => "Create",
+                    Dialog::SmartRules { .. } | Dialog::LabelNames { .. } => "Save",
+                    Dialog::RenameKeyword { from, to } if app.session.catalog.has_keyword(to) && !lcc_catalog::keywords::same(from, to) => "Merge Keywords",
+                    Dialog::RenameAlbum { .. } | Dialog::Rename { .. } | Dialog::RenameKeyword { .. } | Dialog::RenamePerson { .. } => "Rename",
+                    Dialog::MergeKeywords { .. } => "Merge Keywords",
+                    Dialog::AutoStack { .. } => "Create Stacks",
+                    Dialog::CaptureTime { .. } => "Change Time",
+                    Dialog::Cull { .. } => "Cull",
+                    Dialog::CopySettings { .. } => "Copy",
+                    Dialog::PasteSettings { .. } => "Paste",
+                    Dialog::TextPrompt { command, .. } => prompt_verb(command),
                     _ => "OK",
                 };
                 // installing waits for the licence to be accepted
@@ -1534,7 +1554,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 close = true;
             }
-            Err(e) if matches!(dlg, Dialog::MovePhotos { .. }) => {
+            // a prompt (Rename Folder, …) that is refused closes and says why
+            Err(e) if matches!(dlg, Dialog::MovePhotos { .. } | Dialog::TextPrompt { .. }) => {
                 app.toast(ctx, e);
                 close = true;
             }
@@ -2086,10 +2107,13 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
             if *library != app.session.library_generation() {
                 return Err(crate::i18n::tr("Another library was opened since the photos were dropped: nothing was moved").to_string());
             }
-            if *dont_ask {
+            let moved = crate::panels::left::move_photos(app, Some(ids), folder)?;
+            // only a move that began turns the question off: one refused, or that found the photos there already,
+            // leaves it as it was
+            if *dont_ask && moved > 0 {
                 app.ui.settings.ask_before_move = false;
             }
-            crate::panels::left::move_photos(app, Some(ids), folder).map(|n| json!({"moved": n}))
+            Ok(json!({"moved": moved}))
         }
         // the catalog found: no file dialog; none: File ▸ Import Lightroom Catalog… asks for it
         Dialog::LightroomCatalog { catalog, .. } => {
@@ -2124,6 +2148,19 @@ fn sheet_w(screen: egui::Rect, insets: crate::modern::Insets) -> f32 {
 }
 
 /// Open a one-field dialog that runs `command` with `params` + `{key: typed value}`.
+/// What a one-field prompt's confirm button says, by the command it runs. A command that isn't
+/// listed (one opened by automation) has no verb to name and keeps "OK".
+fn prompt_verb(command: &str) -> &'static str {
+    match command {
+        "album.rename" | "folder.rename" | "version.rename" | "preset.rename" | "mask.renameEffect" => "Rename",
+        "folder.create" | "mask.setEffectGroup" | "app.newLibrary" => "Create",
+        "preset.move" => "Move",
+        "keyword.saveSet" | "filter.savePreset" | "curve.savePreset" | "metadata.savePreset" => "Save",
+        "photo.tagFromTracklog" => "Add Locations",
+        _ => "OK",
+    }
+}
+
 pub fn prompt(app: &mut LccApp, title: &str, hint: &str, value: &str, command: &str, params: serde_json::Value, key: &str) {
     app.ui.dialog =
         Some(Dialog::TextPrompt { title: title.into(), hint: hint.into(), value: value.into(), command: command.into(), params, key: key.into() });
@@ -2825,6 +2862,15 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
                 &[(Z::None, "None"), (Z::Lzw, "LZW"), (Z::Deflate, "ZIP")],
                 &mut opts.tiff_compression,
             );
+            // upstream #2890 (issue #2882 there): LZW stays as picked, with a note on what it costs
+            if opts.tiff_compression == Z::Lzw {
+                let note = if opts.effective_depth() == lcc_engine::export::OutputDepth::U16 {
+                    "At 16 bit, LZW is often larger than no compression, and larger and slower than ZIP. Use it only if other software needs LZW."
+                } else {
+                    "LZW is usually larger and slower than ZIP, and can be larger than no compression. Use it only if other software needs LZW."
+                };
+                crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
+            }
         }
         if opts.format == F::Dng {
             use lcc_engine::export::DngCompression as Z;

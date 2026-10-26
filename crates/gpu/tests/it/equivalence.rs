@@ -70,7 +70,7 @@ fn diff(a: &Rgba8, b: &Rgba8) -> (f64, u8, f64) {
 
 fn check(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) -> (f64, u8) {
     let cpu = render(src, info, s, req).image;
-    let gpu = lcc_gpu::render(src, info, s, req, None).expect("gpu render");
+    let gpu = lcc_gpu::render(src, info, s, req, None).unwrap_or_else(|| panic!("gpu render ({:?})", lcc_gpu::last_fallback()));
     let (mean, max, over) = diff(&cpu, &gpu.image);
     eprintln!("{name:<28} {}x{}  mean {mean:.4}  max {max}  >1: {:.4}%", cpu.width, cpu.height, over * 100.0);
     assert!(mean < MEAN_LSB && max <= MAX_LSB, "{name}: mean {mean:.4} LSB, max {max} LSB");
@@ -80,7 +80,7 @@ fn check(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, 
 /// [`check`] for a healed spot: a few pixels may differ by up to 8 LSB, the mean must stay tiny.
 fn check_spot(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) {
     let cpu = render(src, info, s, req).image;
-    let gpu = lcc_gpu::render(src, info, s, req, None).expect("gpu render");
+    let gpu = lcc_gpu::render(src, info, s, req, None).unwrap_or_else(|| panic!("gpu render ({:?})", lcc_gpu::last_fallback()));
     let (mean, max, over) = diff(&cpu, &gpu.image);
     eprintln!("{name:<28} {}x{}  mean {mean:.4}  max {max}  >1: {:.4}%", cpu.width, cpu.height, over * 100.0);
     assert!(mean < MEAN_LSB / 10.0 && max <= 8, "{name}: mean {mean:.4} LSB, max {max} LSB");
@@ -91,7 +91,7 @@ fn check_spot(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSetti
 /// Such flips are allowed for at most 0.01 % of the pixels; everything else is held to [`check`]'s bounds.
 fn check_warned(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) {
     let cpu = render(src, info, s, req).image;
-    let gpu = lcc_gpu::render(src, info, s, req, None).expect("gpu render");
+    let gpu = lcc_gpu::render(src, info, s, req, None).unwrap_or_else(|| panic!("gpu render ({:?})", lcc_gpu::last_fallback()));
     let (mean, _, over) = diff(&cpu, &gpu.image);
     let flips = cpu.data.iter().zip(&gpu.image.data).filter(|(p, q)| (0..3).any(|c| p[c].abs_diff(q[c]) > MAX_LSB)).count();
     let share = flips as f64 / cpu.data.len() as f64;
@@ -419,6 +419,24 @@ fn cases() -> Vec<(&'static str, Edit)> {
                 },
             ];
         }),
+        ("masks (inverted, add and subtract)", |s| {
+            let radial = |x: f64| MaskShape::Radial { center: Point::new(x, 0.5), rx: 0.15, ry: 0.15, angle: 0.0, feather: 30.0, invert: false };
+            let comp = |op, x| MaskComponent { name: None, op, invert: false, shape: radial(x) };
+            s.masks = vec![
+                Mask {
+                    components: vec![comp(MaskOp::Add, 0.3), comp(MaskOp::Add, 0.7), comp(MaskOp::Subtract, 0.3)],
+                    adjust: lcc_develop::LocalAdjustments { exposure: 0.5, ..Default::default() },
+                    invert: true,
+                    ..Default::default()
+                },
+                Mask {
+                    components: vec![comp(MaskOp::Add, 0.3), comp(MaskOp::Intersect, 0.5)],
+                    adjust: lcc_develop::LocalAdjustments { exposure: -0.5, ..Default::default() },
+                    invert: true,
+                    ..Default::default()
+                },
+            ];
+        }),
         ("masks (local noise, moiré, defringe)", |s| {
             let radial = MaskShape::Radial { center: Point::new(0.4, 0.6), rx: 0.3, ry: 0.25, angle: 0.0, feather: 50.0, invert: false };
             let linear = MaskShape::Linear { start: Point::new(0.5, 0.0), end: Point::new(0.5, 0.7) };
@@ -594,6 +612,34 @@ fn clipped_highlights_stay_neutral_on_both() {
             let p = img.get(90, 120);
             assert!(p[1] < 250 && p[0].max(p[1]).max(p[2]) - p[0].min(p[1]).min(p[2]) <= 1, "{name} {who}: clipped light {p:?}");
         }
+    }
+}
+
+/// Black pixels have no hue. The GPU's `atan2(0, 0)` is undefined (NaN on some GPUs), which made
+/// every exactly black pixel NaN once a colour tool ran, and a lightening vignette then showed it:
+/// the CPU lifted the black corners, the GPU left them black.
+#[test]
+fn black_pixels_match_under_colour_tools_and_a_light_vignette() {
+    if !gpu() {
+        return;
+    }
+    let base = scene(0, 320, 240);
+    // black bars across the frame, reaching into the corners the vignette lightens
+    let src = Arc::new(Rgb32f::from_fn(320, 240, |x, y| if y % 40 < 8 || x % 64 < 6 { [0.0; 3] } else { base.get(x, y) }));
+    let info = SourceInfo { raw: true, ..Default::default() };
+    let req = RenderRequest::fit(320, 240);
+    for (name, f) in [
+        ("black, light vignette + saturation", (|s: &mut DevelopSettings| s.color.saturation = 40.0) as fn(&mut DevelopSettings)),
+        ("black, light vignette + vibrance", |s| s.color.vibrance = 30.0),
+        ("black, light vignette + mixer", |s| s.mixer.yellow.hue = 30.0),
+    ] {
+        let mut s = DevelopSettings::default();
+        s.vignette.amount = 25.0;
+        s.vignette.style = VignetteStyle::HighlightPriority;
+        f(&mut s);
+        check(name, &src, &info, &s, &req);
+        let gpu = lcc_gpu::render(&src, &info, &s, &req, None).expect("gpu render").image;
+        assert!(gpu.get(0, 0)[1] > 0, "{name}: the black corner is not lightened on the GPU");
     }
 }
 
@@ -1212,6 +1258,24 @@ fn soft_proofs_match() {
         ..RenderRequest::fit(64, 64)
     };
     assert!(lcc_gpu::render(&src, &raw, &DevelopSettings::default(), &req, None).is_none(), "declined: the CPU renders it");
+}
+
+/// Colours pushed past white (process V5 keeps their hue, older processes move them toward their luminance) match
+/// the CPU's on every process.
+#[test]
+fn overrange_colours_match_on_every_process() {
+    if !gpu() {
+        return;
+    }
+    let raw = SourceInfo { raw: true, ..Default::default() };
+    let src = scene(0, 900, 600);
+    let req = RenderRequest::fit(640, 640);
+    for p in Process::ALL {
+        let mut s = DevelopSettings { process: p.version(), ..DevelopSettings::default() };
+        s.light.exposure = 2.5;
+        s.color.saturation = 40.0;
+        check(&format!("{p:?} pushed past white"), &src, &raw, &s, &req);
+    }
 }
 
 /// The loupe's display fit done on the device (`try_render_fitted`) gives the pixels the CPU's

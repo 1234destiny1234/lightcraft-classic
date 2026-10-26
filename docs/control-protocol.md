@@ -144,9 +144,19 @@ raws with colour matrices — in the file (DNG) or measured for the camera model
 #730) — and on raws whose white-balance presets give the scale (`lcc_raw::kelvin_presets`), where As Shot
 reads the file's as-shot white; rendered files and raws without matrices use a relative scale
 whose 6500 K / 0 is the as-shot look (the Edit panel shows it as −100..+100). The stored `wb` of such a Kelvin raw
-says `"scale": "kelvin"`; a partial settings JSON given to `develop.merge` or a preset whose `wb` sets `temp` / `tint`
-**without** `scale` keeps the relative meaning it always had (6500 = as shot) on every raw, so agents that mean
-Kelvin on a Kelvin raw pass `"scale": "kelvin"` or use `develop.set` / `develop.wb`.
+says `"scale": "kelvin"`; a partial settings JSON given to `develop.merge`, to a preset's `wb`, or to
+`<cli> render --settings` and which sets `temp` / `tint` **without** `scale` keeps the relative meaning it
+always had (6500 = as shot) on every raw, so agents that mean Kelvin on a Kelvin raw pass `"scale": "kelvin"` or use
+`develop.set` / `develop.wb`. A partial that names only one of `temp` / `tint` is resolved against the photo
+(issue #2910): the photo's white balance is first brought onto the partial's scale with the photo's own as-shot
+white, so the field the partial does not name keeps the look it had instead of being re-read on the partial's scale,
+and the stored result is back on the scale the photo is edited on (`"scale": "kelvin"` on a Kelvin raw). The same
+holds for `preset.apply` when the preset names only one of the two numbers; a preset written by the app, or imported
+from crs / XMP, names `mode`, `temp`, `tint` and `scale` together and behaves exactly as before. A photo whose white
+balance mode answers its own white — `As Shot`, or a named preset on a raw edited in Kelvin — has that white written
+out as `Custom` values first, because a number merged into such a mode would otherwise be stored where no render
+reads it (the panel would show 5800 while the photo stayed at as shot); a partial that names a `mode` itself stays
+authoritative. Partials naming both fields mean the same as before.
 
 Image navigation is also available directly as the UI command `view.navigate`, with
 `{zoom?: "fit" | "fill" | {"percent": number}, pan?: [x, y]}`. Percentage zoom accepts fractional
@@ -395,11 +405,11 @@ the pending name. `ui.dialog.confirm` starts the same import into the selected a
 
 ## Panel docking
 
-Library, Tools, and Presets panels can be regrouped, split, floated within the app window, closed, and reopened. Tools keeps the current Edit/Crop/Masking mode; the photo view and filmstrip stay together. The document/session view is protected. Layouts, active tabs, panel visibility, and floating rectangles are saved with the app's existing UI preferences. These operations do not edit document contents.
+Library, Tools, and Presets panels can be regrouped, split, floated within the app window, closed, and reopened. Tools keeps the current Edit/Crop/Masking mode; the photo view and filmstrip stay together. The document/session view is protected. Layouts, active tabs, panel visibility, and floating rectangles are saved with the app's existing UI preferences as a craft-ui docking workspace (`docking`: `version`, `layout`, `hidden`, `saved`, `locked`); settings written before workspaces had a `version` load as version 1. These operations do not edit document contents.
 
 Panel IDs: `library`, `tools`, `presets`. The protected center is `canvas`.
 
-`ui.dock` accepts `operation` and `panel`. Operations are `open`, `close`, `activate`, `float` (with finite positive `rect: [x, y, width, height]`), or `move` (with `target` and `zone: center|left|right|top|bottom`). Center groups with the target; side zones split beside it. `ui.dock.reset` restores the default arrangement. Invalid moves return an error without changing the layout.
+`ui.dock` accepts `operation` and `panel`. Operations are `open`, `close`, `activate`, `float` (with finite positive `rect: [x, y, width, height]`), or `move` (with `target` and `zone: center|tab|left|right|top|bottom|above|below`; `Center`, `Left`, `Right`, `Top` and `Bottom` also parse, while `tab`, `above` and `below` are lowercase only). Center and tab group with the target; side zones split beside it; above and below put the panel in a new group above or below the target's group. `ui.dock.reset` restores the default arrangement. Invalid moves return an error without changing the layout. Both commands return `{"docking": workspace}`.
 
 Invoke these UI commands through `engine.execute`, for example `{"command":"ui.dock","params":{"operation":"float","panel":"tools","rect":[100,100,320,440]}}`.
 

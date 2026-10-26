@@ -65,8 +65,9 @@ impl std::fmt::Display for AllocError {
 
 impl std::error::Error for AllocError {}
 
-/// The largest single image buffer [`Image::try_new`] allocates (64 GiB).
-pub const MAX_IMAGE_BYTES: usize = 64 << 30;
+/// The largest single image buffer [`Image::try_new`] allocates (64 GiB, or `isize::MAX` bytes on
+/// 32-bit targets such as wasm32, where 64 GiB doesn't fit in `usize`).
+pub const MAX_IMAGE_BYTES: usize = if usize::BITS >= 64 { 1 << 36 } else { isize::MAX as usize };
 
 /// A vector of `n` copies of `v`, or an error when it can't be had (overflow, past [`MAX_IMAGE_BYTES`],
 /// allocator failure) instead of an abort. `width`/`height` only label the error.
@@ -94,9 +95,20 @@ pub type Rgb32f = Image<[f32; 3]>;
 pub type Rgba8 = Image<[u8; 4]>;
 pub type Plane = Image<f32>;
 
+/// `width` × `height`, or 0 × 0 when the pixel count overflows `usize` (issue #2140): an image's
+/// size always matches its data, so indexing it never wraps.
+fn checked_dims(width: usize, height: usize) -> (usize, usize, usize) {
+    match width.checked_mul(height) {
+        Some(n) => (width, height, n),
+        None => (0, 0, 0),
+    }
+}
+
 impl<T: Copy + Default> Image<T> {
+    /// A `width` × `height` image of default pixels (0 × 0 when the pixel count overflows `usize`).
     pub fn new(width: usize, height: usize) -> Self {
-        Self { width, height, data: vec![T::default(); width * height] }
+        let (width, height, n) = checked_dims(width, height);
+        Self { width, height, data: vec![T::default(); n] }
     }
     /// [`Self::new`] that returns an error instead of aborting when the buffer can't be allocated.
     pub fn try_new(width: usize, height: usize) -> Result<Self, AllocError> {
@@ -107,11 +119,14 @@ impl<T: Copy + Default> Image<T> {
         let n = width.checked_mul(height).ok_or(AllocError { width, height })?;
         Ok(Self { width, height, data: try_vec(n, v, width, height)? })
     }
+    /// A `width` × `height` image of `v` (0 × 0 when the pixel count overflows `usize`).
     pub fn filled(width: usize, height: usize, v: T) -> Self {
-        Self { width, height, data: vec![v; width * height] }
+        let (width, height, n) = checked_dims(width, height);
+        Self { width, height, data: vec![v; n] }
     }
     pub fn from_fn(width: usize, height: usize, f: impl Fn(usize, usize) -> T) -> Self {
-        let mut data = Vec::with_capacity(width * height);
+        let (width, height, n) = checked_dims(width, height);
+        let mut data = Vec::with_capacity(n);
         for y in 0..height {
             for x in 0..width {
                 data.push(f(x, y));
@@ -211,7 +226,7 @@ impl<T: Copy + Default> Image<T> {
             } else {
                 for (x, (o, s)) in row.iter_mut().zip(a).enumerate() {
                     let t = if x < other.width && y < other.height {
-                        other.data.get(y * other.width + x).copied().unwrap_or_default()
+                        y.checked_mul(other.width).and_then(|i| i.checked_add(x)).and_then(|i| other.data.get(i)).copied().unwrap_or_default()
                     } else {
                         U::default()
                     };
@@ -368,6 +383,14 @@ mod tests {
     use super::*;
     use lcc_geom::Orientation;
 
+    /// A size whose pixel count overflows gives an empty image, not a wrapped one (issue #2140).
+    #[test]
+    fn overflowing_sizes_give_empty_images() {
+        for img in [Plane::new(usize::MAX, 3), Plane::filled(3, usize::MAX, 1.0), Plane::from_fn(usize::MAX / 2, 3, |_, _| 1.0)] {
+            assert_eq!((img.width, img.height, img.data.len()), (0, 0, 0));
+        }
+    }
+
     #[test]
     fn huge_images_are_an_error_not_an_abort() {
         assert!(Rgb32f::try_new(usize::MAX / 2, 4).is_err());
@@ -384,6 +407,12 @@ mod tests {
         assert_eq!((c.width, c.height), (4, 3));
         assert_eq!(c.get(1, 1), 3.0);
         assert_eq!(c.get(3, 2), 1.0);
+        // a hostile `other` whose width times row overflows reads defaults instead of panicking
+        let wide = Plane { width: usize::MAX, height: 3, data: vec![5.0; 2] };
+        let narrow = Plane::filled(1, 3, 1.0);
+        let d = narrow.zip_map(&wide, |x, y| x + y);
+        assert_eq!(d.get(0, 0), 6.0);
+        assert_eq!(d.get(0, 2), 1.0);
         let same = a.zip_map(&a, |x, y| x + y);
         assert!(same.data.iter().all(|&v| v == 2.0));
     }

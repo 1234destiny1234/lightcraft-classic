@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 lcc-brand = { workspace = true }
+lcc-camdb = { workspace = true }
 lcc-develop = { workspace = true }
 lcc-raw = { workspace = true }
 lcc-meta = { workspace = true }
@@ -27,6 +28,9 @@ siphasher = { workspace = true }
 # catalog storage v4 (pure Rust, MIT OR Apache-2.0); the web app keeps the JSON snapshot
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 redb = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+same-file = { workspace = true }
 
 [dev-dependencies]
 lcc-fuzzkit = { workspace = true }

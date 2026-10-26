@@ -53,7 +53,10 @@ per full-quality update, which leaves the slider dragging a frozen picture. So a
 `ui.inspect` → `perf.adjustQuality` reports the decision: `idle` (no drag, or the setting is off),
 `full`, `draft` (falling back, slider moving) or `settled` (falling back, slider still).
 
-## Measurements
+## Historical measurements
+
+The following measurements predate the 26.44 integration refresh. They describe
+their original runs; they are not guarantees for current main or every RAW.
 
 Kaan88's warmed measurements at Fit in a 1600 × 1000 window on an RTX 4070 Ti SUPER (DX12), HDR
 output off. Latency includes control-channel dispatch; update rates are Main-render completions
@@ -102,3 +105,20 @@ still, the next drag starting in the fallback) or fast (never falls back). `regi
 cover `HqDrag` itself, including hostile clocks and timings.
 
 Sources: own design, on the existing render scheduling (`DragScale`'s timing and verdicts).
+
+## Cache and first-zoom limits
+
+A GPU-fitted view can be stored in the size-independent view cache at its drawn
+resolution. The CPU display fit runs after caching, so that path can keep a larger
+preview. Cached stand-ins therefore do not necessarily have identical dimensions
+or bytes before and after GPU fitting. Settled views and exports use their normal
+render requests; the GPU-fit equivalence test permits at most one output level of
+difference for its tested inputs.
+
+Original preparation after a short look is opportunistic. A large RAW can still
+be decoding when the user zooms, and tile-ring completion is distinct from the
+time the visible area becomes sharp. The 100 MP GFX100S case did not consistently
+improve in the 2026-10-26 review. Full-resolution decoding, concurrent source work
+and memory pressure remain follow-up measurements; delaying warming alone did not
+establish a causal fix. Benchmark updates belong with their exact base revision,
+quality state, native-window setup and timing definition in PR #506.

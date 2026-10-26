@@ -80,6 +80,7 @@ pub const FIELDS: &[(&str, &str, Kind)] = &[
     ("kind", "File Type", Kind::Choice(&[("image", "Image"), ("raw", "Raw"), ("video", "Video")])),
     ("format", "File Format", Kind::Text),
     ("duration", "Video Duration", Kind::Number),
+    ("sameContent", "Same Content as Another Photo", Kind::Bool),
     // Date
     ("captureDate", "Capture Date", Kind::Date),
     ("importDate", "Import Date", Kind::Date),
@@ -130,6 +131,10 @@ pub const FIELDS: &[(&str, &str, Kind)] = &[
     // Assisted Culling
     ("sharpness", "Focus (assisted culling)", Kind::Number),
     ("bestOfGroup", "Best of Similar Shots", Kind::Bool),
+    ("clipped", "Clipped (assisted culling)", Kind::Number),
+    ("eyesOpen", "Eyes Open", Kind::Number),
+    ("aesthetic", "Aesthetic", Kind::Number),
+    ("cullScore", "Cull Score", Kind::Number),
 ];
 
 /// The fields the field menu shows at its top level, before the groups.
@@ -139,7 +144,7 @@ pub const TOP_LEVEL_FIELDS: &[&str] = &["rating", "flag", "label", "text"];
 /// once or in [`TOP_LEVEL_FIELDS`].
 pub const FIELD_GROUPS: &[(&str, &[&str])] = &[
     ("Source", &["album", "virtualCopy", "copyName", "stacked", "immich"]),
-    ("File", &["fileName", "extension", "filePath", "folder", "kind", "format", "duration"]),
+    ("File", &["fileName", "extension", "filePath", "folder", "kind", "format", "duration", "sameContent"]),
     ("Date", &["captureDate", "importDate", "editDate"]),
     ("Keywords & People", &["keywords", "keywordCount", "person", "personCount", "faceCount"]),
     ("Description", &["title", "caption", "altText", "creator", "copyright", "usageTerms", "copyrightStatus"]),
@@ -147,7 +152,7 @@ pub const FIELD_GROUPS: &[(&str, &[&str])] = &[
     ("Location", &["location", "sublocation", "city", "state", "country", "hasGps"]),
     ("Size", &["longEdge", "shortEdge", "width", "height", "aspect", "megapixels"]),
     ("Develop", &["edited", "cropped", "treatment"]),
-    ("Assisted Culling", &["sharpness", "bestOfGroup"]),
+    ("Assisted Culling", &["sharpness", "bestOfGroup", "clipped", "eyesOpen", "aesthetic", "cullScore"]),
 ];
 
 /// The field-menu group `field` sits in; `None` for a top-level or unknown field.
@@ -780,8 +785,37 @@ fn lower(v: &Value) -> String {
     }
 }
 
+/// The text a Text rule looks through: every searched field of `p`, trimmed and lower-cased.
+pub(crate) fn rule_text_of(p: &Photo) -> String {
+    let m = &p.meta;
+    [
+        p.file_name.as_str(),
+        &m.title,
+        &m.caption,
+        &m.camera,
+        &m.lens,
+        &m.location,
+        &m.city,
+        &m.state,
+        &m.country,
+        &m.alt_text,
+        &p.format,
+        &m.keywords.join(" "),
+        &p.people().join(" "),
+        p.copy_name.as_deref().unwrap_or(""),
+        &p.plugin_fields.values().map(plugin_value_text).collect::<Vec<_>>().join(" "),
+    ]
+    .join(" ")
+    .trim()
+    .to_lowercase()
+}
+
 fn text_op(op: &str, have: &str, want: &str) -> bool {
-    let have = have.trim().to_lowercase();
+    text_op_lowered(op, &have.trim().to_lowercase(), want)
+}
+
+/// [`text_op`] on text trimmed and lower-cased already.
+fn text_op_lowered(op: &str, have: &str, want: &str) -> bool {
     match op {
         "contains" => want.split_whitespace().all(|w| have.contains(w)),
         "notContains" => !want.split_whitespace().any(|w| have.contains(w)),
@@ -979,6 +1013,7 @@ impl Rule {
             "virtualCopy" => yes(p.copy_of.is_some()),
             "copyName" => text(p.copy_name.as_deref().unwrap_or("")),
             "stacked" => yes(cat.stack_of(p.id).is_some()),
+            "sameContent" => yes(cat.has_same_content(p)),
             "immich" => {
                 let want = if want == "notlinked" { "notLinked" } else { want.as_str() };
                 crate::query::immich_state_is(cat, p.id, want) == (op == "is")
@@ -993,27 +1028,10 @@ impl Rule {
             "person" => names_op(op, &p.people(), &want),
             "personCount" => num_op(op, Some(p.people().len() as f64), value),
             "faceCount" => num_op(op, Some(p.face_count() as f64), value),
-            "text" => {
-                let all = [
-                    p.file_name.as_str(),
-                    &m.title,
-                    &m.caption,
-                    &m.camera,
-                    &m.lens,
-                    &m.location,
-                    &m.city,
-                    &m.state,
-                    &m.country,
-                    &m.alt_text,
-                    &p.format,
-                    &m.keywords.join(" "),
-                    &p.people().join(" "),
-                    p.copy_name.as_deref().unwrap_or(""),
-                    &p.plugin_fields.values().map(plugin_value_text).collect::<Vec<_>>().join(" "),
-                ]
-                .join(" ");
-                text(&all)
-            }
+            "text" => match cat.rule_text(p) {
+                Some(have) => text_op_lowered(op, have, &want),
+                None => text_op_lowered(op, &rule_text_of(p), &want),
+            },
             "fileName" => text(&p.file_name),
             "extension" => text_op(op, p.extension(), want.trim_start_matches('.')),
             "duration" => num_op(op, p.duration.filter(|d| d.is_finite()), value),
@@ -1084,6 +1102,10 @@ impl Rule {
             }
             "sharpness" => num_op(op, p.analysis.map(|a| a.sharpness as f64), value),
             "bestOfGroup" => yes(p.analysis.is_some_and(|a| a.best || a.group.is_none())),
+            "clipped" => num_op(op, p.analysis.map(|a| a.clipped as f64), value),
+            "eyesOpen" => num_op(op, p.analysis.and_then(|a| a.eyes_open).map(|v| v as f64), value),
+            "aesthetic" => num_op(op, p.analysis.and_then(|a| a.aesthetic).map(|v| v as f64), value),
+            "cullScore" => num_op(op, p.analysis.and_then(|a| a.cull_score).map(|v| v as f64), value),
             "album" => {
                 let id = album_rule_id(value);
                 // a smart album's photos are its matches; one being evaluated (a loop) holds none
@@ -1121,6 +1143,14 @@ impl RuleSet {
         self.rules.iter().any(|r| match r {
             Rule::Group { group } => group.depends_on_now(),
             Rule::Field { op, .. } => op == "inLast" || op == "notInLast" || CALENDAR_OPS.contains(&op.as_str()),
+        })
+    }
+
+    /// Whether a rule (nested groups included) tests `field`.
+    pub fn reads(&self, field: &str) -> bool {
+        self.rules.iter().any(|r| match r {
+            Rule::Group { group } => group.reads(field),
+            Rule::Field { field: f, .. } => f == field,
         })
     }
 
@@ -1236,7 +1266,7 @@ impl RuleSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ColorLabel, Flag, PhotoId, Source};
+    use crate::{Analysis, ColorLabel, Flag, PhotoId, Source};
     use serde_json::json;
 
     fn photo(id: u64) -> Photo {
@@ -1581,6 +1611,82 @@ mod tests {
         assert!(m(&p, "city", "is", json!("porto")) && m(&p, "state", "startsWith", json!("porto")) && m(&p, "country", "is", json!("portugal")));
         assert!(!m(&p, "city", "is", json!("portugal")), "City tests only the city");
         assert!(m(&p, "location", "contains", json!("portugal")), "Location still covers the country");
+    }
+
+    /// Same Content as Another Photo: another photo of the library has the same file content, under another name
+    /// or in another folder (a Duplicate's `:dup` key included).
+    /// * A virtual copy is the same photo, not another one: it never matches and never makes a match.
+    /// * Neither does a photo in Recently Deleted or one only browsed in Local, nor a photo with no content hash.
+    /// * It follows the library: a twin deleted, restored, removed or given other content changes the others.
+    #[test]
+    fn same_content_as_another_photo() {
+        use crate::Op;
+        let mut cat = Catalog::new();
+        let with = |id: u64, hash: Option<&str>| {
+            let mut p = photo(id);
+            p.content_hash = hash.map(str::to_string);
+            p
+        };
+        let mut v = with(5, Some("cc"));
+        v.copy_of = Some(PhotoId(4));
+        let mut local = with(7, Some("dd"));
+        local.local = true;
+        for p in [with(1, Some("aa")), with(2, Some("aa:dup2")), with(3, None), with(4, Some("cc")), v, with(6, Some("dd")), local, with(8, None)] {
+            cat.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        }
+        let same = |cat: &Catalog| -> Vec<u64> {
+            let r = rs(json!({"rules": [{"field": "sameContent", "op": "is", "value": true}]}));
+            let not = rs(json!({"rules": [{"field": "sameContent", "op": "is", "value": false}]}));
+            let mut ids: Vec<u64> = cat.photos().filter(|p| r.matches(p, cat)).map(|p| p.id.0).collect();
+            ids.sort_unstable();
+            assert!(cat.photos().all(|p| r.matches(p, cat) != not.matches(p, cat)), "is no is the opposite");
+            ids
+        };
+        assert_eq!(same(&cat), vec![1, 2], "a Duplicate's key is the same content; a virtual copy and a Local photo don't count");
+        // the twin goes to Recently Deleted: the other is alone, and counts as touched (album counts and views
+        // follow an edit through the photos it touched); restored, both again
+        let before = cat.revision;
+        cat.apply(Op::SetDeleted { id: PhotoId(2), deleted: true }).unwrap();
+        assert_eq!(same(&cat), Vec::<u64>::new());
+        assert_eq!(cat.touched_since(before), Some(vec![PhotoId(1), PhotoId(2)]));
+        cat.apply(Op::SetDeleted { id: PhotoId(2), deleted: false }).unwrap();
+        assert_eq!(same(&cat), vec![1, 2]);
+        // a batch that fails midway is undone as a whole: nothing changed
+        let bad = Op::Batch { ops: vec![Op::SetDeleted { id: PhotoId(2), deleted: true }, Op::SetRating { id: PhotoId(2), rating: 9 }] };
+        assert!(cat.apply(bad).is_err());
+        assert_eq!(same(&cat), vec![1, 2]);
+        // a copy of the catalog (made to count in the background) knows nothing yet, and while no smart album asks
+        // its edits follow no contents; once one asks, they touch the twins, so counts made before them can follow
+        let mut copy = cat.clone();
+        copy.apply(Op::SetDeleted { id: PhotoId(3), deleted: true }).unwrap();
+        let mut album = crate::Album::new(crate::AlbumId(1), "Twins");
+        album.smart = Some(Box::new(crate::Filter {
+            rule_set: Some(rs(json!({"rules": [{"field": "sameContent", "op": "is", "value": true}]}))),
+            ..Default::default()
+        }));
+        copy.apply(Op::AddAlbum { album }).unwrap();
+        let before = copy.revision;
+        copy.apply(Op::SetDeleted { id: PhotoId(2), deleted: true }).unwrap();
+        assert_eq!(copy.touched_since(before), Some(vec![PhotoId(1), PhotoId(2)]));
+        // the Local photo is imported for real
+        cat.apply(Op::SetLocal { id: PhotoId(7), local: false }).unwrap();
+        assert_eq!(same(&cat), vec![1, 2, 6, 7]);
+        // a file's content changed (Reload): it leaves one pair and joins another
+        let p = cat.photo(PhotoId(1)).unwrap().clone();
+        let set = |hash: &str| Op::SetContent {
+            id: PhotoId(1),
+            width: p.width,
+            height: p.height,
+            file_size: p.file_size,
+            content_hash: Some(hash.into()),
+            preview_only: None,
+            preview_checked: String::new(),
+        };
+        cat.apply(set("dd")).unwrap();
+        assert_eq!(same(&cat), vec![1, 6, 7]);
+        // gone for good
+        cat.apply(Op::RemovePhoto { id: PhotoId(6) }).unwrap();
+        assert_eq!(same(&cat), vec![1, 7]);
     }
 
     /// In a Stack, Video Duration (seconds; photos have none), Cropped and Treatment.
@@ -1972,5 +2078,29 @@ mod tests {
         let mut labels: Vec<&str> = FIELD_GROUPS.iter().map(|g| g.0).collect();
         labels.dedup();
         assert_eq!(labels.len(), FIELD_GROUPS.len(), "group labels are unique");
+    }
+
+    #[test]
+    fn culling_score_fields_match_analysis() {
+        let cat = Catalog::new();
+        let mut p = photo(1);
+        p.analysis = Some(Analysis {
+            sharpness: 70.0,
+            clipped: 0.02,
+            group: None,
+            best: false,
+            eyes_open: Some(0.8),
+            aesthetic: Some(6.5),
+            cull_score: Some(0.7),
+        });
+        let m =
+            |field: &str, op: &str, value: serde_json::Value| rs(json!({"rules": [{"field": field, "op": op, "value": value}]})).matches(&p, &cat);
+        assert!(m("eyesOpen", "gte", json!(0.5)));
+        assert!(m("aesthetic", "gte", json!(6.0)));
+        assert!(m("cullScore", "gte", json!(0.5)));
+        assert!(m("clipped", "lte", json!(0.1)));
+        assert!(!m("eyesOpen", "gte", json!(0.9)));
+        p.analysis = Some(Analysis { sharpness: 10.0, clipped: 0.0, group: None, best: false, ..Analysis::default() });
+        assert!(!rs(json!({"rules": [{"field": "eyesOpen", "op": "gte", "value": 0.0}]})).matches(&p, &cat), "missing eyes-open is not 0");
     }
 }

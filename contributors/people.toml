@@ -73,3 +73,17 @@ sync_github_name = true
 
 [people.Kaan88]
 sync_github_name = true
+
+
+[people.esli1283]
+real_name = "Aaron Lopez"
+sync_github_name = false
+
+[people.dotCooCoo]
+real_name = "Robert Lee"
+
+[people.samuelili]
+real_name = "Samuel Li"
+
+[people.hayone1]
+sync_github_name = true

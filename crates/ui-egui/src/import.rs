@@ -3,7 +3,8 @@
 //! a grid of thumbnails with checkboxes (duplicates marked and unchecked; Shift-click sets a
 //! range), the destination (add in place / copy or move into the library's `Originals/` or a
 //! chosen folder, filed by day, by month, into one folder or by a custom folder template,
-//! optionally renamed), an album (existing or new), a preset and keywords to apply. Importing
+//! optionally renamed), an album (existing or new), a preset, an optional batch-edit recipe
+//! ("Batch edits": develop controls set on every new photo) and keywords to apply. Importing
 //! runs on a worker thread (files are probed, copied or moved there) and its batches join the
 //! catalog between frames, with a row and ✕ in the activity stack (issue #345); the whole import is
 //! one undo step.
@@ -67,6 +68,12 @@ pub struct ImportDialog {
     pub new_album: String,
     /// Preset id ("" = none).
     pub preset: String,
+    /// An optional batch-edit recipe: develop control id → value (only controls moved off their
+    /// default are kept), set on every photo this import adds, on top of its sidecar, camera
+    /// default and preset (the `recipe` param of `library.import`).
+    pub recipe: std::collections::BTreeMap<String, f64>,
+    /// Name typed for "Save as Preset" (the recipe saved for reuse).
+    pub recipe_name: String,
     /// Comma-separated keywords.
     pub keywords: String,
     /// Copy: destination folder ("" = the library's Originals/).
@@ -95,6 +102,14 @@ pub struct ImportDialog {
     /// What to do with those: `restore` (the default: the photo comes back with its edits), `fresh`
     /// (imported as a new photo, the old record deleted) or "" (leave them) — the `onDeleted` param.
     pub on_deleted: String,
+    /// The scan's folder walk stopped at a depth or entry limit: there may be more photos than the
+    /// review lists ([`ScanOutput::truncated`]).
+    pub scan_limited: bool,
+    /// Folders the scan couldn't list ([`ScanOutput::unreadable`]).
+    pub unreadable: usize,
+    /// Files in the scanned folders that are not a supported photo type, XMP sidecars not counted
+    /// ([`ScanOutput::unsupported`]).
+    pub unsupported: usize,
     /// "Don't Import Suspected Duplicates" unchecked: files whose content the library already has
     /// can be checked and come in as new photos (the `importDuplicates` param).
     pub import_duplicates: bool,
@@ -150,10 +165,18 @@ impl ImportDialog {
             }
         }
     }
+    /// Candidate `i` is a file whose photo is only browsed (Local): the scan offers it (it isn't in the
+    /// library). Importing it brings that record into the library where the file is, whatever the
+    /// transfer mode.
+    pub fn is_browsed(&self, i: usize) -> bool {
+        self.candidates.get(i).is_some_and(|c| c.error.is_none() && c.duplicate.is_none() && c.local)
+    }
     /// Candidate `i` can be checked: a readable file the library doesn't have, or one whose photo
-    /// is in Recently Deleted — even with "Leave them", a click picks it (issue #1285).
+    /// is in Recently Deleted — even with "Leave them", a click picks it (issue #1285). A browsed
+    /// photo can't be copied or moved: the engine would add it in place, so copying leaves it out.
     pub fn importable(&self, i: usize) -> bool {
         self.candidates.get(i).is_some_and(|c| c.error.is_none() && (c.duplicate.is_none() || self.is_trashed(i)))
+            && !(self.copy && self.candidates.get(i).is_some_and(|c| c.local))
             || (self.import_duplicates && self.is_suspected_duplicate(i))
     }
     /// Candidate `i` has the same content as a photo the library has (not in Recently Deleted) or
@@ -188,7 +211,7 @@ impl ImportDialog {
     }
     /// Any file of type `ty` is checked.
     pub fn type_checked(&self, ty: &str) -> bool {
-        self.candidates.iter().zip(&self.checked).any(|(c, on)| *on && file_type(c) == ty)
+        self.candidates.iter().zip(&self.checked).enumerate().any(|(i, (c, on))| *on && self.importable(i) && file_type(c) == ty)
     }
     /// Check (the importable ones) or uncheck every file of type `ty`: the raws only, say, and not
     /// the JPEGs kept beside them (issue #344).
@@ -261,6 +284,12 @@ impl ImportDialog {
             }
             o => Ok(Some(o.to_string())),
         }
+    }
+    /// Keywords or a preset are set while a checked browsed photo would join the library as it is:
+    /// the engine applies them to new files only, so the review says so.
+    pub(crate) fn options_skip_browsed(&self) -> bool {
+        let has_options = !self.keywords().is_empty() || !self.preset.is_empty() || !self.metadata_preset.is_empty();
+        has_options && !self.copy && (0..self.candidates.len()).any(|i| self.checked.get(i).copied().unwrap_or(false) && self.is_browsed(i))
     }
     fn keywords(&self) -> Vec<String> {
         self.keywords.split(',').map(str::trim).filter(|k| !k.is_empty()).map(str::to_string).collect()
@@ -639,7 +668,7 @@ pub fn poll_scan(app: &mut LccApp, ctx: &egui::Context) {
         }
         // what the library doesn't know yet joins the Local view
         let queue: Vec<String> =
-            out.candidates.iter().filter(|c| c.duplicate != Some("path".into()) && c.error.is_none()).map(|c| c.path.clone()).collect();
+            out.candidates.iter().filter(|c| c.duplicate != Some("path".into()) && !c.local && c.error.is_none()).map(|c| c.path.clone()).collect();
         if !queue.is_empty() {
             let undo0 = app.session.undo.len();
             let total = queue.len();
@@ -654,6 +683,7 @@ pub fn poll_scan(app: &mut LccApp, ctx: &egui::Context) {
     }
     app.renderer.forget_imports();
     let mut d = ImportDialog::new(out.candidates);
+    (d.scan_limited, d.unreadable, d.unsupported) = (out.truncated, out.unreadable, out.unsupported);
     let trashed = d
         .candidates
         .iter()
@@ -757,6 +787,9 @@ pub fn start(app: &mut LccApp, d: &ImportDialog) -> Result<Value, String> {
         (true, true) => "move",
     };
     let mut params = json!({"mode": mode, "keywords": d.keywords()});
+    if !d.recipe.is_empty() {
+        params["recipe"] = recipe_items(&d.recipe);
+    }
     if !d.on_deleted.is_empty() {
         params["onDeleted"] = json!(d.on_deleted);
     }
@@ -1088,8 +1121,28 @@ fn show_existing(app: &mut LccApp, ctx: &egui::Context, existing: &[u64]) -> boo
 pub(crate) fn dup_counts(d: &ImportDialog) -> (usize, usize, usize) {
     let trashed = d.trashed.iter().filter(|t| **t).count();
     let in_source = d.candidates.iter().filter(|c| c.duplicate.as_deref() == Some("content") && c.existing.is_none()).count();
-    let dups = d.candidates.iter().filter(|c| c.duplicate.is_some()).count().saturating_sub(trashed).saturating_sub(in_source);
+    // (a browsed photo isn't offered while copying: it counts as already there)
+    let browsed = if d.copy { (0..d.candidates.len()).filter(|i| d.is_browsed(*i)).count() } else { 0 };
+    let dups = (d.candidates.iter().filter(|c| c.duplicate.is_some()).count() + browsed).saturating_sub(trashed).saturating_sub(in_source);
     (dups, in_source, trashed)
+}
+
+/// The one line that says what the scan left out, for the review's header: a folder walk that
+/// stopped at its limit, folders it couldn't read, files that are not a supported photo type.
+/// `None` when it left nothing out (the review then shows no line at all).
+pub(crate) fn scan_note(d: &ImportDialog) -> Option<String> {
+    let plural = |n: usize| if n == 1 { "" } else { "s" };
+    let mut parts: Vec<String> = Vec::new();
+    if d.scan_limited {
+        parts.push(crate::i18n::tr("Stopped at the scan limit: there may be more photos").to_string());
+    }
+    if d.unreadable > 0 {
+        parts.push(crate::i18n::tr_format!("{n} folder{} could not be read", plural(d.unreadable), n = d.unreadable));
+    }
+    if d.unsupported > 0 {
+        parts.push(crate::i18n::tr_format!("{n} file{} skipped (not a supported photo type)", plural(d.unsupported), n = d.unsupported));
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
 /// The dialog body: options, then the candidate grid.
@@ -1148,6 +1201,11 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
             }
         });
     });
+    // what the scan left out, when it left something out
+    if let Some(note) = scan_note(d) {
+        let r = ui.label(egui::RichText::new(note).color(t.caution).small());
+        register(ui.ctx(), "label:importScanNote", r.rect);
+    }
     // with more than one file type: a toggle per type checks or unchecks all of its files
     let types = d.file_types();
     if types.len() > 1 {
@@ -1357,6 +1415,14 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
             d.set_skip_duplicates(skip);
         }
     });
+    if d.options_skip_browsed() {
+        let t = Tokens::get(ui.ctx());
+        ui.label(
+            egui::RichText::new(crate::i18n::tr("Keywords and presets apply to new files only, not to photos already in Local"))
+                .color(t.text_dim)
+                .small(),
+        );
+    }
     if d.trashed.iter().any(|t| *t) {
         field(ui, "In Recently Deleted", |ui| {
             let cur = match d.on_deleted.as_str() {
@@ -1449,6 +1515,96 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
     field(ui, "Keywords", |ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut d.keywords).hint_text(crate::i18n::tr("comma, separated")).desired_width(f32::INFINITY));
         register(ui.ctx(), "field:importKeywords", r.rect);
+    });
+    recipe_section(app, ui, d);
+}
+
+/// The develop controls offered in the import review's optional batch-edit recipe: the everyday
+/// adjustments, not a second editor. Each must be one a recipe may name (`library.import` refuses
+/// the others: no white balance, geometry or crop); a test holds the list to that. Anything else is
+/// reached by choosing or saving a preset.
+const RECIPE_CONTROLS: &[&str] = &[
+    "light.exposure",
+    "light.contrast",
+    "light.highlights",
+    "light.shadows",
+    "light.whites",
+    "light.blacks",
+    "color.vibrance",
+    "color.saturation",
+    "effects.clarity",
+    "effects.texture",
+    "effects.dehaze",
+    "detail.sharpenAmount",
+    "grain.amount",
+    "vignette.amount",
+];
+
+/// A recipe as the `recipe` param of `library.import` and `preset.saveRecipe`.
+fn recipe_items(recipe: &std::collections::BTreeMap<String, f64>) -> Value {
+    Value::Array(recipe.iter().map(|(id, v)| json!({"id": id, "value": v})).collect())
+}
+
+/// Record a slider's new value in the recipe: a control back at its default is no longer named.
+fn note_recipe_value(recipe: &mut std::collections::BTreeMap<String, f64>, spec: &lcc_develop::controls::ControlSpec, value: f64) {
+    if (value - spec.default).abs() < 1e-9 {
+        recipe.remove(spec.id);
+    } else {
+        recipe.insert(spec.id.to_string(), value);
+    }
+}
+
+/// The optional "Batch edits" section of the import review: a small recipe of develop controls set
+/// on every photo this import adds, on top of its XMP sidecar, camera default and the chosen preset.
+/// The recipe lives only in the dialog until the import runs, so cancelling changes neither the
+/// catalog nor the preset collections; "Save as Preset" is the explicit way to keep one for reuse.
+pub(crate) fn recipe_section(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
+    let t = Tokens::get(ui.ctx());
+    let open_id = egui::Id::new("import-recipe-open");
+    let mut open = ui.ctx().data(|m| m.get_temp::<bool>(open_id)).unwrap_or(false);
+    field(ui, "Batch edits", |ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        if crate::widgets::text_button(ui, "importRecipeToggle", if open { "Hide adjustments" } else { "Adjust…" }, open).clicked() {
+            open = !open;
+        }
+        let n = d.recipe.len();
+        let summary = if n == 0 { crate::i18n::tr("None").to_string() } else { crate::i18n::tr_format!("Adjustments: {n}", n = n) };
+        ui.label(egui::RichText::new(summary).color(if n == 0 { t.text_dim } else { t.text_label }));
+    });
+    ui.ctx().data_mut(|m| m.insert_temp(open_id, open));
+    if !open {
+        return;
+    }
+    ui.label(
+        egui::RichText::new(crate::i18n::tr(
+            "Set on every photo this import adds, after its XMP sidecar and the preset above; photos the library already has are left alone. A slider left at its default changes nothing. Nothing is saved unless you save it as a preset.",
+        ))
+        .color(t.text_dim)
+        .small(),
+    );
+    for &id in RECIPE_CONTROLS {
+        let Some(spec) = lcc_develop::controls::find(id) else { continue };
+        let v = d.recipe.get(id).copied().unwrap_or(spec.default);
+        if let Some(nv) = crate::widgets::slider(ui, spec, v, true, None).value {
+            note_recipe_value(&mut d.recipe, spec, nv);
+        }
+    }
+    field(ui, "Recipe", |ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        crate::text_field::TextField::singleline("field:importRecipeName", &mut d.recipe_name)
+            .hint(crate::i18n::tr("name for a saved preset"))
+            .width((ui.available_width() - 110.0).clamp(80.0, 160.0))
+            .show(ui);
+        let can = !d.recipe.is_empty() && !d.recipe_name.trim().is_empty();
+        let b = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Save as Preset")));
+        register(ui.ctx(), "button:importRecipeSave", b.rect);
+        if b.clicked() {
+            let params = json!({"name": d.recipe_name.trim(), "recipe": recipe_items(&d.recipe)});
+            match app.run("preset.saveRecipe", params) {
+                Ok(_) => app.toast(ui.ctx(), crate::i18n::tr("Saved as a preset")),
+                Err(e) => app.toast_error(ui.ctx(), e),
+            }
+        }
     });
 }
 
@@ -1600,6 +1756,7 @@ pub(crate) fn candidate_cell(app: &mut LccApp, ui: &mut egui::Ui, d: &mut Import
         (Some(_), _) if in_trash && on => Some(if d.on_deleted == "fresh" { "Will be replaced" } else { "Will be restored" }),
         (Some(_), _) if in_trash => Some("In Recently Deleted"),
         (Some(r), _) if r == "path" => Some("In library"),
+        (None, None) if d.copy && d.is_browsed(i) => Some("In library"),
         (Some(_), _) if on => Some("Will be copied"),
         (Some(_), _) => Some("Duplicate"),
         (None, Some(_)) => Some("Unreadable"),
@@ -1862,6 +2019,57 @@ mod tests {
         assert!(!d.checked[3] && !d.importable(3));
     }
 
+    /// A file whose photo is only browsed (Local) comes from the scan as an ordinary candidate that
+    /// still names its record: offered when adding in place; copying or moving would not copy it
+    /// (the engine adds it where it is), so there it counts as already in the library.
+    #[test]
+    fn a_browsed_photo_is_importable_only_when_adding_in_place() {
+        let mut d = dialog();
+        d.candidates[5].local = true;
+        assert!(d.is_browsed(5) && d.importable(5));
+        assert_eq!(dup_counts(&d), (0, 1, 0), "adding in place: not skipped");
+        d.copy = true;
+        assert!(!d.importable(5), "copying leaves it where it is");
+        assert!(!d.selected_paths().contains(&"img5.jpg".to_string()));
+        assert_eq!(dup_counts(&d), (1, 1, 0));
+        assert!(!d.is_browsed(3), "a duplicate isn't browsed");
+        // its library twin is in Recently Deleted: still offered in place ("Import as new" brings it in), never copied
+        d.copy = false;
+        d.candidates[4].local = true;
+        d.candidates[4].duplicate = Some("content".into());
+        d.set_trashed(vec![false, false, false, false, true, false]);
+        assert!(d.importable(4));
+        d.copy = true;
+        assert!(!d.importable(4), "copying would add it where it is");
+    }
+
+    /// A file type's toggle is on only for files that can be imported now.
+    #[test]
+    fn a_file_type_toggle_ignores_browsed_photos_that_copying_cannot_import() {
+        let mut c = ImportCandidate { path: "a.png".into(), local: true, ..Default::default() };
+        c.format = "PNG".into();
+        let mut d = ImportDialog::new(vec![c]);
+        d.copy = true;
+        assert!(!d.type_checked("PNG"));
+        d.copy = false;
+        assert!(d.type_checked("PNG"));
+    }
+
+    /// The review warns that keywords and presets skip a browsed photo only when it matters.
+    #[test]
+    fn keywords_and_presets_are_flagged_only_when_a_browsed_photo_would_skip_them() {
+        let c = ImportCandidate { path: "a.png".into(), local: true, ..Default::default() };
+        let mut d = ImportDialog::new(vec![c]);
+        assert!(!d.options_skip_browsed(), "nothing set, nothing to skip");
+        d.keywords = "beach".into();
+        assert!(d.options_skip_browsed());
+        d.checked[0] = false;
+        assert!(!d.options_skip_browsed(), "unchecked: not imported anyway");
+        d.checked[0] = true;
+        d.copy = true;
+        assert!(!d.options_skip_browsed(), "copying doesn't offer it");
+    }
+
     /// Identical copies inside the source folder are not "already in the library" (a fresh library
     /// said "8 already in the library").
     #[test]
@@ -1967,6 +2175,52 @@ mod tests {
         assert!(!long.intersects(cb), "{long:?} covers {cb:?}");
         assert_eq!(long.right(), img.right() - 4.0);
         assert!(img.contains_rect(long));
+    }
+
+    /// The dialog offers only controls a recipe may name: `library.import` refuses the others
+    /// (white balance, geometry and crop, per-photo controls), so one offered here would make every
+    /// import with it fail. Each is moved off its default, as a slider drag does.
+    #[test]
+    fn every_offered_recipe_control_is_accepted_by_the_import() {
+        let session = lcc_engine::Session::new();
+        let mut d = dialog();
+        for id in RECIPE_CONTROLS {
+            let spec = lcc_develop::controls::find(id).unwrap_or_else(|| panic!("{id} is not a develop control"));
+            let moved = if spec.default < spec.max { spec.max } else { spec.min };
+            note_recipe_value(&mut d.recipe, spec, moved);
+        }
+        assert_eq!(d.recipe.len(), RECIPE_CONTROLS.len(), "all named, none repeated");
+        let params = json!({"paths": ["img0.jpg"], "recipe": recipe_items(&d.recipe)});
+        let request = lcc_engine::cmd::library::import_params(&session, &params).unwrap_or_else(|e| panic!("refused: {e}"));
+        assert_eq!(request.opts.recipe.len(), RECIPE_CONTROLS.len());
+    }
+
+    /// A slider moved off its default names its control in the recipe; moved back, it no longer does.
+    #[test]
+    fn a_slider_back_at_its_default_leaves_the_recipe() {
+        let spec = lcc_develop::controls::find("light.exposure").unwrap();
+        let mut recipe = std::collections::BTreeMap::new();
+        note_recipe_value(&mut recipe, spec, 0.5);
+        assert_eq!(recipe.get("light.exposure"), Some(&0.5));
+        note_recipe_value(&mut recipe, spec, 1.25);
+        assert_eq!(recipe.get("light.exposure"), Some(&1.25), "a new value replaces the old");
+        note_recipe_value(&mut recipe, spec, spec.default);
+        assert!(recipe.is_empty(), "{recipe:?}");
+    }
+
+    /// `start` hands `library.import` a `recipe` only when the dialog has one.
+    #[test]
+    fn start_passes_the_recipe_only_when_the_dialog_has_one() {
+        let mut app = crate::LccApp::new(lcc_engine::Session::new(), crate::Services { png: None, ..Default::default() });
+        let mut d = dialog();
+        start(&mut app, &d).unwrap();
+        let params = app.import.take().map(|t| t.params).unwrap();
+        assert!(params.get("recipe").is_none(), "{params}");
+        d.recipe.insert("light.exposure".into(), 0.5);
+        d.recipe.insert("color.vibrance".into(), -20.0);
+        start(&mut app, &d).unwrap();
+        let params = app.import.take().map(|t| t.params).unwrap();
+        assert_eq!(params["recipe"], json!([{"id": "color.vibrance", "value": -20.0}, {"id": "light.exposure", "value": 0.5}]), "{params}");
     }
 
     #[test]

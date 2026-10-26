@@ -98,6 +98,9 @@ pub(crate) trait Model: Send + Sync {
     /// Check it does something sensible: the test's result, or why not. Unless `run_on` is the processor the graphics
     /// card is set up and checked too, and the result says where the work will run.
     fn self_test(&self, run_on: RunOn) -> Result<Value, String>;
+    /// Look at the photo's whole mosaic before its tiles run (a model that measures the noise from the photo does it
+    /// here, so every tile is cleaned by the same measure).
+    fn prepare(&self, _mosaic: &[f32], _width: usize, _height: usize) {}
     /// Conservative scratch bound for an unknown runner.
     fn bytes_per_tile(&self) -> usize {
         512 * 1024 * 1024
@@ -107,6 +110,82 @@ pub(crate) trait Model: Send + Sync {
     /// timed. Never starts anything.
     fn device(&self, _run_on: RunOn) -> Value {
         json!({"kind": "cpu"})
+    }
+}
+
+/// The built-in denoiser (`lcc_denoise::builtin`): nothing to load, so it is what runs until a model is chosen. Its
+/// filter runs on the graphics card when there is one that agrees with the CPU on a check tile and is faster, else on
+/// the CPU (see [`BuiltinCard`]); the rest of it always runs on the CPU.
+struct BuiltinModel {
+    runner: OnceLock<lcc_denoise::builtin::Builtin>,
+    #[cfg(feature = "denoise")]
+    card: Arc<BuiltinCard>,
+    /// The runner of a photo that runs on the card.
+    #[cfg(feature = "denoise")]
+    hybrid: OnceLock<CardRunner>,
+}
+
+impl BuiltinModel {
+    /// For a photo, with the card's state for the set-up marker `marker` (where its set-up is recorded).
+    fn new(#[cfg_attr(not(feature = "denoise"), allow(unused_variables))] marker: &Path) -> Self {
+        BuiltinModel {
+            runner: OnceLock::new(),
+            #[cfg(feature = "denoise")]
+            card: builtin_card(marker),
+            #[cfg(feature = "denoise")]
+            hybrid: OnceLock::new(),
+        }
+    }
+}
+
+impl Model for BuiltinModel {
+    fn runner(&self, run_on: RunOn, threads: usize) -> (&dyn TileRunner, usize) {
+        let cpu = self.runner.get_or_init(Default::default);
+        #[cfg(feature = "denoise")]
+        {
+            let threads = threads.max(1);
+            self.card.last_threads.store(threads, Ordering::Relaxed);
+            if let Ok(side) = self.card.choose(run_on, threads, true)
+                && let Ok(gpu) = lcc_gpu::bm3d::BuiltinRunner::new(side.gpu.clone(), *cpu)
+            {
+                let hybrid = self.hybrid.get_or_init(|| CardRunner { gpu, cpu: *cpu, card: self.card.clone() });
+                return (hybrid, threads.min(GPU_PARALLEL));
+            }
+        }
+        #[cfg(not(feature = "denoise"))]
+        let _ = run_on;
+        (cpu, threads)
+    }
+
+    /// Measure the whole photo's noise once, so every tile is cleaned by the photo's noise instead of its own.
+    fn prepare(&self, mosaic: &[f32], width: usize, height: usize) {
+        let _ = self.runner.set(lcc_denoise::builtin::Builtin::with_noise(lcc_denoise::builtin::estimate_noise(mosaic, width, height)));
+    }
+
+    fn self_test(&self, _run_on: RunOn) -> Result<Value, String> {
+        let side = 16;
+        let out = lcc_denoise::builtin::Builtin::default().run(&vec![0.25; 4 * side * side]).map_err(|e| e.to_string())?;
+        if out.len() != 12 * side * side || out.iter().any(|v| !v.is_finite()) {
+            return Err("the built-in denoiser gave an unexpected result".into());
+        }
+        Ok(json!({"ok": true, "builtin": true}))
+    }
+
+    /// Planes, the two mosaics and the working copies of a 256-cell tile.
+    fn bytes_per_tile(&self) -> usize {
+        64 * 1024 * 1024
+    }
+
+    fn device(&self, run_on: RunOn) -> Value {
+        #[cfg(feature = "denoise")]
+        {
+            self.card.device(run_on)
+        }
+        #[cfg(not(feature = "denoise"))]
+        {
+            let _ = run_on;
+            json!({"kind": "cpu", "reason": "built-in"})
+        }
     }
 }
 
@@ -305,7 +384,10 @@ fn set_up_card<T: Send + 'static, R>(
             return Err(GPU_CRASHED.into());
         }
         let secs = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-        // a marker that cannot be written only loses the crash guard
+        // the models folder may not exist yet; a marker that cannot be written only loses the crash guard
+        if let Some(parent) = marker.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let _ = std::fs::write(marker, format!("setting up the graphics card for AI Denoise (unix time {secs})\n"));
         running.push(marker.to_path_buf());
         SetUpEnded(marker.to_path_buf())
@@ -537,6 +619,238 @@ impl Model for Network {
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// the built-in denoiser on the graphics card
+
+/// The noise the check tile is made with and the built-in denoiser is told for it (variance = a · signal + b).
+#[cfg(feature = "denoise")]
+const CHECK_NOISE: (f32, f32) = (0.01, 0.001);
+/// How far the card's filter may be from the CPU's on the check tile, in the noise's deviations: at most this at one place
+/// (a few blocks whose match or threshold falls either side of a tie in the two devices' roundings change by up to about a
+/// tenth; a broken kernel by far more), and this on average.
+#[cfg(feature = "denoise")]
+const BUILTIN_AGREE_WORST: f32 = 0.3;
+#[cfg(feature = "denoise")]
+const BUILTIN_AGREE_MEAN: f32 = 1e-3;
+
+/// A mosaic tile (four planes of `side` cells): a ramp, edges and some texture with noise of [`CHECK_NOISE`], the same
+/// every time.
+#[cfg(feature = "denoise")]
+fn builtin_check_tile(side: usize) -> Vec<f32> {
+    let mut state = 0x2545_f491_4f6c_dd1du64;
+    let mut uniform = move || {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((state >> 40) as f32 + 0.5) / (1u64 << 24) as f32
+    };
+    let mut out = Vec::with_capacity(4 * side * side);
+    for plane in 0..4 {
+        for i in 0..side * side {
+            let (x, y) = (i % side, i / side);
+            let step = if (x / 37 + y / 29) % 2 == 0 { 0.25 } else { 0.0 };
+            let signal =
+                (0.1 + 0.4 * x as f32 / side as f32 + 0.1 * y as f32 / side as f32 + step + 0.05 * ((x as f32 + 4.0 * plane as f32) * 0.7).sin())
+                    .clamp(0.02, 0.95);
+            let (u, v) = (uniform(), uniform());
+            let noise = (-2.0 * u.ln()).sqrt() * (std::f32::consts::TAU * v).cos();
+            out.push((signal + noise * (CHECK_NOISE.0 * signal + CHECK_NOISE.1).sqrt()).max(0.0));
+        }
+    }
+    out
+}
+
+/// The card set up for the built-in denoiser: its kernels, and the check tile's time on it and on the CPU.
+#[cfg(feature = "denoise")]
+struct BuiltinGpu {
+    gpu: Arc<lcc_gpu::bm3d::Bm3dGpu>,
+    adapter: String,
+    /// The check tile on the card, the fastest of a few runs (ms).
+    card_ms: f64,
+    /// The check tile on the CPU, on one thread (ms).
+    cpu_ms: f64,
+}
+
+/// Set the card up for the built-in denoiser: kernels built, the check tile run on both and compared, both timed.
+#[cfg(feature = "denoise")]
+fn make_builtin_gpu(marker: &Path) -> Result<BuiltinGpu, String> {
+    use lcc_denoise::builtin::{Builtin, TILE};
+    let tile = TILE as usize;
+    let builtin = Builtin::with_noise(CHECK_NOISE);
+    let params = builtin.bm3d_params().ok_or("the built-in denoiser does not use the block-matching filter")?;
+    let input = Arc::new(builtin_check_tile(tile));
+    let on_card = input.clone();
+    let card = move || -> Result<_, String> {
+        let gpu = Arc::new(lcc_gpu::bm3d::Bm3dGpu::new(&params, tile)?);
+        let runner = lcc_gpu::bm3d::BuiltinRunner::new(gpu.clone(), builtin)?;
+        let agreement = runner.agreement(&on_card).map_err(|e| format!("the GPU could not run the check tile: {e}"))?;
+        let whole = runner.run(&on_card).map_err(|e| format!("the GPU could not run the check tile: {e}"))?;
+        let card_ms = card_tile_ms(&runner, &on_card);
+        Ok((gpu, agreement, whole, card_ms))
+    };
+    let on_cpu = || {
+        let started = web_time::Instant::now();
+        (builtin.run(&input), started.elapsed().as_secs_f64() * 1000.0)
+    };
+    let ((gpu, agreement, whole, card_ms), (want, cpu_ms)) = set_up_card(marker, GPU_SETUP_LIMIT, card, on_cpu)?;
+    let want = want.map_err(|e| format!("the CPU could not check the GPU: {e}"))?;
+    if whole.len() != want.len() || !whole.iter().all(|v| v.is_finite()) {
+        return Err("its picture of the check tile is not the CPU's size or has numbers that are not finite: not used".into());
+    }
+    if !(agreement.worst <= BUILTIN_AGREE_WORST && agreement.mean <= BUILTIN_AGREE_MEAN) {
+        return Err(format!(
+            "its filter's answer on the check tile is not the CPU's (off by {:.2} at most and {:.1e} on average, in noise deviations): not used",
+            agreement.worst, agreement.mean
+        ));
+    }
+    let adapter = gpu.adapter();
+    Ok(BuiltinGpu { gpu, adapter, card_ms, cpu_ms })
+}
+
+/// What the built-in denoiser knows about the graphics card in this process: set up for the first photo that may use it,
+/// and used while it keeps working. Kept by the marker of its set-up (see [`builtin_card`]) so that every photo shares it.
+#[cfg(feature = "denoise")]
+struct BuiltinCard {
+    marker: PathBuf,
+    gpu: OnceLock<Result<BuiltinGpu, String>>,
+    /// Tiles the card got wrong (an error, numbers that are not finite) and the CPU ran.
+    fallbacks: AtomicUsize,
+    /// Tiles at once of the photo started last (0: none yet), to say where the work runs.
+    last_threads: AtomicUsize,
+}
+
+#[cfg(feature = "denoise")]
+static BUILTIN_CARDS: Mutex<Vec<(PathBuf, Arc<BuiltinCard>)>> = Mutex::new(Vec::new());
+
+/// The card's state for the set-up marker `marker`, made the first time it is asked for.
+#[cfg(feature = "denoise")]
+fn builtin_card(marker: &Path) -> Arc<BuiltinCard> {
+    let mut all = BUILTIN_CARDS.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((_, c)) = all.iter().find(|(m, _)| m == marker) {
+        return c.clone();
+    }
+    let c = Arc::new(BuiltinCard {
+        marker: marker.to_path_buf(),
+        gpu: OnceLock::new(),
+        fallbacks: AtomicUsize::new(0),
+        last_threads: AtomicUsize::new(0),
+    });
+    all.push((marker.to_path_buf(), c.clone()));
+    c
+}
+
+/// Forget the card's state for the marker (and the marker): the card is tried afresh for the next photo.
+#[cfg(feature = "denoise")]
+pub(crate) fn forget_builtin_card(marker: &Path) {
+    BUILTIN_CARDS.lock().unwrap_or_else(PoisonError::into_inner).retain(|(m, _)| m != marker);
+    let _ = std::fs::remove_file(marker);
+}
+
+/// Where the card's set-up is recorded for the built-in denoiser whose `onnx` is its model's (made-up) path in the models
+/// folder: beside it, and in the temporary folder when there is no models folder.
+pub(crate) fn builtin_marker(onnx: &Path) -> PathBuf {
+    match onnx.parent() {
+        Some(p) if !p.as_os_str().is_empty() => onnx.with_file_name(GPU_SETUP_MARKER),
+        _ => std::env::temp_dir().join(format!("{}-builtin-{GPU_SETUP_MARKER}", lcc_brand::BINARY)),
+    }
+}
+
+#[cfg(feature = "denoise")]
+impl BuiltinCard {
+    /// The card when it can be used now, else why not. `start` sets it up when that has not been tried yet; without it
+    /// nothing is started.
+    fn card(&self, start: bool) -> Result<&BuiltinGpu, String> {
+        let side = if start {
+            Some(self.gpu.get_or_init(|| {
+                let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| make_builtin_gpu(&self.marker)))
+                    .unwrap_or_else(|_| Err("the GPU runner gave up".into()));
+                if let Err(why) = &made {
+                    log::info!("denoise: the built-in denoiser runs on the CPU ({why})");
+                }
+                made
+            }))
+        } else {
+            self.gpu.get()
+        };
+        let g = match side {
+            None => return Err("the graphics card is not set up yet".into()),
+            Some(Err(why)) => return Err(why.clone()),
+            Some(Ok(g)) => g,
+        };
+        if let Some(why) = lcc_gpu::nn::broken_reason() {
+            return Err(format!("the graphics card stopped working ({why})"));
+        }
+        if self.fallbacks.load(Ordering::Relaxed) >= GPU_MAX_FALLBACKS {
+            return Err(format!("{} got {GPU_MAX_FALLBACKS} tiles wrong", g.adapter));
+        }
+        Ok(g)
+    }
+
+    /// The card, when a photo made `threads` tiles at a time under `run_on` runs on it; else why the CPU does.
+    fn choose(&self, run_on: RunOn, threads: usize, start: bool) -> Result<&BuiltinGpu, String> {
+        if run_on == RunOn::Cpu {
+            return Err("the processor is chosen in Settings".into());
+        }
+        let g = self.card(start)?;
+        if run_on == RunOn::Auto && !card_is_faster(g.card_ms, g.cpu_ms, threads) {
+            return Err(format!("it is faster than {} on this computer", g.adapter));
+        }
+        Ok(g)
+    }
+
+    fn fell_back(&self, why: &str) {
+        let n = self.fallbacks.fetch_add(1, Ordering::Relaxed) + 1;
+        if n == 1 {
+            log::warn!("denoise: a tile came back wrong from the GPU ({why}); the CPU runs it");
+        } else if n == GPU_MAX_FALLBACKS {
+            log::warn!("denoise: the GPU got {n} tiles wrong; the CPU does the rest");
+        }
+    }
+
+    /// Where the tiles run (see [`Model::device`]).
+    fn device(&self, run_on: RunOn) -> Value {
+        if run_on != RunOn::Cpu && self.gpu.get().is_none() {
+            return json!({"kind": "pending"});
+        }
+        let threads = match self.last_threads.load(Ordering::Relaxed) {
+            0 => Pace::Full.parallel(std::thread::available_parallelism().map_or(1, |n| n.get()), None),
+            n => n,
+        };
+        let mut v = match self.choose(run_on, threads, false) {
+            Ok(g) => json!({"kind": "gpu", "adapter": g.adapter}),
+            // a set-up that crashed or ran out of time can be tried again (`denoise.settings {runOn}`)
+            Err(why) => json!({"kind": "cpu", "retry": worth_retrying(&why), "reason": why}),
+        };
+        if let (Some(Ok(g)), Some(o)) = (self.gpu.get(), v.as_object_mut()) {
+            o.insert("cardMs".into(), json!(g.card_ms));
+            o.insert("cpuMs".into(), json!(g.cpu_ms));
+            o.insert("fellBack".into(), json!(self.fallbacks.load(Ordering::Relaxed)));
+        }
+        v
+    }
+}
+
+/// The built-in denoiser for a photo that runs on the card: the filter there, and the CPU running any tile the card gets
+/// wrong, so a photo is always finished.
+#[cfg(feature = "denoise")]
+struct CardRunner {
+    gpu: lcc_gpu::bm3d::BuiltinRunner,
+    cpu: lcc_denoise::builtin::Builtin,
+    card: Arc<BuiltinCard>,
+}
+
+#[cfg(feature = "denoise")]
+impl TileRunner for CardRunner {
+    fn run(&self, input: &[f32]) -> Result<Vec<f32>, RunError> {
+        if self.card.card(false).is_ok() {
+            match self.gpu.run(input) {
+                Ok(out) if out.iter().all(|v| v.is_finite()) => return Ok(out),
+                Ok(_) => self.card.fell_back("numbers that are not finite"),
+                Err(e) => self.card.fell_back(&e.to_string()),
+            }
+        }
+        self.cpu.run(input)
+    }
+}
+
 /// The loader of this build: our pure-Rust executor with the `denoise` feature, else one that says why nothing can run.
 pub(crate) fn default_loader() -> Loader {
     #[cfg(feature = "denoise")]
@@ -718,7 +1032,7 @@ pub(crate) fn installed_models(dir: &Path) -> Vec<Installed> {
         let p = e.path();
         let Some(name) = p.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
         let onnx = p.join("model.onnx");
-        if !lcc_denoise::licence::valid_id(&name) || !p.is_dir() || !onnx.is_file() {
+        if name == lcc_denoise::builtin::ID || !lcc_denoise::licence::valid_id(&name) || !p.is_dir() || !onnx.is_file() {
             continue;
         }
         let Some(m) =
@@ -742,6 +1056,9 @@ pub(crate) fn forget_gpu_set_ups(dir: &Path) {
     for i in installed_models(dir) {
         let _ = std::fs::remove_file(i.onnx.with_file_name(GPU_SETUP_MARKER));
     }
+    // the built-in denoiser's, which is recorded in the models folder itself
+    #[cfg(feature = "denoise")]
+    forget_builtin_card(&builtin_marker(&dir.join(lcc_denoise::builtin::ID)));
 }
 
 /// The model in use.
@@ -865,10 +1182,18 @@ impl Progress {
     pub(crate) fn cancel_now(&self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
+
+    /// Has the job been asked to stop?
+    fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
+    }
 }
 
 /// The loaded model, loading it first when it is not (kept for the next photo).
 fn loaded(spec: &JobSpec) -> Result<Arc<dyn Model>, MakeError> {
+    if spec.manifest.id == lcc_denoise::builtin::ID {
+        return Ok(Arc::new(BuiltinModel::new(&builtin_marker(&spec.onnx))));
+    }
     if let Some(m) = spec.model.lock().unwrap_or_else(PoisonError::into_inner).clone() {
         return Ok(m);
     }
@@ -926,6 +1251,7 @@ pub(crate) fn make_product(spec: &JobSpec, progress: Option<&Progress>) -> Resul
     }
     let decoded = began.elapsed();
     let model = loaded(spec)?;
+    model.prepare(&mosaic.data, mosaic.width, mosaic.height);
     // Packed input, returned RGB and the preceding group's RGB overlap while tiles run.
     let scratch =
         model.bytes_per_tile().saturating_add(128usize.saturating_mul(spec.manifest.tile as usize).saturating_mul(spec.manifest.tile as usize));
@@ -1017,8 +1343,6 @@ impl Pace {
 pub enum PhotoState {
     /// Not a photo denoise applies to (not a raw, offline, a demo).
     NotApplicable,
-    /// No model is chosen: nothing can be made.
-    NoModel,
     /// Its picture is made: the Amount slider works.
     Ready,
     Queued {
@@ -1083,8 +1407,19 @@ pub(crate) struct State {
     pub generation: u64,
     /// Photos made since the session started.
     made: u64,
-    /// AI Denoise's row in the activity stack, while a photo is being made or waits its turn.
+    /// AI Denoise's batch row in the activity stack, while a photo is being made or waits its
+    /// turn: the photos done and failed since the queue was last idle, and the time left.
     task: Option<crate::activity::TaskGuard>,
+    /// The running photo's row under it (its tiles).
+    photo_task: Option<crate::activity::TaskGuard>,
+    /// Photos whose batch was cancelled (the row's cancel): looking at them doesn't queue them again; asking for them
+    /// does (the switch, `denoise.queue`, an export).
+    held: HashSet<PhotoId>,
+    /// Photos an import switched AI Denoise on for that didn't fit in the queue: queued as it
+    /// drains (a big import of high-ISO raws doesn't lose any).
+    backlog: VecDeque<PhotoId>,
+    /// How many photos the queue holds (tests make it small).
+    pub(crate) queue_cap: usize,
 }
 
 impl Default for State {
@@ -1105,6 +1440,10 @@ impl Default for State {
             generation: 0,
             made: 0,
             task: None,
+            photo_task: None,
+            held: HashSet::new(),
+            backlog: VecDeque::new(),
+            queue_cap: MAX_QUEUE,
         }
     }
 }
@@ -1125,7 +1464,9 @@ impl State {
             r.progress.cancel_now();
         }
         self.queue.clear();
+        self.backlog.clear();
         self.failed.clear();
+        self.held.clear();
         self.dirty = true;
         self.generation += 1;
     }
@@ -1147,6 +1488,12 @@ impl Session {
         let loaded = self.denoise.active.as_ref().and_then(|a| a.model.lock().unwrap_or_else(PoisonError::into_inner).clone());
         match loaded {
             Some(m) => m.device(self.denoise.settings.run_on()),
+            // the built-in denoiser is made afresh for each photo; what it knows about the card is kept apart
+            #[cfg(feature = "denoise")]
+            None if self.denoise.active.as_ref().is_some_and(|a| a.id == lcc_denoise::builtin::ID) => {
+                let onnx = self.denoise.active.as_ref().map(|a| a.onnx.clone()).unwrap_or_default();
+                builtin_card(&builtin_marker(&onnx)).device(self.denoise.settings.run_on())
+            }
             None => json!({"kind": "none"}),
         }
     }
@@ -1169,23 +1516,21 @@ impl Session {
             let id = self.denoise.settings.model.clone()?;
             installed_models(dir).into_iter().find(|i| i.manifest.id == id)
         });
-        let found = chosen.map(|i| (i.fingerprint(), i));
-        let same = match (&self.denoise.active, &found) {
-            (None, None) => true,
-            (Some(a), Some((fp, _))) => a.fingerprint == *fp,
-            _ => false,
+        // without a model of the user's own the built-in denoiser is in use, so AI Denoise needs no set-up; its
+        // (made-up) file is in the models folder, which is where its graphics-card set-up is recorded
+        let (fingerprint, manifest, onnx) = match chosen {
+            Some(i) => (i.fingerprint(), i.manifest, i.onnx),
+            None => {
+                let manifest = lcc_denoise::builtin::manifest();
+                let onnx = self.denoise.models_dir.as_deref().map(|d| d.join(lcc_denoise::builtin::ID)).unwrap_or_default();
+                (format!("{}@{}", manifest.id, manifest.version), manifest, onnx)
+            }
         };
-        if same {
+        if self.denoise.active.as_ref().is_some_and(|a| a.fingerprint == fingerprint) {
             return;
         }
         // another model: what was made with the old one is not this one's, and what failed may work now
-        self.denoise.active = found.map(|(fingerprint, i)| Active {
-            id: i.manifest.id.clone(),
-            manifest: i.manifest,
-            onnx: i.onnx,
-            fingerprint,
-            model: Arc::new(Mutex::new(None)),
-        });
+        self.denoise.active = Some(Active { id: manifest.id.clone(), manifest, onnx, fingerprint, model: Arc::new(Mutex::new(None)) });
         if let Some(r) = self.denoise.running.take() {
             r.progress.cancel_now();
         }
@@ -1274,8 +1619,8 @@ impl Session {
             return PhotoState::NotApplicable;
         }
         if self.denoise.active.is_none() {
-            // the model folder has not been looked at yet (just started): not "no model" until it has been
-            return if self.denoise.active_seen.is_none() { PhotoState::Idle } else { PhotoState::NoModel };
+            // the model in use has not been looked at yet (just started)
+            return PhotoState::Idle;
         }
         if self.denoise_products_dir().is_none() {
             return PhotoState::Failed {
@@ -1312,7 +1657,7 @@ impl Session {
             if !eligible(&p) || self.media.denoise.spec(*id).is_some() || self.denoise.queue.contains(id) {
                 continue;
             }
-            if self.denoise.running.as_ref().is_some_and(|r| r.photo == *id) || self.denoise.queue.len() >= MAX_QUEUE {
+            if self.denoise.running.as_ref().is_some_and(|r| r.photo == *id) || self.denoise.queue.len() >= self.denoise.queue_cap {
                 continue;
             }
             let Some((_, key)) = self.denoise_spec(&p) else { continue };
@@ -1331,6 +1676,45 @@ impl Session {
         added
     }
 
+    /// Queue photos that should all be made (an import's): what doesn't fit in the queue waits in
+    /// the backlog and is queued as the queue drains.
+    pub(crate) fn denoise_enqueue_all(&mut self, ids: &[PhotoId]) {
+        let room = self.denoise.queue_cap.saturating_sub(self.denoise.queue.len());
+        let (now, later) = ids.split_at(room.min(ids.len()));
+        self.denoise_enqueue(now, false, false);
+        for id in later {
+            if !self.denoise.backlog.contains(id) {
+                self.denoise.backlog.push_back(*id);
+            }
+        }
+    }
+
+    /// Move backlog photos into the queue while it has room.
+    fn denoise_refill(&mut self) {
+        while self.denoise.queue.len() < self.denoise.queue_cap {
+            let Some(id) = self.denoise.backlog.pop_front() else { break };
+            self.denoise_enqueue(&[id], false, false);
+        }
+    }
+
+    /// Was photo `id` waiting in a batch that was cancelled? It is then not made until asked for again.
+    pub fn denoise_held(&self, id: PhotoId) -> bool {
+        self.denoise.held.contains(&id)
+    }
+
+    /// Photo `id` was cancelled by hand (`denoise.cancel {id}`): looking at it doesn't queue it again
+    /// until it is asked for, as with a cancelled batch's photos.
+    pub(crate) fn denoise_hold(&mut self, id: PhotoId) {
+        self.denoise.held.insert(id);
+    }
+
+    /// Photos asked for again (the switch, `denoise.queue`): a cancelled batch no longer holds them back.
+    pub(crate) fn denoise_release(&mut self, ids: &[PhotoId]) {
+        for id in ids {
+            self.denoise.held.remove(id);
+        }
+    }
+
     /// Stop the job that is running, and with `all` forget everything that waits.
     pub(crate) fn denoise_cancel(&mut self, photo: Option<PhotoId>, all: bool) -> usize {
         let mut n = 0;
@@ -1340,13 +1724,19 @@ impl Session {
             r.progress.cancel_now();
             n += 1;
         }
-        let before = self.denoise.queue.len();
+        let before = self.denoise.queue.len() + self.denoise.backlog.len();
         match photo {
-            Some(p) => self.denoise.queue.retain(|q| *q != p),
-            None if all => self.denoise.queue.clear(),
+            Some(p) => {
+                self.denoise.queue.retain(|q| *q != p);
+                self.denoise.backlog.retain(|q| *q != p);
+            }
+            None if all => {
+                self.denoise.queue.clear();
+                self.denoise.backlog.clear();
+            }
             None => {}
         }
-        n + before - self.denoise.queue.len()
+        n + before.saturating_sub(self.denoise.queue.len() + self.denoise.backlog.len())
     }
 
     /// The photos the automatic queue looks at: the one open and the ones selected, those with a Denoise amount.
@@ -1356,7 +1746,8 @@ impl Session {
             .iter()
             .chain(ids.iter().take(AUTO_LOOK))
             .copied()
-            .filter(|id| self.catalog.photo(*id).is_some_and(|p| p.develop.denoise_amount() > 0.0))
+            // (a photo of a folder being browsed isn't imported: its picture is made when asked for)
+            .filter(|id| self.catalog.photo(*id).is_some_and(|p| !p.local && p.develop.denoise_amount() > 0.0))
             .collect()
     }
 
@@ -1424,13 +1815,21 @@ impl Session {
         let Some(r) = &self.denoise.running else { return };
         let Some(outcome) = r.outcome.lock().unwrap_or_else(PoisonError::into_inner).take() else { return };
         let Some(r) = self.denoise.running.take() else { return };
+        self.denoise.photo_task = None;
         match outcome {
             Outcome::Done => {
                 self.denoise.made += 1;
+                if let Some(t) = &self.denoise.task {
+                    t.item_done();
+                }
                 self.denoise_check_photo(r.photo);
                 self.denoise_evict(Some(&r.product));
             }
             Outcome::Failed(why, unsupported) => {
+                if let Some(t) = &self.denoise.task {
+                    let name = self.catalog.photo(r.photo).map_or("", |p| p.file_name.as_str());
+                    t.item_failed(&format!("{name}: {why}"));
+                }
                 self.denoise.failed.insert(r.photo, Failure { key: r.key, why, unsupported });
             }
             Outcome::Cancelled => {}
@@ -1521,14 +1920,16 @@ impl Session {
         if self.denoise.active.is_none() || self.denoise_products_dir().is_none() {
             return;
         }
+        self.denoise_refill();
         let (cap, auto) = (self.denoise.settings.threads, self.denoise.settings.auto());
         let wanted = self.denoise_wanted();
         for id in &wanted {
             self.denoise_check_photo(*id);
         }
         if auto {
-            // the photo being edited goes first
-            let (open, others): (Vec<PhotoId>, Vec<PhotoId>) = wanted.into_iter().partition(|id| self.selection.active == Some(*id));
+            // the photo being edited goes first; photos whose batch was cancelled wait until asked for
+            let (open, others): (Vec<PhotoId>, Vec<PhotoId>) =
+                wanted.into_iter().filter(|id| !self.denoise.held.contains(id)).partition(|id| self.selection.active == Some(*id));
             self.denoise_enqueue(&others, false, false);
             self.denoise_enqueue(&open, true, false);
         }
@@ -1556,29 +1957,55 @@ impl Session {
 
     /// Is a picture being made, or waiting for its turn with a model to make it? (Headless runs wait for this.)
     pub fn denoise_busy(&self) -> bool {
-        self.denoise.running.is_some() || (!self.denoise.queue.is_empty() && self.denoise.active.is_some())
+        self.denoise.running.is_some() || ((!self.denoise.queue.is_empty() || !self.denoise.backlog.is_empty()) && self.denoise.active.is_some())
     }
 
-    /// Keep AI Denoise's row in the activity stack up to date (each `denoise.pump`): there while a photo is being made or
-    /// waits its turn, with the running photo's tiles and its file name; gone when the queue is idle. It has no ✕: what is
-    /// made follows the photos' Denoise amounts and Settings ▸ AI Denoise.
+    /// Keep AI Denoise's rows in the activity stack up to date (each `denoise.pump`). One batch row while a photo is
+    /// being made or waits its turn: "AI Denoise: 37 of 200 · about 6 min left", the photos counted
+    /// since the queue was last idle, failures counted and named in its summary. Under it, the running photo's row with
+    /// its tiles. Gone when the queue is idle. ✕ forgets the photos waiting and stops the one being made (they are made
+    /// again when wanted: shown, exported, or queued by hand).
     pub(crate) fn denoise_track(&mut self) {
         if !self.denoise_busy() {
+            self.denoise.photo_task = None;
             self.denoise.task = None;
             return;
         }
-        let task = self.denoise.task.get_or_insert_with(|| {
-            let t = self.activity.start("denoise", "AI Denoise", crate::activity::Cancel::No);
-            t.set_unit(crate::activity::Unit::Percent);
-            t
-        });
+        if self.denoise.task.as_ref().is_some_and(|t| t.is_cancelled()) {
+            // what was waiting stays put until asked for again (not re-queued by looking at it)
+            let held: Vec<PhotoId> =
+                self.denoise.queue.iter().chain(self.denoise.backlog.iter()).copied().chain(self.denoise.running.as_ref().map(|r| r.photo)).collect();
+            self.denoise.held.extend(held);
+            self.denoise_cancel(None, true);
+            self.denoise.photo_task = None;
+            self.denoise.task = None;
+            return;
+        }
+        // a job told to stop, with nothing waiting after it, is no new batch while it winds down
+        let stopping =
+            self.denoise.queue.is_empty() && self.denoise.backlog.is_empty() && self.denoise.running.as_ref().is_some_and(|r| r.progress.cancelled());
+        if stopping && self.denoise.task.is_none() {
+            self.denoise.photo_task = None;
+            return;
+        }
+        let task = self.denoise.task.get_or_insert_with(|| self.activity.start_batch("denoise", "AI Denoise", crate::activity::Cancel::Yes));
+        let left = (self.denoise.queue.len() + self.denoise.backlog.len()) as u64 + u64::from(self.denoise.running.is_some());
+        let done = task.done();
+        task.progress(done, done.saturating_add(left));
         match &self.denoise.running {
             Some(r) => {
-                task.progress(r.progress.done.load(Ordering::Relaxed) as u64, r.progress.total.load(Ordering::Relaxed) as u64);
-                task.detail(self.catalog.photo(r.photo).map_or("", |p| p.file_name.as_str()));
+                let name = self.catalog.photo(r.photo).map_or("", |p| p.file_name.as_str());
+                task.detail(name);
+                let child = self.denoise.photo_task.get_or_insert_with(|| {
+                    let t = task.child("denoise", "AI Denoise");
+                    t.set_unit(crate::activity::Unit::Percent);
+                    t
+                });
+                child.progress(r.progress.done.load(Ordering::Relaxed) as u64, r.progress.total.load(Ordering::Relaxed) as u64);
+                child.detail(name);
             }
             None => {
-                task.progress(0, 0);
+                self.denoise.photo_task = None;
                 task.detail("");
             }
         }
@@ -1926,6 +2353,26 @@ mod gpu_tests {
     }
 
     #[test]
+    fn a_set_up_makes_the_folder_of_its_marker() {
+        let dir = folder("setup-folder").join("not").join("yet");
+        let marker = dir.join(GPU_SETUP_MARKER);
+        let (m, seen) = (marker.clone(), Arc::new(AtomicBool::new(false)));
+        let s = seen.clone();
+        let r = set_up_card(
+            &marker,
+            Duration::from_secs(10),
+            move || {
+                s.store(m.exists(), Ordering::Relaxed);
+                Ok(())
+            },
+            || (),
+        );
+        assert_eq!(r, Ok(((), ())));
+        assert!(seen.load(Ordering::Relaxed), "the crash guard is written even when the models folder was missing");
+        let _ = std::fs::remove_dir_all(dir.ancestors().nth(2).unwrap_or(&dir));
+    }
+
+    #[test]
     fn a_set_up_that_takes_too_long_is_given_up_on() {
         let dir = folder("slowsetup");
         let marker = dir.join(GPU_SETUP_MARKER);
@@ -1949,6 +2396,142 @@ mod gpu_tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(set_up_card(&marker, Duration::from_secs(5), || Ok(1), || 2), Ok((1, 2)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The built-in denoiser for one photo of `noise` `(a, b)`, its card state kept by a marker in a folder of its own.
+    fn builtin(name: &str) -> (BuiltinModel, PathBuf) {
+        let dir = folder(name);
+        let m = BuiltinModel::new(&dir.join(GPU_SETUP_MARKER));
+        let _ = m.runner.set(lcc_denoise::builtin::Builtin::with_noise(CHECK_NOISE));
+        (m, dir)
+    }
+
+    /// Compare a tile from the card with the CPU's picture: equal on average, and with few values far off. (The demosaic
+    /// chooses a direction at each pixel, so a tiny difference of the filter can change a pixel by a good deal.)
+    fn agree(want: &[f32], got: &[f32]) {
+        assert_eq!(want.len(), got.len());
+        let scale = want.iter().fold(1e-9f32, |m, v| m.max(v.abs()));
+        let mean = want.iter().zip(got).map(|(a, b)| (a - b).abs()).sum::<f32>() / want.len() as f32 / scale;
+        let far = want.iter().zip(got).filter(|(a, b)| (*a - *b).abs() > 0.05 * scale).count() as f32 / want.len() as f32;
+        assert!(mean < 1e-3 && far < 5e-3, "off by {mean:e} on average of the largest value, {far:e} of the values far off");
+    }
+
+    /// With the card chosen, the built-in denoiser's tile agrees with the processor's, a few tiles feed the card at once,
+    /// and a set-up that ended leaves no marker; where there is no card it stays on the processor.
+    #[test]
+    fn the_built_in_denoiser_on_the_card_gives_the_cpus_tile() {
+        use lcc_denoise::builtin::{Builtin, TILE};
+        let (m, dir) = builtin("builtin-card");
+        let tile = builtin_check_tile(TILE as usize);
+        let want = Builtin::with_noise(CHECK_NOISE).run(&tile).unwrap();
+        let (runner, at_once) = m.runner(RunOn::Gpu, 16);
+        let device = m.device(RunOn::Gpu);
+        eprintln!("device: {device}");
+        match device["kind"].as_str() {
+            Some("gpu") => {
+                assert!(at_once <= GPU_PARALLEL, "a card is fed by a few tiles at once");
+                agree(&want, &runner.run(&tile).unwrap());
+                assert!(device["cardMs"].as_f64().is_some_and(|ms| ms > 0.0) && device["cpuMs"].as_f64().is_some_and(|ms| ms > 0.0), "{device}");
+            }
+            Some("cpu") => {
+                lcc_testkit::skip!(Gpu, "the built-in denoiser stays on the CPU here: {}", device["reason"]);
+                assert_eq!(at_once, 16);
+            }
+            other => panic!("the first photo decides where the work runs, not {other:?}"),
+        }
+        assert!(!dir.join(GPU_SETUP_MARKER).exists(), "a set-up that ended leaves no marker");
+        forget_builtin_card(&dir.join(GPU_SETUP_MARKER));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// With the processor chosen, the built-in denoiser gives the processor's tile bit for bit, uses all the threads
+    /// asked for and never sets the card up.
+    #[test]
+    fn with_the_processor_chosen_the_built_in_denoiser_runs_on_the_cpu_and_never_starts_the_card() {
+        use lcc_denoise::builtin::{Builtin, TILE};
+        let (m, dir) = builtin("builtin-cpu");
+        let tile = builtin_check_tile(TILE as usize);
+        let (runner, at_once) = m.runner(RunOn::Cpu, 16);
+        assert_eq!(runner.run(&tile).unwrap(), Builtin::with_noise(CHECK_NOISE).run(&tile).unwrap(), "the CPU path is the CPU runner, bit for bit");
+        assert_eq!(at_once, 16, "the threads asked for are the threads used");
+        assert_eq!(m.device(RunOn::Cpu)["kind"], "cpu");
+        assert_eq!(m.device(RunOn::Auto)["kind"], "pending", "the card was not even set up");
+        forget_builtin_card(&dir.join(GPU_SETUP_MARKER));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A set-up marker left behind (the app closed while it ran) keeps the card off the built-in denoiser, with a reason
+    /// and a retry, until choosing where denoise runs forgets it.
+    #[test]
+    fn a_set_up_marker_left_behind_keeps_the_card_off_the_built_in_denoiser_until_a_choice_is_made() {
+        let (m, dir) = builtin("builtin-marker");
+        let marker = dir.join(GPU_SETUP_MARKER);
+        std::fs::write(&marker, "setting up the graphics card for AI Denoise (unix time 1)\n").unwrap();
+        let (_, at_once) = m.runner(RunOn::Gpu, 6);
+        assert_eq!(at_once, 6, "no card: the threads asked for");
+        let device = m.device(RunOn::Gpu);
+        assert_eq!(device["kind"], "cpu", "{device}");
+        assert_eq!(device["retry"], true, "{device}");
+        assert!(device["reason"].as_str().unwrap().contains("closed"), "{device}");
+        // choosing where denoise runs forgets it (and the marker): the card is set up afresh for the next photo
+        forget_gpu_set_ups(&dir);
+        assert!(!marker.exists());
+        let (again, _) = builtin("builtin-marker-again");
+        assert_eq!(again.device(RunOn::Auto)["kind"], "pending");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The card's filter stays within the agreement limits of the processor's on the check tile, well inside them, and
+    /// gives the same answer every time.
+    #[test]
+    fn the_cards_filter_agrees_with_the_cpus_on_the_check_tile_and_gives_the_same_answer_every_time() {
+        use lcc_denoise::builtin::{Builtin, TILE};
+        let tile = builtin_check_tile(TILE as usize);
+        let b = Builtin::with_noise(CHECK_NOISE);
+        let params = b.bm3d_params().unwrap();
+        let gpu = match lcc_gpu::bm3d::Bm3dGpu::new(&params, TILE as usize) {
+            Ok(g) => Arc::new(g),
+            Err(why) => return lcc_testkit::skip!(Gpu, "no card for the built-in denoiser here: {why}"),
+        };
+        let runner = lcc_gpu::bm3d::BuiltinRunner::new(gpu, b).unwrap();
+        let a = runner.agreement(&tile).unwrap();
+        eprintln!("the card's filter is off by {:.3} at most and {:.1e} on average (noise deviations)", a.worst, a.mean);
+        assert!(a.worst <= BUILTIN_AGREE_WORST && a.mean <= BUILTIN_AGREE_MEAN, "{a:?}");
+        assert!(a.worst < 0.15 && a.mean < 1e-4, "a card within the limits but far from what it manages: {a:?}");
+        let (first, again) = (runner.run(&tile).unwrap(), runner.run(&tile).unwrap());
+        assert_eq!(first, again, "the card gives the same answer every time");
+        agree(&Builtin::with_noise(CHECK_NOISE).run(&tile).unwrap(), &first);
+    }
+
+    /// A tile the card cannot do (another size than it was made for) is run on the processor, and after three of them
+    /// the card is stopped for the built-in denoiser.
+    #[test]
+    fn a_tile_the_card_gets_wrong_is_run_on_the_processor_and_three_stop_the_card_for_the_built_in_denoiser() {
+        use lcc_denoise::builtin::Builtin;
+        let (m, dir) = builtin("builtin-wrong");
+        let (_, _) = m.runner(RunOn::Gpu, 8);
+        if m.device(RunOn::Gpu)["kind"] != "gpu" {
+            lcc_testkit::skip!(Gpu, "no card for the built-in denoiser here: {}", m.device(RunOn::Gpu)["reason"]);
+            forget_builtin_card(&dir.join(GPU_SETUP_MARKER));
+            let _ = std::fs::remove_dir_all(&dir);
+            return;
+        }
+        // a tile of another size than the card was made for is one it cannot do: the CPU runs it, and three stop the card
+        let small = 64;
+        let input = builtin_check_tile(small);
+        let want = Builtin::with_noise(CHECK_NOISE).run(&input).unwrap();
+        let (runner, _) = m.runner(RunOn::Gpu, 8);
+        for _ in 0..GPU_MAX_FALLBACKS {
+            assert_eq!(runner.run(&input).unwrap(), want, "a tile the card cannot do is the CPU's tile");
+        }
+        let device = m.device(RunOn::Gpu);
+        assert_eq!(device["kind"], "cpu", "{device}");
+        assert!(device["reason"].as_str().unwrap().contains("tiles wrong"), "{device}");
+        assert_eq!(device["fellBack"], GPU_MAX_FALLBACKS);
+        let (_, at_once) = m.runner(RunOn::Gpu, 8);
+        assert_eq!(at_once, 8, "the next photo runs on the CPU, even with the card chosen");
+        forget_builtin_card(&dir.join(GPU_SETUP_MARKER));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

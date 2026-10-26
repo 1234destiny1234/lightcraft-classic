@@ -1,8 +1,9 @@
-//! Camera calibrations matched to Lightroom: per-model colour and tone fitted black-box to Lightroom's exports of a
-//! contributor's own photos (`<cli> calibrate-lightroom fit`), so a catalogue opened in the app renders as it does
-//! there.
+//! Camera calibrations matched to another editor: per-model colour and tone fitted black-box to Lightroom's (or, with
+//! [`Editor`], Capture One's, darktable's, RawTherapee's or DxO PhotoLab's) exports of a contributor's own photos
+//! (`<cli> calibrate-lightroom fit [--editor ID]`), so photos opened in the app render as they do there.
 //!
-//! One file per camera model (`data/calibrations/<Make>_<Model>.json`, embedded at build time) holds:
+//! One file per camera model and editor (`data/calibrations/<Make>_<Model>.json` for Lightroom,
+//! `<Make>_<Model>_<editor>.json` for another, embedded at build time) holds:
 //! - the camera's colour model in the DNG profile form (DNG 1.7 chapter 6): `ColorMatrix1/2` (they place the white,
 //!   so Kelvin and tint read as Lightroom's), `ForwardMatrix1/2` and an optional dual `HueSatMap`, for two
 //!   calibration illuminants;
@@ -20,6 +21,8 @@
 //!
 //! A look becomes a [`Dcp`] ([`Calibration::look_dcp`]) and reaches photos through the same path as a person's own
 //! `.dcp` (`lcc_raw::dcp::resolve`): per-photo choice `cal:<look id>`, a person's own `.dcp` default outranking it.
+//! Calibrations of one camera for several editors pool their looks; only a Lightroom calibration gives the camera
+//! its default look, the other editors' looks are chosen per photo (Profile ▸ Camera profile).
 
 use lcc_color::Mat3;
 use lcc_raw::ColorData;
@@ -34,8 +37,62 @@ pub const VERSION: u32 = 1;
 pub const MAX_FILE: usize = 4 << 20;
 /// The licence every calibration is contributed under (as the camera-JPEG profiles).
 pub const LICENCE: &str = "MIT OR Apache-2.0";
-/// How the numbers were made.
+/// How the numbers were made (Lightroom's calibrations; [`Editor::method`] for every editor).
 pub const METHOD: &str = "black-box fit to Lightroom exports of the contributor's own photos";
+
+/// The editor whose exports a calibration was fitted to. Its looks are opt-in per photo (`cal:<id>`), so
+/// calibrations for several editors can sit side by side for one camera.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Editor {
+    #[default]
+    Lightroom,
+    CaptureOne,
+    Darktable,
+    Rawtherapee,
+    DxoPhotolab,
+}
+
+impl Editor {
+    pub const ALL: [Editor; 5] = [Editor::Lightroom, Editor::CaptureOne, Editor::Darktable, Editor::Rawtherapee, Editor::DxoPhotolab];
+
+    /// The editor's name as people write it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Editor::Lightroom => "Lightroom",
+            Editor::CaptureOne => "Capture One",
+            Editor::Darktable => "darktable",
+            Editor::Rawtherapee => "RawTherapee",
+            Editor::DxoPhotolab => "DxO PhotoLab",
+        }
+    }
+
+    /// The id used on the command line and in files (`capture-one`, …).
+    pub fn id(self) -> &'static str {
+        match self {
+            Editor::Lightroom => "lightroom",
+            Editor::CaptureOne => "capture-one",
+            Editor::Darktable => "darktable",
+            Editor::Rawtherapee => "rawtherapee",
+            Editor::DxoPhotolab => "dxo-photolab",
+        }
+    }
+
+    /// The editor for an id or name, in any case (`capture-one`, `Capture One`, `captureone`).
+    pub fn parse(s: &str) -> Option<Editor> {
+        let norm = |t: &str| t.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase();
+        let want = norm(s);
+        Editor::ALL.into_iter().find(|e| norm(e.id()) == want || norm(e.name()) == want)
+    }
+
+    /// The `method` a calibration fitted to this editor records.
+    pub fn method(self) -> String {
+        match self {
+            Editor::Lightroom => METHOD.to_string(),
+            e => format!("black-box fit to {} exports of the contributor's own photos", e.name()),
+        }
+    }
+}
 /// Prefix of a look's id in a photo's camera-profile choice (`profile.camera`).
 pub const LOOK_PREFIX: &str = "cal:";
 
@@ -45,6 +102,10 @@ const MAX_TABLE: usize = 1 << 16;
 const MAX_LOOKS: usize = 16;
 /// Largest number of tone-curve points.
 const MAX_TONE_POINTS: usize = 1024;
+
+fn is_lightroom(e: &Editor) -> bool {
+    *e == Editor::Lightroom
+}
 
 /// One camera model's calibration.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -57,7 +118,10 @@ pub struct Calibration {
     /// Other Exif model names of the same camera.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<String>,
-    /// [`METHOD`].
+    /// The editor the looks match (Lightroom when the file doesn't say).
+    #[serde(default, skip_serializing_if = "is_lightroom")]
+    pub editor: Editor,
+    /// [`Editor::method`] of [`Calibration::editor`].
     pub method: String,
     /// The tool that made the file (the CLI's version).
     pub tool_version: String,
@@ -203,6 +267,24 @@ fn check_text(what: &str, s: &str, max: usize) -> Result<(), Error> {
     Ok(())
 }
 
+/// A camera or look identifier (make, model, alias, look name): trimmed, not empty, at most `max` characters,
+/// no control characters, no backslashes, no path traversal (`..`), and no leading or trailing slash. Slashes
+/// inside the identifier are permitted (e.g. phone models like "Xiaomi 17 Ultra/2512BPNDAG" or look names like
+/// "Camera PROVIA/STANDARD").
+fn check_identifier(what: &str, s: &str, max: usize) -> Result<(), Error> {
+    if s.trim().is_empty() {
+        return Err(Error(format!("{what} is empty")));
+    }
+    if s.chars().count() > max {
+        return Err(Error(format!("{what} is longer than {max} characters")));
+    }
+    let trimmed = s.trim();
+    if s.chars().any(|c| c.is_control() || c == '\\') || trimmed.starts_with('/') || trimmed.ends_with('/') || s.contains("//") || s.contains("..") {
+        return Err(Error(format!("{what} {s:?} holds a control character or reads as a path")));
+    }
+    Ok(())
+}
+
 fn check_matrix(what: &str, m: &Mat3) -> Result<(), Error> {
     if !m.0.iter().flatten().all(|v| v.is_finite() && v.abs() < 16.0) {
         return Err(Error(format!("{what} has an entry that is not finite or too large")));
@@ -254,18 +336,18 @@ impl Calibration {
         if self.version != VERSION {
             return Err(Error(format!("calibration version {} (this app reads {VERSION})", self.version)));
         }
-        check_text("make", &self.make, 64)?;
-        check_text("model", &self.model, 64)?;
+        check_identifier("make", &self.make, 64)?;
+        check_identifier("model", &self.model, 64)?;
         let name = format!("{} {}", self.make.trim(), self.model.trim());
         let err = |e: Error| Error(format!("{name}: {}", e.0));
         if self.aliases.len() > 8 {
             return Err(Error(format!("{name}: more than 8 aliases")));
         }
         for a in &self.aliases {
-            check_text("alias", a, 64).map_err(err)?;
+            check_identifier("alias", a, 64).map_err(err)?;
         }
-        if self.method != METHOD {
-            return Err(Error(format!("{name}: unknown method {:?}", self.method)));
+        if self.method != self.editor.method() {
+            return Err(Error(format!("{name}: unknown method {:?} for {}", self.method, self.editor.name())));
         }
         if self.licence != LICENCE {
             return Err(Error(format!("{name}: licence must be {LICENCE:?}, not {:?}", self.licence)));
@@ -301,7 +383,7 @@ impl Calibration {
         }
         let mut ids: Vec<String> = Vec::new();
         for look in &self.looks {
-            check_text("look name", &look.name, 64).map_err(err)?;
+            check_identifier("look name", &look.name, 64).map_err(err)?;
             let id = look_id(&look.name);
             if id == LOOK_PREFIX || ids.contains(&id) {
                 return Err(Error(format!("{name}: look {:?} has no usable or a duplicate id", look.name)));
@@ -325,7 +407,7 @@ impl Calibration {
             return Err(Error(format!("{name}: evidence out of range")));
         }
         for l in &e.looks {
-            check_text("evidence look name", &l.name, 64).map_err(err)?;
+            check_identifier("evidence look name", &l.name, 64).map_err(err)?;
             let finite = [l.before.median, l.before.p95, l.after.median, l.after.p95].iter().all(|v| v.is_finite() && (0.0..=200.0).contains(v));
             if !finite {
                 return Err(Error(format!("{name}: evidence for {:?} out of range", l.name)));
@@ -389,13 +471,18 @@ impl Calibration {
         let names: Vec<String> =
             std::iter::once(&self.model).chain(&self.aliases).map(|m| format!("{} {}", super::brand(&self.make), m.trim())).collect();
         let looks = self.looks.iter().map(|l| (look_id(&l.name), std::sync::Arc::new(self.look_dcp(l)))).collect();
-        lcc_raw::dcp::Calibrated { make: super::brand(&self.make), names, looks }
+        // only a Lightroom calibration gives the camera a default look; other editors' looks are chosen per photo
+        let default = (self.editor == Editor::Lightroom).then(|| self.default_look().map(|l| look_id(&l.name))).flatten();
+        lcc_raw::dcp::Calibrated { make: super::brand(&self.make), names, looks, default }
     }
 
-    /// The file name a calibration is kept under: `<Make>_<Model>.json`, characters outside letters, digits, `-`
-    /// and `.` as `_`.
+    /// The file name a calibration is kept under: `<Make>_<Model>.json` for Lightroom, `<Make>_<Model>_<editor>.json`
+    /// for another editor, characters outside letters, digits, `-` and `.` as `_`.
     pub fn file_name(&self) -> String {
-        let raw = format!("{}_{}", super::brand(&self.make), self.model.trim());
+        let raw = match self.editor {
+            Editor::Lightroom => format!("{}_{}", super::brand(&self.make), self.model.trim()),
+            e => format!("{}_{}_{}", super::brand(&self.make), self.model.trim(), e.id()),
+        };
         let safe: String = raw.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '_' }).collect();
         format!("{safe}.json")
     }
@@ -434,6 +521,7 @@ mod tests {
             make: "SONY".into(),
             model: "ILCE-7M4".into(),
             aliases: vec![],
+            editor: Editor::Lightroom,
             method: METHOD.into(),
             tool_version: "26.43.4".into(),
             contributor: Some("A Contributor".into()),
@@ -468,6 +556,36 @@ mod tests {
                 }],
             },
         }
+    }
+
+    #[test]
+    fn editors_name_their_files_methods_and_defaults() {
+        let lr = sample();
+        assert_eq!(lr.editor, Editor::Lightroom);
+        // a file from before the field reads as Lightroom's, and is written without it
+        let json = lr.to_json().unwrap();
+        assert!(!json.contains("\"editor\""));
+        assert_eq!(Calibration::parse(&json).unwrap(), lr);
+        let mut c1 = Calibration { editor: Editor::CaptureOne, method: Editor::CaptureOne.method(), ..lr.clone() };
+        c1.validate().unwrap();
+        assert!(c1.file_name().ends_with("_capture-one.json") && c1.file_name() != lr.file_name());
+        let back = Calibration::parse(&c1.to_json().unwrap()).unwrap();
+        assert_eq!(back.editor, Editor::CaptureOne);
+        // the method must be the editor's
+        c1.method = METHOD.into();
+        assert!(c1.validate().is_err());
+        assert!(Calibration::parse(&json.replace("\"version\"", "\"editor\": \"paint\",\n  \"version\"")).is_err());
+        // only Lightroom's calibration gives the camera a default look
+        assert!(lr.calibrated().default.is_some());
+        let c1 = Calibration { editor: Editor::Darktable, method: Editor::Darktable.method(), ..lr };
+        assert!(c1.calibrated().default.is_none() && !c1.calibrated().looks.is_empty());
+        for e in Editor::ALL {
+            assert_eq!(Editor::parse(e.id()), Some(e));
+            assert_eq!(Editor::parse(e.name()), Some(e));
+        }
+        assert_eq!(Editor::parse("CaptureOne"), Some(Editor::CaptureOne));
+        assert_eq!(Editor::parse("paint"), None);
+        assert_eq!(Editor::parse(""), None);
     }
 
     #[test]
@@ -526,6 +644,21 @@ mod tests {
         c.looks.clear();
         cases.push(c);
         let mut c = ok.clone();
+        c.model = "/etc/passwd".into();
+        cases.push(c);
+        let mut c = ok.clone();
+        c.model = "foo/../bar".into();
+        cases.push(c);
+        let mut c = ok.clone();
+        c.model = "foo//bar".into();
+        cases.push(c);
+        let mut c = ok.clone();
+        c.model = "foo\\bar".into();
+        cases.push(c);
+        let mut c = ok.clone();
+        c.model = "model/".into();
+        cases.push(c);
+        let mut c = ok.clone();
         c.contributor = Some("/home/someone/photos".into());
         cases.push(c);
         let mut c = ok.clone();
@@ -548,6 +681,22 @@ mod tests {
             assert!(Calibration::parse(text).is_err());
         }
         assert!(Calibration::parse(&" ".repeat(MAX_FILE + 1)).is_err());
+    }
+
+    #[test]
+    fn slash_in_camera_model_and_look_names_is_allowed() {
+        let mut c = sample();
+        c.make = "Xiaomi".into();
+        c.model = "Xiaomi 17 Ultra/2512BPNDAG".into();
+        c.aliases = vec!["17 Ultra/2512BPNDAG".into()];
+        c.looks[0].name = "Camera PROVIA/STANDARD".into();
+        c.evidence.looks[0].name = "Camera PROVIA/STANDARD".into();
+        assert!(c.validate().is_ok());
+        assert_eq!(c.file_name(), "XIAOMI_Xiaomi_17_Ultra_2512BPNDAG.json");
+        assert_eq!(look_id(&c.looks[0].name), "cal:camera-provia-standard");
+        assert!(c.matches(Some("Xiaomi"), "Xiaomi 17 Ultra/2512BPNDAG"));
+        assert!(c.matches(None, "17 ultra/2512bpndag"));
+        assert_eq!(c.look_dcp(&c.looks[0]).model, "XIAOMI Xiaomi 17 Ultra/2512BPNDAG");
     }
 
     #[test]
@@ -600,7 +749,12 @@ mod tests {
         for (name, text) in embedded_files() {
             let c = Calibration::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
             assert_eq!(*name, c.file_name(), "{name} should be named after its camera");
-            assert_eq!(c.to_json().unwrap(), *text, "{name} should be written in the canonical form (`calibrate-lightroom add`)");
+            // (a Windows checkout may have turned LF into CRLF)
+            assert_eq!(
+                c.to_json().unwrap(),
+                text.replace("\r\n", "\n"),
+                "{name} should be written in the canonical form (`calibrate-lightroom add`)"
+            );
         }
     }
 }

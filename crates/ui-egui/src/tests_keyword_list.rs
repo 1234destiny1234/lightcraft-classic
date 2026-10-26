@@ -168,6 +168,45 @@ fn double_clicking_a_keyword_edits_it() {
     assert_eq!(h.app.session.undo.len(), undo + 1, "one undo step");
 }
 
+/// ⌘⇧K (Ctrl+Shift+K) is Edit Keywords: it shows the Keywords panel with its Keyword List open,
+/// and the keyword picked there opens in Edit Keyword Tag.
+#[test]
+fn cmd_shift_k_edits_the_picked_keyword() {
+    let (mut h, _) = keywords_panel();
+    run(&mut h, "keyword.create", json!({"name": "Weddings", "synonyms": ["marriage"]}));
+    find(&mut h, "wedd");
+    ask(&mut h, "ui.clickWidget", json!({"id": "keywordRow:Weddings"}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "section:keywordList"}));
+    assert!(h.app.ui.section_folded("keywordList"));
+    ask(&mut h, "ui.key", json!({"key": "K", "cmd": true, "shift": true}));
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Keywords, "the Keywords panel");
+    assert!(!h.app.ui.section_folded("keywordList"), "the Keyword List is open");
+    let Some(crate::state::Dialog::KeywordTag { editing, name, synonyms, .. }) = h.app.ui.dialog.clone() else { panic!("{:?}", h.app.ui.dialog) };
+    assert_eq!((editing.as_deref(), name.as_str(), synonyms.as_str()), (Some("Weddings"), "Weddings", "marriage"));
+    ask(&mut h, "ui.dialog.cancel", json!({}));
+    ask(&mut h, "ui.key", json!({"key": "K", "cmd": true, "shift": true}));
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Keywords, "pressed again: the panel stays");
+    assert!(matches!(&h.app.ui.dialog, Some(crate::state::Dialog::KeywordTag { editing: Some(k), .. }) if k == "Weddings"), "{:?}", h.app.ui.dialog);
+}
+
+/// With no keyword picked in the Keyword List, or with the picked one deleted, ⌘⇧K shows the
+/// Keywords panel and its list and opens no dialog.
+#[test]
+fn cmd_shift_k_without_a_picked_keyword_opens_no_dialog() {
+    let (mut h, _) = keywords_panel();
+    ask(&mut h, "ui.set", json!({"right": "none"}));
+    ask(&mut h, "ui.key", json!({"key": "K", "cmd": true, "shift": true}));
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Keywords, "the Keywords panel");
+    assert!(has(&h, "field:keywordFilter"), "the Keyword List is shown");
+    assert_eq!(h.app.ui.dialog, None, "nothing picked");
+    run(&mut h, "keyword.create", json!({"name": "Weddings"}));
+    find(&mut h, "wedd");
+    ask(&mut h, "ui.clickWidget", json!({"id": "keywordRow:Weddings"}));
+    run(&mut h, "keyword.delete", json!({"keyword": "Weddings"}));
+    ask(&mut h, "ui.key", json!({"key": "K", "cmd": true, "shift": true}));
+    assert_eq!(h.app.ui.dialog, None, "the picked keyword is gone");
+}
+
 /// The − button deletes the picked keyword after asking how many photos lose it; Cancel keeps it, and undo
 /// brings a deleted one back.
 #[test]
@@ -194,7 +233,7 @@ fn creating_a_keyword_that_exists_keeps_the_dialog() {
     ask(&mut h, "ui.text", json!({"text": "mountains"}));
     ask(&mut h, "ui.key", json!({"key": "Enter"}));
     assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::KeywordTag { .. })), "still open");
-    assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.0.contains("already")), "{:?}", h.app.ui.toast);
+    assert!(h.app.ui.toast().is_some_and(|t| t.0.contains("already")), "{:?}", h.app.ui.toasts);
 }
 
 /// A keyword's context menu: create a keyword inside it, edit it, make it where new keywords go
@@ -259,7 +298,7 @@ fn a_keyword_cant_be_dropped_inside_itself() {
     drag(&mut h, "keywordRow:Portugal", "keywordRow:Portugal|Lisbon");
     assert_eq!((keywords_of(&h, ids[0]), h.app.session.undo.len()), (vec!["Portugal|Lisbon".to_string()], undo));
     assert_eq!(h.app.ui.dialog, None);
-    assert_eq!(h.app.ui.toast, None, "not even tried: no error to show");
+    assert_eq!(h.app.ui.toast(), None, "not even tried: no error to show");
 }
 
 /// Dropping a keyword where one of that name is already (Italy has a Rome) asks before merging
@@ -439,7 +478,7 @@ fn dropping_photos_counts_those_that_get_the_keyword() {
     run(&mut h, "keyword.create", json!({"name": "Portugal"}));
     run(&mut h, "photo.setMeta", json!({"ids": [ids[1]], "addKeywords": ["Portugal"]}));
     drag(&mut h, &format!("thumb:{}", ids[0]), "keywordRow:Portugal");
-    let toast = h.app.ui.toast.clone().map(|t| t.0).unwrap_or_default();
+    let toast = h.app.ui.toast().cloned().map(|t| t.0).unwrap_or_default();
     assert!(toast.contains("1 photo") && !toast.contains("2 photos"), "{toast}");
 }
 

@@ -217,17 +217,28 @@ struct Ctx<'a> {
     ancestors: Vec<u64>,
     /// IFDs produced so far, counting every copy of a shared one (bounded by `max_ifds`).
     visits: usize,
-    /// IFDs already parsed, by (offset, base): a second pointer to one (two `SubIFDs` entries, or an Exif pointer
-    /// shared by two directories) gets a copy instead of being dropped.
-    parsed: HashMap<(u64, u64), (Ifd, u64)>,
+    /// IFDs already parsed, by (offset, base, depth): a second pointer to one (two `SubIFDs` entries, or an Exif
+    /// pointer shared by two directories) gets a copy instead of being dropped. Keyed by depth too, so a copy has
+    /// exactly the children a fresh parse at that depth would have; a copy is charged the IFDs, entries and value
+    /// bytes of the first parse, so copies stay inside every limit.
+    parsed: HashMap<(u64, u64, usize), Parsed>,
     budget: u64,
     entries_total: usize,
 }
 
-/// The number of IFDs in `ifd`'s tree, itself included.
-fn tree_size(ifd: &Ifd) -> usize {
-    let boxed = [&ifd.exif, &ifd.gps, &ifd.interop].into_iter().flatten().map(|b| tree_size(b));
-    ifd.sub_ifds.iter().map(tree_size).chain(boxed).fold(1usize, usize::saturating_add)
+/// What parsing one IFD and its children used up: a copy of it is charged the same.
+#[derive(Clone, Copy)]
+struct Cost {
+    ifds: usize,
+    entries: usize,
+    bytes: u64,
+}
+
+/// An IFD parsed once, kept for later pointers to it.
+struct Parsed {
+    ifd: Ifd,
+    next: u64,
+    cost: Cost,
 }
 
 impl<'a> Ctx<'a> {
@@ -248,23 +259,40 @@ impl<'a> Ctx<'a> {
         if self.ancestors.contains(&offset) {
             return Err(TiffError::Invalid(format!("IFD loop at {offset}")));
         }
-        if let Some((ifd, next)) = self.parsed.get(&(offset, base)) {
-            let visits = self.visits.saturating_add(tree_size(ifd));
+        let key = (offset, base, depth);
+        if let Some(c) = self.parsed.get(&key) {
+            // a copy costs what the first parse did: its IFDs, entries and value bytes
+            let visits = self.visits.saturating_add(c.cost.ifds);
             if visits > self.opts.max_ifds {
                 return Err(TiffError::Limit("IFD count"));
             }
+            let entries = self.entries_total.saturating_add(c.cost.entries);
+            if entries > self.opts.max_entries_total {
+                return Err(TiffError::Limit("entry count"));
+            }
+            if c.cost.bytes > self.budget {
+                return Err(TiffError::Limit("value bytes"));
+            }
             self.visits = visits;
-            return Ok((ifd.clone(), *next));
+            self.entries_total = entries;
+            self.budget = self.budget.saturating_sub(c.cost.bytes);
+            return Ok((c.ifd.clone(), c.next));
         }
         if self.visits >= self.opts.max_ifds {
             return Err(TiffError::Limit("IFD count"));
         }
+        let (visits0, entries0, budget0) = (self.visits, self.entries_total, self.budget);
         self.visits = self.visits.saturating_add(1);
         self.ancestors.push(offset);
         let r = self.parse_dir(offset, base, depth);
         self.ancestors.pop();
         let (ifd, next) = r?;
-        self.parsed.insert((offset, base), (ifd.clone(), next));
+        let cost = Cost {
+            ifds: self.visits.saturating_sub(visits0),
+            entries: self.entries_total.saturating_sub(entries0),
+            bytes: budget0.saturating_sub(self.budget),
+        };
+        self.parsed.insert(key, Parsed { ifd: ifd.clone(), next, cost });
         Ok((ifd, next))
     }
 
@@ -373,6 +401,25 @@ pub fn decode(o: ByteOrder, typ: FieldType, b: &[u8]) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Value;
+    use crate::tags as t;
+    use crate::writer::{IfdBuilder, TiffWriter};
+
+    /// A value budget the caller sets bounds what is decoded: an entry claiming more value bytes than
+    /// the budget allows is dropped, entries that fit are read (the sparse header-read path, where the
+    /// buffer holds the file's logical size but only a few kilobytes were ever loaded, sizes its
+    /// budget from what was fetched, not from whatever length the file claims).
+    #[test]
+    fn the_value_budget_drops_over_budget_entries_and_keeps_the_rest() {
+        let mut ifd0 = IfdBuilder::new();
+        ifd0.set(t::MAKE, Value::Ascii("Keep".into()));
+        ifd0.set(0x9000, Value::Byte(vec![0; 2 << 20]));
+        let file = TiffWriter { order: ByteOrder::Little, bigtiff: false }.write(&[ifd0]).unwrap();
+        let opts = ParseOptions { value_budget: Some(1 << 20), ..Default::default() };
+        let tiff = Tiff::parse_with(&file, &opts).unwrap();
+        assert_eq!(tiff.ifds[0].string(t::MAKE), Some("Keep".to_string()), "a fitting entry is read");
+        assert!(tiff.ifds[0].get(0x9000).is_none(), "the over-budget entry is dropped");
+    }
 
     /// A BigTIFF whose first IFD, at 80, declares `declared` entries but holds one, followed by a next-IFD pointer
     /// `next`; a valid one-entry IFD sits at 16.
@@ -459,6 +506,16 @@ mod tests {
         let t = Tiff::parse_with(&shared_children(38, 38, 38, 0), &opts).unwrap();
         assert_eq!(t.ifds[0].sub_ifds.len(), 1);
         assert!(t.ifds[0].exif.is_none());
+    }
+
+    /// Hostile input: many pointers to one shared IFD must not clone past the entry limit (each child has one
+    /// entry, so three copies need three entries plus the root's two).
+    #[test]
+    fn shared_children_count_against_the_entry_limit() {
+        let opts = ParseOptions { max_entries_total: 4, ..Default::default() };
+        let t = Tiff::parse_with(&shared_children(38, 38, 38, 0), &opts).unwrap();
+        assert_eq!(t.ifds[0].sub_ifds.len(), 2);
+        assert!(t.ifds[0].exif.is_none(), "the third copy would pass the entry limit");
     }
 
     #[test]

@@ -2,6 +2,8 @@
   " ({unsure} with several look-alike files: use Locate)": " ({unsure} usealla samannäköisellä tiedostolla: käytä Paikanna)",
   " ({} in Recently Deleted)": " ({} Äskettäin poistetuissa)",
   " in {g} group{}": " · ryhmiä: {g}{:.0}",
+  " · aesthetic {:.1}": " · estetiikka {:.1}",
+  " · eyes {:.0}%": " · silmät {:.0}%",
   " · kept, not applied: {}": " · säilytetty, ei käytetty: {}",
   " · {:.0}% clipped": " · {:.0}% leikkautunut",
   " · {failed} couldn't be rendered": " · renderöinti epäonnistui: {failed}",
@@ -299,5 +301,14 @@
   "Drop to import {n} preset{}": "Pudota tuodaksesi esiasetuksia: {n}{:.0}",
   "Drop to review {n} item{} for import": "Pudota tarkistaaksesi ennen tuontia (kohteita: {n}){:.0}",
   "Where should the Lightroom catalog “{catalog}” go?": "Minne Lightroom-luettelo ”{catalog}” tuodaan?",
-  "Merge into the open library “{library}” ({count} photo{})": "Yhdistä avoimeen kirjastoon ”{library}” (kuvia: {count}{:.0})"
+  "Merge into the open library “{library}” ({count} photo{})": "Yhdistä avoimeen kirjastoon ”{library}” (kuvia: {count}{:.0})",
+  "{n} folder{} could not be read": "Kansiot, joita ei voitu lukea: {n}{:.0}",
+  "{n} file{} skipped (not a supported photo type)": "Ohitetut tiedostot (ei tuettu valokuvatyyppi): {n}{:.0}",
+  "about {h} h {m} min left": "noin {h} h {m} min jäljellä",
+  "about {n} min left": "noin {n} min jäljellä",
+  "Adjustments: {n}": "Säädöt: {n}",
+  "{n} done": "{n} valmis",
+  ", {n} failed": ", {n} epäonnistui",
+  "{n} failed": "{n} epäonnistui",
+  "Show each photo ({n})": "Näytä jokainen kuva ({n})"
 }

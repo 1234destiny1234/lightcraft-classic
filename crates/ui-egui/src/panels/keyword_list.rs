@@ -309,13 +309,21 @@ fn row(app: &mut LccApp, ui: &mut egui::Ui, r: &Row, selection: &[PhotoId], tick
     let room = (arrow.left() - 4.0 - (x + 34.0)).max(0.0);
     let font = t.font(13.0);
     let measure = |s: &str| ui.painter().layout_no_wrap(s.to_string(), font.clone(), t.text_label).size().x;
-    let name = if measure(&r.name) <= room { r.name.clone() } else { crate::widgets::elide_head(&r.name, room, measure) };
+    let flat = lcc_catalog::keywords::one_line(&r.name);
+    let name = if measure(&flat) <= room { flat.to_string() } else { crate::widgets::elide_head(&flat, room, measure) };
     let label = ui.painter().text(pos2(x + 34.0, cy), Align2::LEFT_CENTER, name, font.clone(), if picked { t.text } else { t.text_label });
     // where new keywords go (Put New Keywords Inside This Keyword): a dot after the name
+    let mut after = label.right();
     if app.session.catalog.default_keyword_parent().as_deref().is_some_and(|k| same(k, &r.path)) {
         let dot = Rect::from_center_size(pos2(label.right() + 7.0, cy), vec2(6.0, 6.0));
         ui.painter().circle_filled(dot.center(), 3.0, t.accent);
         register(ui.ctx(), format!("keywordDefault:{}", r.path), dot);
+        after = dot.right();
+    }
+    // a keyword of the keyword shortcut (⇧K): a + after the name
+    if app.session.keyword_shortcut.iter().any(|k| same(k, &r.path)) {
+        let plus = ui.painter().text(pos2(after + 5.0, cy), Align2::LEFT_CENTER, "+", font.clone(), t.accent);
+        register(ui.ctx(), format!("keywordShortcut:{}", r.path), plus);
     }
     let resp = resp.on_hover_text(r.path.replace('|', " › "));
     if resp.clicked() {
@@ -404,6 +412,12 @@ fn menu(app: &mut LccApp, ui: &mut egui::Ui, path: &str, selection: &[PhotoId]) 
     let label = format!("{}{}", if is_default { "✓ " } else { "" }, crate::i18n::tr("Put New Keywords Inside This Keyword"));
     if item(ui, "defaultParent", &label, true) {
         let _ = app.run("keyword.setDefaultParent", json!({"keyword": if is_default { serde_json::Value::Null } else { json!(path) }}));
+    }
+    let in_shortcut = app.session.keyword_shortcut.iter().any(|k| same(k, path));
+    let label = format!("{}{}", if in_shortcut { "✓ " } else { "" }, crate::i18n::tr("Use This as Keyword Shortcut"));
+    if item(ui, "keywordShortcut", &label, true) {
+        let keywords: Vec<&str> = if in_shortcut { Vec::new() } else { vec![path] };
+        let _ = app.run("keyword.setShortcut", json!({"keywords": keywords}));
     }
     ui.separator();
     let some = !selection.is_empty();

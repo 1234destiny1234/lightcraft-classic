@@ -36,13 +36,13 @@ In the Masking panel (M):
   so small objects get 5–10× finer edges than one pass over the whole photo gives.
 
 The first Object or Describe on a photo analyzes it (the image encoder runs once per photo and
-look: ~3 s on an Apple M4 Pro, plus a one-time ~6 s for compiling GPU kernels and loading the
-model after launch). That starts in the background as soon as you pick Object; after it, each
-click takes ~35 ms and each description ~0.6 s. Everything the model does runs on its own worker
-thread: the window stays responsive, a click shows its dot at once and the selection follows
-when it's computed ("Selecting…" / "Analyzing the photo…" under the mask tiles). The model is
-unloaded after 10 minutes without use (it takes several GB of memory) and loaded again when
-needed.
+look: ~3 s on an Apple M4 Pro, ~11 s on the CPU of a 12-core Ryzen 9 3900X, plus a one-time ~6 s
+for compiling GPU kernels and loading the model after launch). That starts in the background as
+soon as you pick Object; after it, each click takes ~35 ms and each description ~0.6 s (~0.15 s
+and ~2 s on that CPU). Everything the model does runs on its own worker thread: the window stays
+responsive, a click shows its dot at once and the selection follows when it's computed
+("Selecting…" / "Analyzing the photo…" under the mask tiles). The model is unloaded after 10
+minutes without use (it takes several GB of memory) and loaded again when needed.
 
 The result is stored with the mask: the model's 288 × 288 mask logits over the uncropped photo
 (quantized, compressed, ~10–30 KB). Renders and exports sample them at any resolution and never
@@ -162,14 +162,17 @@ as described below, then run:
 
 ```sh
 cargo build --release --locked -p lcc-segment --bin sam3-worker
+export <PREFIX>_SAM3_WORKER_TOKEN="$(openssl rand -hex 16)"   # or any secret of 16+ characters
 target/release/sam3-worker "$HOME/Library/Application Support/<settings_dir>/models/sam3" 127.0.0.1:8793
 ```
 
-On the editing computer, start an SSH tunnel in one terminal and the app in another:
+Without `<PREFIX>_SAM3_WORKER_TOKEN` the worker makes up a token for the run and prints it. On the
+editing computer, start an SSH tunnel in one terminal and the app in another, with the same
+token:
 
 ```sh
 ssh -N -T -o ExitOnForwardFailure=yes -L 127.0.0.1:8793:127.0.0.1:8793 user@your-mac
-<PREFIX>_SAM3_REMOTE=127.0.0.1:8793 <binary>
+<PREFIX>_SAM3_WORKER_TOKEN=<the token> <PREFIX>_SAM3_REMOTE=127.0.0.1:8793 <binary>
 ```
 
 Object clicks, Describe prompts, and detail refinement use the remote worker. Only the
@@ -179,11 +182,13 @@ stay in the local library, so later adjustments and exports work without the con
 
 The worker requires Metal and accepts one editing connection at a time. It loads weights
 on demand and releases them when the client disconnects or remains idle for ten minutes.
-Both endpoints require loopback addresses: SSH provides authentication and encryption.
-The listener has no independent authentication; do not expose it through a public proxy. Any
-process of any user on the worker Mac can connect to it, and on the editing computer a local
-process listening on the port while the tunnel is down receives the rendered model input, so use
-this only on machines whose local users you trust.
+Both endpoints require loopback addresses: SSH provides encryption and the login. Before any
+pixels move, the editor and the worker prove to each other that they know the token (an
+HMAC-SHA256 challenge-response: the token itself never crosses the socket). Another process on
+the worker Mac can't use the worker without it, and a process listening on the editor's port while
+the tunnel is down learns nothing and receives no photo: the app stops with an error. A peer
+that connects and stays silent is dropped after 10 seconds without holding up the editor. Keep
+the token as private as an SSH key; don't expose the worker through a public proxy.
 
 No local weights are required in remote mode. An unavailable worker produces an explicit
 error, not a silent CPU fallback. Restore the tunnel and retry. Unset
@@ -358,6 +363,18 @@ wait and return the result (when built with the `sam` feature; the default CLI h
 - Accuracy: `crates/segment/tests/it/reference.rs` compares every stage against the Python
   reference (`tools/sam3_reference.py`); on Metal the backbone matches to 7e-5 relative error
   and masks to ~5e-5. f16 was tried and rejected (overflow, ~7 % faster).
+- Speed on the CPU: candle runs elementwise operations and layout copies on one thread, batched
+  matrix products one pair after another and transposed convolutions one output channel at a
+  time. `cpu.rs` fuses the bias adds, activations, rotary encoding, window partitioning, head
+  split/merge, the detector's box bias and the pixel decoder's GroupNorm into parallel kernels
+  (the same operations in the same order: bit-identical), runs attention as one task per batch,
+  head and block of query rows (256 KB of scores, so they stay in the core's cache), and the
+  necks' 2 × 2 transposed convolutions as one matrix product each. Those two change how gemm
+  blocks its sums, so results move by float rounding only, as they do between two CPUs (gemm
+  picks its blocking from the cache sizes): against the tensor operations the backbone differs
+  by 1e-5 relative and the masks by at most 7e-4, and fewer than 4e-7 of the mask pixels change
+  side. On a 12-core Ryzen 9 3900X: encode ~37 → ~11 s, a description ~6 → ~2 s, getting ready
+  for clicks ~2.3 → ~0.8 s.
 - The engine feature `sam` (on in the desktop app, off for web and CLI) gates the model; without
   it the commands report that the build has no AI masks.
 

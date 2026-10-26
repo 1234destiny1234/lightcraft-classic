@@ -20,6 +20,8 @@ use crate::widgets::{BAND_COLORS, SliderOut, divider, flyout_row, hex, register,
 /// Commit a slider interaction: begin → live updates → end, so a drag is one undo step.
 pub fn apply_slider_out(app: &mut LccApp, spec: &ControlSpec, out: SliderOut, mut set: impl FnMut(&mut LccApp, f64) -> Result<Value, String>) {
     if out.drag_started && !out.reset {
+        // a MIDI turn still inside its idle window must not outlive the hand-over to the mouse
+        app.end_midi_interaction();
         let _ = app.run("develop.beginInteraction", json!({"label": spec.label}));
         app.ui.dragging_control = Some(spec.id.to_string());
     }
@@ -388,8 +390,9 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             if ui.checkbox(&mut lp, crate::i18n::tr("Enable Lens Corrections")).changed() {
                 let _ = app.run("develop.merge", json!({"settings": {"optics": {"lens_profile": lp}}, "label": "Lens Corrections"}));
             }
-            if lp && !has_lens {
-                lens_note(app, ui, id);
+            if lp {
+                lens_note(app, ui, id, has_lens);
+                lens_picker(app, ui, id, d);
             }
         });
         if d.optics.lens_profile {
@@ -762,32 +765,19 @@ fn steady_hdr_histogram(ctx: &egui::Context, id: PhotoId, hdr_edit: bool, hist: 
 /// (the release frame, before the loupe asks for its render).
 const HISTOGRAM_HOLD_S: f64 = 0.25;
 
-/// What the Histogram panel shows for photo `id` this frame (asking for the renders it needs).
-pub(crate) fn shown_histogram(app: &mut LccApp, ctx: &egui::Context, id: PhotoId) -> Option<Histogram> {
-    let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
-    let interacting = app.session.interaction.is_some();
-    // A high quality drag at full quality on an 8-bit view: each loupe update carries the edit's
-    // own histogram, HDR bins included, and the release shows that same render, so the panel
-    // shows it (a smaller live render beside it would change the picture when the slider is let go)
-    let loupe_live = interacting && !super::detail::adjust_drafts(app) && !super::detail::hdr_shown(app);
-    // a drag of an HDR edit: its drafts (or its HDR view) have no HDR histogram, so a small render
-    // beside them gives one (at its own pace: the drafts don't wait for it)
-    let live_drag = interacting && hdr_edit && !loupe_live;
-    if live_drag {
-        let edge = lcc_pipeline::HDR_HISTOGRAM_DRAG_EDGE;
-        if let Some(job) = app.session.render_job(id, edge, edge, false, app.ui.right != RightPanel::Crop)
-            && app.renderer.live_hdr_histogram.as_ref().is_none_or(|l| l.1 != job.key)
-        {
-            app.renderer.request(Slot::HdrHistogram, job, 95);
-        }
-    }
+/// The histogram both of the panel's plots draw: a drag's live HDR histogram, else the loupe render
+/// of this photo, else its thumbnail (grid view before the loupe has rendered it). On an HDR display
+/// a drag of an HDR edit sends the loupe only float drafts, so its 8-bit render (and that histogram)
+/// stays as it was until the release.
+fn current_histogram(app: &LccApp, ctx: &egui::Context, id: PhotoId, hdr_edit: bool) -> Option<Histogram> {
     // (only while the edit is HDR: one left from a drag before HDR was turned off would bring the
     // HDR layout back for each later drag, #277)
-    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| live_drag && l.0 == id).map(|l| l.2.clone());
-    // After such a drag its last live histogram stays until the loupe's render of the released
-    // edit lands: the loupe render there is until then is older (an HDR view's drag renders no
-    // 8-bit frames, so it is the one from before the drag), and showing it made the histogram
-    // jump back and forth on release.
+    let interacting = app.session.interaction.is_some();
+    let loupe_live = interacting && !super::detail::adjust_drafts(app) && !super::detail::hdr_shown(app);
+    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && hdr_edit && !loupe_live && l.0 == id).map(|l| l.2.clone());
+    // After such a drag its last live histogram stays until the loupe's render of the released edit
+    // lands: until then the loupe render there is (on an HDR display) the one from before the drag,
+    // and showing it would make the plots jump back for a moment on release.
     let hold = egui::Id::new(("histogramHold", id));
     let now = ctx.input(|i| i.time);
     let main_key = app.renderer.textures.get(&Slot::Main).filter(|t| t.photo == id).map(|t| t.key);
@@ -796,7 +786,7 @@ pub(crate) fn shown_histogram(app: &mut LccApp, ctx: &egui::Context, id: PhotoId
             ctx.data_mut(|d| d.insert_temp(hold, (main_key, h.clone(), now)));
             Some(h)
         }
-        None if !interacting => {
+        None if !interacting && hdr_edit => {
             let held = ctx.data(|d| d.get_temp::<(Option<u64>, Histogram, f64)>(hold));
             // (released once the loupe's texture is replaced, or once nothing renders it: a release
             // that changed nothing renders nothing)
@@ -811,10 +801,24 @@ pub(crate) fn shown_histogram(app: &mut LccApp, ctx: &egui::Context, id: PhotoId
         }
         None => None,
     };
-    // else the loupe render of this photo, else its thumbnail (grid view before the loupe has
-    // rendered it)
-    let mode = super::histogram::mode_of(app);
-    let hist = live.or_else(|| preview_histogram(app, id));
+    live.or_else(|| preview_histogram(app, id))
+}
+
+/// What a histogram of photo `id` drawn in `mode` shows this frame (the panel's first plot, the
+/// Modern layout's floating one), asking for the renders it needs.
+pub(crate) fn shown_histogram(app: &mut LccApp, ctx: &egui::Context, id: PhotoId, mode: HistogramMode) -> Option<Histogram> {
+    let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
+    // a drag of an HDR edit: its drafts have no HDR histogram, so a small render beside them
+    // gives one (at its own pace: the drafts don't wait for it)
+    if app.session.interaction.is_some() && hdr_edit && (super::detail::adjust_drafts(app) || super::detail::hdr_shown(app)) {
+        let edge = lcc_pipeline::HDR_HISTOGRAM_DRAG_EDGE;
+        if let Some(job) = app.session.render_job(id, edge, edge, false, app.ui.right != RightPanel::Crop)
+            && app.renderer.live_hdr_histogram.as_ref().is_none_or(|l| l.1 != job.key)
+        {
+            app.renderer.request(Slot::HdrHistogram, job, 95);
+        }
+    }
+    let hist = current_histogram(app, ctx, id, hdr_edit);
     let hist = panel_render_histogram(app, id, mode, hist);
     steady_hdr_histogram(ctx, id, hdr_edit, hist)
 }
@@ -824,7 +828,7 @@ pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let w = ui.available_width();
     let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
     let mode = super::histogram::mode_of(app);
-    let hist = shown_histogram(app, ui.ctx(), id);
+    let hist = shown_histogram(app, ui.ctx(), id, mode);
     let scale = super::histogram::scale_of(app);
     // an HDR edit's 1D histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR
     // label row under the plot; a 2D scope gets a taller plot instead so its disc has room
@@ -1050,7 +1054,7 @@ fn histogram_height(mode: HistogramMode) -> f32 {
 /// warnings stay on the first.
 fn second_histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, mode: HistogramMode, scale: HistogramScale, hdr_edit: bool) {
     let t = Tokens::get(ui.ctx());
-    let hist = preview_histogram(app, id);
+    let hist = current_histogram(app, ui.ctx(), id, hdr_edit);
     let hist = panel_render_histogram(app, id, mode, hist);
     let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist).map(|h| if mode.is_scope() { h } else { Histogram { hdr: None, ..h } });
     ui.add_space(2.0);
@@ -1918,7 +1922,124 @@ fn set_tat(app: &mut LccApp, ctx: &egui::Context, tool: &str, active: bool) {
 
 // ------------------------------------------------------------------------------ colour mixer
 
+/// The Mixer's Adjust choice (HSL | Color) and the HSL groups (Hue | Saturation | Luminance | All),
+/// as (label, key).
+pub(crate) const MIXER_ADJUST: [(&str, &str); 2] = [("HSL", "hsl"), ("Color", "color")];
+pub(crate) const MIXER_GROUPS: [(&str, &str); 4] = [("Hue", "hue"), ("Saturation", "sat"), ("Luminance", "lum"), ("All", "all")];
+/// The mixer bands' names, as the HSL sliders are labelled (parallel to `MIXER_BANDS`).
+const BAND_NAMES: [&str; 8] = ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"];
+
+/// A Color Mixer targeted adjustment (`tat:hue|sat|lum`) whose button the mixer's layout no longer
+/// shows is put down (a B&W photo shows Luminance's only, Point Color none, HSL the chosen group's
+/// or all three in All, Color mode all three): dragging on the photo would change a hidden group.
+pub(crate) fn drop_hidden_mixer_tool(app: &mut LccApp) {
+    let Some(key) = app.ui.tool.strip_prefix("tat:") else { return };
+    if !matches!(key, "hue" | "sat" | "lum") {
+        return;
+    }
+    let bw = app.session.active().and_then(|id| app.session.develop_of(id)).is_some_and(|d| crate::is_bw(&d));
+    let shown = if bw {
+        key == "lum"
+    } else {
+        !app.ui.flyout_open("pointColor") && (app.ui.mixer_adjust == "color" || app.ui.mixer_group == "all" || app.ui.mixer_group == key)
+    };
+    if !shown {
+        app.ui.tool.clear();
+    }
+}
+
+/// The Color Mixer's Mixer tab, as in Lightroom Classic: it adjusts by HSL (Hue | Saturation |
+/// Luminance | All: eight colour sliders per group, each group with its targeted adjustment) or by
+/// Color (one colour at a time). The same `mixer.<band>.<hue|sat|lum>` controls either way; a B&W
+/// photo shows its B&W mix.
 fn mixer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
+    if crate::is_bw(d) {
+        mixer_by_color(app, ui, d);
+        return;
+    }
+    let t = Tokens::get(ui.ctx());
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 4, bottom: 2 }).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(crate::i18n::tr("Adjust")).color(t.text_dim).size(11.5));
+            let at = MIXER_ADJUST.iter().position(|(_, k)| *k == app.ui.mixer_adjust).unwrap_or(0);
+            if let Some((_, k)) = crate::widgets::segmented(ui, "mixerAdjust", &MIXER_ADJUST, Some(at), 2).and_then(|i| MIXER_ADJUST.get(i)) {
+                app.ui.mixer_adjust = k.to_string();
+            }
+        });
+    });
+    drop_hidden_mixer_tool(app);
+    if app.ui.mixer_adjust == "color" {
+        mixer_by_color(app, ui, d);
+        return;
+    }
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 6, bottom: 2 }).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
+            for (label, key) in MIXER_GROUPS {
+                if group_tab(ui, &format!("mixerGroup-{key}"), crate::i18n::tr(label), app.ui.mixer_group == key).clicked() {
+                    app.ui.mixer_group = key.to_string();
+                    drop_hidden_mixer_tool(app);
+                }
+            }
+        });
+    });
+    let groups: &[(&str, &str)] = match app.ui.mixer_group.as_str() {
+        "sat" => &MIXER_GROUPS[1..2],
+        "lum" => &MIXER_GROUPS[2..3],
+        "all" => &MIXER_GROUPS[..3],
+        _ => &MIXER_GROUPS[..1],
+    };
+    let all = groups.len() > 1;
+    for (label, key) in groups {
+        // the group's targeted adjustment (and, in All, its heading)
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: if all { 8 } else { 2 }, bottom: 0 }).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let tool = format!("tat:{key}");
+                let active = app.ui.tool == tool;
+                if crate::widgets::icon_button(
+                    ui,
+                    &format!("tatMixer-{key}"),
+                    Icon::Target,
+                    vec2(22.0, 22.0),
+                    active,
+                    true,
+                    "Targeted adjustment: drag up/down on the photo to adjust the colours there",
+                )
+                .clicked()
+                {
+                    set_tat(app, ui.ctx(), &tool, active);
+                }
+                if all {
+                    let r = ui.label(egui::RichText::new(crate::i18n::tr(label)).color(t.text).strong().size(12.0));
+                    register(ui.ctx(), format!("mixerHeading:{key}"), r.rect);
+                }
+            });
+        });
+        for (band, name) in lcc_develop::MIXER_BANDS.iter().zip(BAND_NAMES) {
+            control_as(app, ui, d, &format!("mixer.{band}.{key}"), true, Some(name));
+        }
+    }
+}
+
+/// A word tab (Hue, Saturation…): bright and underlined when it is the one shown.
+fn group_tab(ui: &mut egui::Ui, id: &str, label: &str, active: bool) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let font = t.semibold(11.5);
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text);
+    let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x, 20.0), Sense::click());
+    crate::widgets::announce_selected(&resp, label.to_string(), active);
+    register(ui.ctx(), format!("button:{id}"), r);
+    let colour = if active || resp.hovered() { t.text } else { t.text_dim };
+    ui.painter().text(pos2(r.left(), r.center().y), Align2::LEFT_CENTER, label, font, colour);
+    if active {
+        ui.painter().line_segment([pos2(r.left(), r.bottom() - 1.0), pos2(r.right(), r.bottom() - 1.0)], Stroke::new(1.5, t.text));
+    }
+    resp
+}
+
+/// The Mixer by colour (and a B&W photo's mix): a dot per colour, then that colour's sliders.
+fn mixer_by_color(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     let t = Tokens::get(ui.ctx());
     let bands = lcc_develop::MIXER_BANDS;
     let sel = bands.iter().position(|b| *b == app.ui.mixer_mode).unwrap_or(0);
@@ -2616,13 +2737,29 @@ fn quick_develop(app: &mut LccApp, ui: &mut egui::Ui, n: usize) {
     });
 }
 
-/// Why Enable Lens Corrections has nothing to apply to photo `id` (its file carries no correction): no lens database
-/// (a link that opens Settings ▸ Lens profiles), no lens named in its metadata, or none of the database's profiles
-/// fits its lens.
-fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId) {
+/// What Enable Lens Corrections applies to photo `id` (issue #307): the database profile it uses (matched by name or
+/// chosen), or the correction its file carries; else why nothing applies: no lens database (a link that opens
+/// Settings ▸ Lens profiles), no lens named in its metadata, or none of the database's profiles fits its lens.
+/// `has_lens`: the photo carries a correction (its file's, or one found in the database).
+fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId, has_lens: bool) {
     use crate::i18n::tr;
     use lcc_engine::lens_profiles::Match;
     let t = Tokens::get(ui.ctx());
+    let Some(photo) = app.session.catalog.photo(id) else { return };
+    let applied = match app.session.lens_match(photo) {
+        None if has_lens => Some(tr("Correction from the file").to_string()),
+        Some(Match::Found(name)) => Some(tr("Profile: {name}").replace("{name}", &name)),
+        Some(Match::Chosen(name)) => Some(tr("Profile: {name} (chosen)").replace("{name}", &name)),
+        _ => None,
+    };
+    if let Some(text) = applied {
+        let r = ui.label(egui::RichText::new(text).size(11.0).color(t.text_dim));
+        crate::widgets::register(ui.ctx(), "label:lensStatus", r.rect);
+        return;
+    }
+    if has_lens {
+        return;
+    }
     let Some(state) = app.session.catalog.photo(id).and_then(|p| app.session.lens_match(p)) else { return };
     let text = match state {
         Match::NoDatabase => {
@@ -2643,6 +2780,85 @@ fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId) {
     };
     let r = ui.label(egui::RichText::new(text).size(11.0).color(t.text_dim));
     crate::widgets::register(ui.ctx(), "label:lensNote", r.rect);
+}
+
+/// Develop ▸ Lens Corrections' lens picker (issue #307): Make → Model dropdowns filled from the lens database
+/// (`lens.choose`; "Auto" goes back to the file's own correction or the match by name), and a focal-length field
+/// for a photo that records none (a manual lens). Raws only, with a lens database set up.
+fn lens_picker(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId, d: &lcc_develop::DevelopSettings) {
+    use crate::i18n::tr;
+    let Some(photo) = app.session.catalog.photo(id) else { return };
+    if !photo.develops_raw() {
+        return;
+    }
+    let photo_focal = photo.meta.focal_mm.is_some_and(|f| f.is_finite() && f > 0.0);
+    let Some(db) = lcc_engine::lens_profiles::database() else { return };
+    let picked = d.optics.lens.clone();
+    let t = Tokens::get(ui.ctx());
+    let make = picked.as_ref().and_then(|l| l.make.clone()).or_else(|| app.ui.lens_pick_make.clone());
+    let auto = tr("Auto").to_string();
+    let mut action: Option<serde_json::Value> = None;
+    egui::Grid::new("lens-picker").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
+        ui.label(egui::RichText::new(tr("Make")).size(11.5).color(t.text_dim));
+        let r = crate::widgets::combo_box("lens-make").width(150.0).selected_text(make.clone().unwrap_or_else(|| auto.clone())).show_ui(ui, |ui| {
+            if ui.selectable_label(picked.is_none() && make.is_none(), &auto).clicked() {
+                app.ui.lens_pick_make = None;
+                action = Some(serde_json::Value::Null);
+            }
+            let mut makers: Vec<&str> = db.lenses.iter().map(|l| l.maker.trim()).filter(|m| !m.is_empty()).collect();
+            makers.sort_unstable_by_key(|m| m.to_lowercase());
+            makers.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+            for m in makers {
+                if ui.selectable_label(make.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(m)), m).clicked() {
+                    app.ui.lens_pick_make = Some(m.to_string());
+                }
+            }
+        });
+        crate::widgets::register(ui.ctx(), "combo:lensMake", r.response.rect);
+        ui.end_row();
+        ui.label(egui::RichText::new(tr("Model")).size(11.5).color(t.text_dim));
+        let model_text = picked.as_ref().map(|l| l.model.clone()).unwrap_or_else(|| auto.clone());
+        let r = ui
+            .add_enabled_ui(make.is_some(), |ui| {
+                crate::widgets::combo_box("lens-model").width(150.0).selected_text(model_text).show_ui(ui, |ui| {
+                    let Some(mk) = make.as_deref() else { return };
+                    let mut models: Vec<&str> = db
+                        .lenses
+                        .iter()
+                        .filter(|l| l.maker.trim().eq_ignore_ascii_case(mk))
+                        .filter_map(|l| l.models.first().map(|m| m.trim()))
+                        .collect();
+                    models.sort_unstable_by_key(|m| m.to_lowercase());
+                    models.dedup();
+                    for m in models {
+                        let on = picked.as_ref().is_some_and(|l| l.model.eq_ignore_ascii_case(m));
+                        if ui.selectable_label(on, m).clicked() {
+                            let focal = picked.as_ref().and_then(|l| l.focal);
+                            action = Some(json!({"maker": mk, "model": m, "focal": focal}));
+                        }
+                    }
+                })
+            })
+            .inner;
+        crate::widgets::register(ui.ctx(), "combo:lensModel", r.response.rect);
+        ui.end_row();
+        // a manual lens records no focal length: the picked profile needs one
+        if let Some(l) = picked.as_ref().filter(|_| !photo_focal) {
+            ui.label(egui::RichText::new(tr("Focal length")).size(11.5).color(t.text_dim));
+            let mut f = l.focal.unwrap_or(50.0);
+            let r = ui.add(egui::DragValue::new(&mut f).range(1.0..=2000.0).speed(1.0).suffix(" mm"));
+            crate::widgets::register(ui.ctx(), "drag:lensFocal", r.rect);
+            if (r.changed() && !r.dragged()) || r.drag_stopped() || (l.focal.is_none() && r.changed()) {
+                action = Some(json!({"maker": l.make, "model": l.model, "focal": f}));
+            }
+            ui.end_row();
+        }
+    });
+    if let Some(lens) = action
+        && let Err(e) = app.run("lens.choose", json!({ "lens": lens }))
+    {
+        app.toast_error(ui.ctx(), e);
+    }
 }
 
 /// The preview-only notice's Reload from Disk: re-read the photo's file (a raw a newer version can

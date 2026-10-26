@@ -60,7 +60,8 @@ pub struct Camera {
     pub maker: String,
     pub model: String,
     pub mount: String,
-    pub crop_factor: f64,
+    /// Sensor crop relative to 35 mm; missing or invalid XML remains unknown.
+    pub crop_factor: Option<f64>,
 }
 
 /// One calibrated vignetting point.
@@ -80,8 +81,8 @@ pub struct Profile {
     /// Every name the lens goes by (EXIF variants, translations).
     pub models: Vec<String>,
     pub mounts: Vec<String>,
-    /// Crop factor of the camera the calibration was made on.
-    pub crop_factor: f64,
+    /// Crop factor of the calibration frame; missing or invalid XML remains unknown.
+    pub crop_factor: Option<f64>,
     /// Long / short side of the calibration frame.
     pub aspect_ratio: f64,
     /// False for fisheye and other non-rectilinear projections: distortion is then not applied.
@@ -160,12 +161,15 @@ impl LensDb {
     /// The camera with this EXIF make and model.
     pub fn find_camera(&self, make: &str, model: &str) -> Option<&Camera> {
         let mk = tokens(make);
-        let md = strip_maker(tokens(model), &mk);
+        let raw = tokens(model);
+        let md = strip_maker(raw.clone(), &mk);
         if md.is_empty() {
             return None;
         }
         self.cameras.iter().find(|c| {
             let cm = tokens(&c.maker);
+            // with no EXIF make, the model may still start with the maker's word
+            let md = if mk.is_empty() { strip_maker(raw.clone(), &cm) } else { md.clone() };
             maker_matches(&cm, &mk) && strip_maker(tokens(&c.model), &cm) == md
         })
     }
@@ -173,7 +177,8 @@ impl LensDb {
     /// The best profile for an EXIF lens model (and lens make, when the file has one), preferring lenses for the
     /// camera's mount. `None` when no name is a convincing match.
     pub fn find_lens(&self, lens_make: Option<&str>, lens_model: &str, camera: Option<&Camera>) -> Option<&Profile> {
-        self.best_lens(lens_make, lens_model, camera, |_| true)
+        // a compact camera's built-in lens is named after the camera, not the EXIF focal range
+        self.best_lens(lens_make, lens_model, camera, |_| true).or_else(|| self.find_fixed_lens(&tokens(lens_model), camera?))
     }
 
     /// [`find_lens`](Self::find_lens) among the profiles one of whose names is exactly `name`
@@ -206,10 +211,7 @@ impl LensDb {
                 best = Some((score, lens));
             }
         }
-        match best {
-            Some((_, l)) => Some(l),
-            None => self.find_fixed_lens(&exif, camera?),
-        }
+        best.map(|(_, l)| l)
     }
 
     /// Compact cameras with a built-in lens: lensfun names the lens after the camera and gives it the camera's own
@@ -233,6 +235,9 @@ impl LensDb {
             return (cands.len() == 1).then(|| cands[0]);
         };
         let (lo, hi) = (lo * 0.9, hi * 1.1);
+        if !lo.is_finite() || !hi.is_finite() {
+            return None;
+        }
         let mut best: Option<(f64, &Profile)> = None;
         for p in cands {
             let focals: Vec<f64> =
@@ -262,7 +267,7 @@ fn strip_maker(model: Vec<String>, maker: &[String]) -> Vec<String> {
 /// The numbers before the first "mm" in tokenised EXIF lens text: (shortest, longest) focal length.
 fn exif_focal_range(exif: &[String]) -> Option<(f64, f64)> {
     let end = exif.iter().position(|t| t == "mm")?;
-    let nums: Vec<f64> = exif.get(..end)?.iter().filter_map(|t| t.parse::<f64>().ok()).filter(|v| *v > 0.0).collect();
+    let nums: Vec<f64> = exif.get(..end)?.iter().filter_map(|t| t.parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0).collect();
     let lo = nums.iter().copied().fold(f64::INFINITY, f64::min);
     let hi = nums.iter().copied().fold(0.0, f64::max);
     (lo.is_finite() && hi > 0.0).then_some((lo, hi))
@@ -343,7 +348,7 @@ fn camera(n: &xml::Node) -> Option<Camera> {
         maker: n.kid_text("maker")?.to_string(),
         model: n.kid_text("model")?.to_string(),
         mount: n.kid_text("mount").unwrap_or_default().to_string(),
-        crop_factor: crop_of(n.kid_text("cropfactor")).unwrap_or(1.0),
+        crop_factor: crop_of(n.kid_text("cropfactor")),
     })
 }
 
@@ -372,7 +377,7 @@ fn lens(n: &xml::Node) -> Vec<Profile> {
     if models.is_empty() {
         return Vec::new();
     }
-    let crop = crop_of(n.kid_text("cropfactor")).unwrap_or(1.0);
+    let crop = crop_of(n.kid_text("cropfactor"));
     let aspect = aspect_of(n.kid_text("aspect-ratio")).unwrap_or(1.5);
     let rectilinear = n.kid_text("type").is_none_or(|t| t.eq_ignore_ascii_case("rectilinear"));
     let mounts = n.kids("mount").map(|m| m.text.trim().to_string()).filter(|m| !m.is_empty()).collect::<Vec<_>>();
@@ -382,7 +387,11 @@ fn lens(n: &xml::Node) -> Vec<Profile> {
                 maker: maker.to_string(),
                 models: models.clone(),
                 mounts: mounts.clone(),
-                crop_factor: crop_of(cal.attr("cropfactor")).unwrap_or(crop),
+                // Only an omitted override inherits; an explicit invalid value remains unknown.
+                crop_factor: match cal.attr("cropfactor") {
+                    Some(value) => crop_of(Some(value)),
+                    None => crop,
+                },
                 aspect_ratio: aspect_of(cal.attr("aspect-ratio")).unwrap_or(aspect),
                 rectilinear,
                 distortion: Vec::new(),
@@ -511,14 +520,16 @@ impl Profile {
     /// The correction for `shot`, as the DNG opcode polynomials the pipeline applies, centred on the image.
     /// Distortion and TCA are combined per plane (R, G, B); a model the polynomial can't follow closely
     /// ([`MAX_WARP_ERROR`], [`MAX_VIGNETTE_ERROR`]) or that would fold the image is left out.
+    /// An unknown or invalid calibration crop factor cannot be converted.
     pub fn correction(&self, shot: &Shot) -> Option<EmbeddedLens> {
         let (w, h) = (shot.width, shot.height);
         if !(w >= 2.0 && h >= 2.0 && w.is_finite() && h.is_finite() && shot.focal.is_finite() && shot.focal > 0.0) {
             return None;
         }
-        let cam = shot.crop_factor.filter(|c| c.is_finite() && *c > 0.0).unwrap_or(self.crop_factor);
+        let calibration_crop = self.crop_factor.filter(|c| c.is_finite() && (0.05..=20.0).contains(c))?;
+        let cam = shot.crop_factor.filter(|c| c.is_finite() && *c > 0.0).unwrap_or(calibration_crop);
         // DNG radius (1 = image half diagonal) → lensfun radii
-        let to_vig = self.crop_factor / cam;
+        let to_vig = calibration_crop / cam;
         let to_dist = to_vig * (1.0 + self.aspect_ratio * self.aspect_ratio).sqrt();
         let center = Point::new(0.5, 0.5);
         let radius = w.hypot(h) / 2.0 / w.max(h);

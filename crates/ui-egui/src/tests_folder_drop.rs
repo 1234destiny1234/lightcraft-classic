@@ -1,7 +1,8 @@
 //! Photos dragged from the grid onto a Folders row move there on disk: the row lights up, the
 //! dragged label says where they will go, a closed folder held under the pointer opens, and a
 //! release asks first (unless the person said not to), then moves the files (one undo step).
-//! Photos that can't go there, or are there already, say so and stay where they are.
+//! Photos that can't go there, or are there already, say so and stay where they are. A folder's
+//! menu does the same with Move Selected Photos Here, grayed out until photos are selected.
 
 use std::path::{Path, PathBuf};
 
@@ -117,7 +118,7 @@ fn click(h: &mut Headless, id: &str) {
 }
 
 fn toast(h: &Headless) -> String {
-    h.app.ui.toast.as_ref().map(|(t, _, _)| t.clone()).unwrap_or_default()
+    h.app.ui.toast().map(|(t, _, _)| t.clone()).unwrap_or_default()
 }
 
 #[test]
@@ -158,6 +159,21 @@ fn photos_dropped_on_a_folder_move_there_on_disk() {
     // and one Undo moves it back
     h.app.run("edit.undo", json!({})).unwrap();
     assert!(trip.join("beach.png").is_file() && !home.join("beach.png").exists(), "back where it was");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A selection set with a repeated id holds each photo once, so the drag carries it once.
+#[test]
+fn a_drag_after_selecting_with_a_repeated_id_carries_each_photo_once() {
+    let (root, trip, home) = folders("dedupe");
+    let mut h = app(&[(trip.join("beach.png"), false), (home.join("garden.png"), false)]);
+    let (beach, garden) = (id_of(&h, "beach.png"), id_of(&h, "garden.png"));
+    h.app.run("library.select", json!({"ids": [beach, garden, beach], "active": beach})).unwrap();
+    let from = widget(&h, &format!("thumb:{beach}")).unwrap().center();
+    press(&mut h, from);
+    glide(&mut h, from, from + egui::vec2(60.0, 60.0));
+    assert_eq!(h.app.ui.dragging_photos, Some(vec![beach, garden]));
+    release(&mut h, from);
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -345,6 +361,46 @@ fn dont_ask_again_moves_the_next_drop_at_once() {
 }
 
 #[test]
+fn dont_ask_again_is_kept_only_when_the_move_began() {
+    let (root, trip, home) = folders("dont-ask-refused");
+    let mut h = app(&[(trip.join("beach.png"), false), (home.join("garden.png"), false)]);
+    click(&mut h, &format!("libraryFolderToggle:{}", root.display()));
+    let target = folder_row(&h, &home).unwrap();
+    let beach = id_of(&h, "beach.png");
+    // a file of that name is in the folder already (not in the library): the move is refused
+    std::fs::copy(trip.join("beach.png"), home.join("beach.png")).unwrap();
+    drop_beach(&mut h, beach, target);
+    click(&mut h, "check:moveDontAsk");
+    assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::MovePhotos { dont_ask: true, .. })), "ticked");
+    click(&mut h, "button:dialogOk");
+    assert!(h.app.ui.dialog.is_none(), "the refusal closes the question");
+    assert!(trip.join("beach.png").is_file(), "nothing moved");
+    assert!(h.app.ui.settings.ask_before_move, "a refused move leaves the question on");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A confirmation that finds the photos in the folder already (they were moved there while the question was
+/// open, or a folder synchronization relinked them) moves nothing, so it doesn't turn the question off either.
+#[test]
+fn dont_ask_again_is_kept_only_when_a_photo_moved() {
+    let (root, trip, home) = folders("dont-ask-already");
+    let mut h = app(&[(trip.join("beach.png"), false), (home.join("garden.png"), false)]);
+    click(&mut h, &format!("libraryFolderToggle:{}", root.display()));
+    let target = folder_row(&h, &home).unwrap();
+    let beach = id_of(&h, "beach.png");
+    drop_beach(&mut h, beach, target);
+    click(&mut h, "check:moveDontAsk");
+    assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::MovePhotos { dont_ask: true, .. })), "ticked");
+    // the photo gets there some other way while the question is open
+    h.app.run("photo.moveToFolder", json!({"folder": home.to_string_lossy(), "ids": [beach]})).unwrap();
+    assert!(home.join("beach.png").is_file());
+    click(&mut h, "button:dialogOk");
+    assert!(h.app.ui.dialog.is_none());
+    assert!(h.app.ui.settings.ask_before_move, "nothing moved: the question stays on");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn a_question_left_open_while_another_library_opens_moves_nothing() {
     let (root, trip, home) = folders("other-library");
     let mut h = app(&[(trip.join("beach.png"), false), (home.join("garden.png"), false)]);
@@ -360,5 +416,85 @@ fn a_question_left_open_while_another_library_opens_moves_nothing() {
     assert_eq!(r["ok"], false, "{r}");
     assert!(r["error"].as_str().unwrap_or_default().contains("Another library was opened"), "{r}");
     assert!(trip.join("beach.png").is_file() && !home.join("beach.png").exists(), "nothing moved");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Move Selected Photos Here stays in a folder's menu with nothing selected, grayed out (a click
+/// moves nothing), so the menu keeps its shape; once a photo is selected it moves its file there.
+#[test]
+fn move_selected_photos_here_is_grayed_out_until_photos_are_selected() {
+    let (root, trip, home) = folders("menu-move");
+    let mut h = app(&[(trip.join("beach.png"), false), (home.join("garden.png"), false)]);
+    click(&mut h, &format!("libraryFolderToggle:{}", tree_path(&root)));
+    let garden = id_of(&h, "garden.png");
+    let menu_item = |h: &mut Headless| {
+        let at = folder_row(h, &trip).unwrap().center();
+        let r = h.request("ui.click", json!({"x": at.x, "y": at.y, "button": "right"}), std::time::Duration::from_secs(10));
+        assert_eq!(r["ok"], true, "{r}");
+        h.step();
+        h.step();
+        let r = h.request("ui.clickWidget", json!({"id": "folderMovePhotosHere"}), std::time::Duration::from_secs(10));
+        assert_eq!(r["ok"], true, "listed: {r}");
+        h.step();
+        h.step();
+    };
+    h.app.run("library.select", json!({"ids": []})).unwrap();
+    h.app.ui.toasts.clear();
+    menu_item(&mut h);
+    // an enabled row would try and say "no photos to move"; a grayed-out one says nothing
+    assert!(h.app.ui.toast().is_none(), "a grayed-out row does nothing: {}", toast(&h));
+    assert!(home.join("garden.png").is_file() && !trip.join("garden.png").exists(), "grayed out: nothing moved");
+    // close the menu, then select the photo and open it again
+    let r = h.request("ui.key", json!({"key": "Escape"}), std::time::Duration::from_secs(10));
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+    h.app.run("library.select", json!({"ids": [garden], "active": garden})).unwrap();
+    h.step();
+    menu_item(&mut h);
+    assert!(trip.join("garden.png").is_file() && !home.join("garden.png").exists(), "the selected photo's file moved");
+    let path = h.app.session.catalog.photo(lcc_catalog::PhotoId(garden)).map(|p| p.source.clone());
+    assert!(
+        matches!(&path, Some(lcc_catalog::Source::File { path }) if Path::new(path) == trip.join("garden.png")),
+        "the library follows the file: {path:?}"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn export_folder_with_a_preset_writes_exactly_the_folders_photos() {
+    let (root, trip, home) = folders("menu-export");
+    std::fs::create_dir_all(trip.join("dunes")).unwrap();
+    std::fs::copy(trip.join("beach.png"), trip.join("dunes").join("sand.png")).unwrap();
+    let out = root.join("out");
+    let mut h = app(&[(trip.join("beach.png"), false), (trip.join("dunes").join("sand.png"), false), (home.join("garden.png"), false)]);
+    h.app.services.write_shared = Some(std::sync::Arc::new(|p: &str, bytes: &[u8]| lcc_engine::export::write_file(p, bytes)));
+    h.app.run("export.savePreset", json!({"name": "Tiny PNG", "params": {"format": "png", "longEdge": 4}})).unwrap();
+    // a preset names no folder: the last export's is used
+    h.app.session.last_export = Some(json!({"dir": out}));
+    click(&mut h, &format!("libraryFolderToggle:{}", tree_path(&root)));
+    let at = folder_row(&h, &trip).unwrap().center();
+    let r = h.request("ui.click", json!({"x": at.x, "y": at.y, "button": "right"}), std::time::Duration::from_secs(10));
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+    for id in ["folderExportPresetMenu", "folderExportPreset:Tiny PNG"] {
+        let r = h.request("ui.clickWidget", json!({"id": id}), std::time::Duration::from_secs(10));
+        assert_eq!(r["ok"], true, "{id}: {r}");
+        h.step();
+        h.step();
+    }
+    assert!(h.app.ui.dialog.is_none(), "a preset starts without asking: {}", toast(&h));
+    let t0 = std::time::Instant::now();
+    while (h.app.export.is_some() || h.app.last_export_result.is_none()) && t0.elapsed() < std::time::Duration::from_secs(60) {
+        h.step();
+    }
+    let last = h.app.last_export_result.clone().expect("the export reports");
+    assert_eq!(last["files"].as_array().map(Vec::len).or(last["files"].as_u64().map(|n| n as usize)), Some(2), "{last}");
+    let mut names: Vec<String> = std::fs::read_dir(&out).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
+    names.sort();
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(names.iter().any(|n| n.contains("beach")) && names.iter().any(|n| n.contains("sand")), "{names:?}");
+    assert!(!names.iter().any(|n| n.contains("garden")), "{names:?}");
     let _ = std::fs::remove_dir_all(&root);
 }

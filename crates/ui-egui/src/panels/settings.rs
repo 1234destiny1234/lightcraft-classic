@@ -475,6 +475,28 @@ fn import_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             let _ = app.run("library.preferences", json!({"import": {"perCamera": per}}));
         }
     });
+    // AI Denoise for the high-ISO photos of a shoot, switched on as they come in
+    let mut iso = d.denoise_above_iso.unwrap_or(0);
+    row(ui, t, crate::i18n::tr("AI Denoise from"), |ui| {
+        let off = crate::i18n::tr("Off");
+        let opts = [(0u32, off), (800, "ISO 800"), (1600, "ISO 1600"), (3200, "ISO 3200"), (6400, "ISO 6400"), (12_800, "ISO 12800")];
+        // an ISO set by an agent that isn't offered shows as its own choice
+        let other = (!opts.iter().any(|(v, _)| *v == iso)).then(|| format!("ISO {iso}"));
+        let mut all: Vec<(u32, &str)> = opts.to_vec();
+        if let Some(o) = &other {
+            all.push((iso, o.as_str()));
+        }
+        if choices(ui, "settingsDenoiseIso", &all, &mut iso) {
+            let _ = app.run("library.preferences", json!({"import": {"denoiseAboveIso": iso}}));
+        }
+    });
+    hint(
+        ui,
+        t,
+        crate::i18n::tr(
+            "New raw photos shot at this ISO or above start with AI Denoise on, and their denoised pictures are made in the background after the import. Needs a denoise model (Settings, AI Denoise).",
+        ),
+    );
     if per {
         let cams = cameras(app);
         if cams.is_empty() {
@@ -812,14 +834,39 @@ fn hdr_zoom_cache(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     });
 }
 
+/// The graphics interface GPU rendering uses: a choice on Windows only (DirectX 12 by default,
+/// whose shader compiler can make the start slow on some machines; Vulkan there is opt-in, issue
+/// #136). Elsewhere there is one sensible interface.
+fn gpu_backend_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
+    use crate::state::GpuBackend;
+    if !cfg!(target_os = "windows") {
+        return;
+    }
+    let opts = [(GpuBackend::Auto, crate::i18n::tr("Automatic")), (GpuBackend::Dx12, "DirectX 12"), (GpuBackend::Vulkan, "Vulkan")];
+    row(ui, t, crate::i18n::tr("Graphics interface"), |ui| {
+        choices(ui, "settingsGpuBackend", &opts, &mut app.ui.settings.gpu_backend);
+    });
+    hint(
+        ui,
+        t,
+        crate::i18n::tr(
+            "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.",
+        ),
+    );
+}
+
 fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use lcc_engine::gpu;
     heading(ui, t, crate::i18n::tr("Rendering"));
     #[cfg(target_os = "windows")]
     check(ui, "settings.composeWindow", &mut app.ui.settings.compose_window, "Prevent G-SYNC/FreeSync flicker (applies at next launch)");
     check(ui, "settings.gpu", &mut app.ui.settings.gpu, "Use the GPU for rendering");
+    gpu_backend_row(app, ui, t);
     check(ui, "settings.hdrDisplay", &mut app.ui.settings.hdr_display, "HDR display where the screen supports it (applies at next launch)");
-    let status = if !gpu::available() {
+    // `available` waits for a device still being created: say so instead of blocking the frame
+    let status = if gpu::enabled() && !gpu::ready() {
+        "GPU: starting…".to_string()
+    } else if !gpu::available() {
         match gpu::unavailable_reason() {
             Some(why) => crate::i18n::tr_format!("Rendering on the CPU: {why}", why = why),
             None => "No usable GPU found: rendering on the CPU".to_string(),
@@ -1120,8 +1167,9 @@ fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
 }
 
 /// View ▸ View Options (⌘J), Lightroom Classic's Loupe View tab: whether the info overlay shows and
-/// which, and the three lines each of Info 1 and Info 2 shows (`view.viewOptions`). Changes apply
-/// as they are made.
+/// which, the three lines each of Info 1 and Info 2 shows, which of them shows briefly when the
+/// photo changes, and whether the loupe shows its loading and rendering message
+/// (`view.viewOptions`). Changes apply as they are made.
 pub(super) fn view_options(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use crate::state::{InfoOverlay as I, LoupeInfo, LoupeInfoField as F};
     heading(ui, t, crate::i18n::tr("Loupe View"));
@@ -1156,7 +1204,15 @@ pub(super) fn view_options(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         if r.clicked() {
             *lines = defaults;
         }
+        // one Info at most shows briefly: ticking one unticks the other
+        let info = if n == 1 { I::Basic } else { I::Exposure };
+        let mut briefly = app.ui.settings.loupe_info.briefly == info;
+        if check(ui, &format!("viewOptions.briefly{n}"), &mut briefly, "Show briefly when photo changes") {
+            app.ui.settings.loupe_info.briefly = if briefly { info } else { I::Off };
+        }
     }
+    heading(ui, t, crate::i18n::tr("General"));
+    check(ui, "viewOptions.loupeMessages", &mut app.ui.settings.loupe_messages, "Show message when loading or rendering photos");
 }
 
 // ----------------------------------------------------------------------------------- Slideshow
@@ -1265,6 +1321,11 @@ fn playback_section(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use lcc_engine::slideshow::{FADE_MAX, SLIDE_MAX, SLIDE_MIN};
     heading(ui, t, crate::i18n::tr("Playback"));
     let s = app.session.slideshow.clone();
+    let mut v = s.manual;
+    if check(ui, "settings.slideshowManual", &mut v, "Manual slideshow") {
+        let _ = app.run("slideshow.playback", json!({"manual": v}));
+    }
+    hint(ui, t, crate::i18n::tr("A manual slideshow shows each slide until → or ← changes it. Exports still use the slide duration."));
     row(ui, t, crate::i18n::tr("Slide duration"), |ui| {
         duration_slider(app, ui, "slideshowSlide", "slideDuration", s.slide_duration, SLIDE_MIN..=SLIDE_MAX)
     });
@@ -1561,7 +1622,7 @@ fn theme_preview(ui: &mut egui::Ui, kind: crate::theme::ThemeKind, width: f32) {
         let thumb = cell.shrink(2.5);
         painter.rect_filled(thumb, 0.0, Color32::from_rgb(0x6f + 8 * i as u8, 0x80, 0x8f));
         if selected {
-            painter.rect_stroke(thumb, 0.0, Stroke::new(1.0, p.pick), StrokeKind::Outside);
+            super::grid::selection_ring(&painter, &p, thumb, lcc_engine::SelectionState::Active);
         }
     }
 }
@@ -1655,6 +1716,7 @@ fn switch_library(app: &mut LccApp, path: &str, demo: bool) -> Result<Value, Str
     // or failed switch reopens the same catalog, so its pins stay).
     app.ui.reference = None;
     app.ui.compare = None;
+    app.ui.brief_info = crate::state::BriefInfo::default();
     if app.ui.view == crate::state::ViewMode::Reference {
         app.ui.view = crate::state::ViewMode::PhotoGrid;
     }

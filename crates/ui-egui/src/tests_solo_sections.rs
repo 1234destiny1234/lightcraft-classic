@@ -67,7 +67,8 @@ fn solo_mode_closes_the_other_sections_when_one_opens() {
 fn the_section_header_menu_turns_solo_mode_on() {
     let mut h = edit_open();
     click(&mut h, json!({"id": "section:mixer"}));
-    click(&mut h, json!({"id": "section:effects", "button": "right"}));
+    // (a header near the top: the ones further down sit under the panel's Previous / Reset bar)
+    click(&mut h, json!({"id": "section:light", "button": "right"}));
     click(&mut h, json!({"id": "sectionMenu:solo"}));
     assert!(h.app.ui.single_panel, "the header's Solo Mode item turns it on");
     assert_eq!(h.app.ui.open_sections, ["mixer"]);
