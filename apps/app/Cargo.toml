@@ -79,6 +79,7 @@ muda = { workspace = true }
 objc2 = { workspace = true }
 objc2-app-kit = { workspace = true }
 objc2-foundation = { workspace = true }
+dispatch2 = "0.3.1"
 
 [dev-dependencies]
 # tests record why they skip (`cargo xtask ci` lists the skips)

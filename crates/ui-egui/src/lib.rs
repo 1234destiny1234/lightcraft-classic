@@ -432,6 +432,9 @@ pub struct Services {
     /// (`pick`; #191). With it, the synchronous pickers below serve only the buttons inside
     /// dialogs; without it (the web, tests) they answer the commands too.
     pub picker: Option<pick::Picker>,
+    /// Failures from legacy path-only dialogs. The UI reports these without replacing the
+    /// current dialog or treating the failure as a new command.
+    pub dialog_errors: Option<Receiver<String>>,
     /// Show an open dialog for photos; returns paths.
     pub pick_files: Option<PickFiles>,
     /// Local ONNX model; a manifest must accompany it.
@@ -1949,6 +1952,7 @@ impl LccApp {
             panels::dialogs::show(self, &ctx);
             catalog_ui::show(self, &ctx);
             panels::library_problem::show(self, &ctx);
+            pick::poll(self, &ctx);
             panels::toast(self, &ctx);
             drop_overlay::show(self, &ctx);
             self.widgets = widgets::take_registry(&ctx);

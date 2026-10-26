@@ -33,6 +33,7 @@ mod editors;
 mod hdr_display;
 mod hdr_probe;
 mod logging;
+mod native_dialog;
 #[cfg(target_os = "macos")]
 mod native_menu;
 #[cfg(any(target_os = "linux", windows))]
@@ -584,7 +585,23 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
     let ctx = cc.egui_ctx.clone();
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let _ = DIALOG_PARENT.set(rfd::FileDialog::new().set_parent(cc));
+    let (dialog_errors, dialog_error_rx) = std::sync::mpsc::channel();
+    // The path-only pickers below report a failed dialog through the app's own error toast (#1996).
+    macro_rules! picker {
+        (|| $body:block) => { picker!([] $body) };
+        (|$($arg:ident: $ty:ty),+| $body:block) => { picker!([$($arg: $ty),+] $body) };
+        ([$($arg:ident: $ty:ty),*] $body:block) => {{
+            let errors = dialog_errors.clone();
+            let repaint = cc.egui_ctx.clone();
+            Some(Box::new(move |$($arg: $ty),*| {
+                let answer = native_dialog::legacy(&errors, || $body);
+                repaint.request_repaint();
+                answer
+            }))
+        }};
+    }
     Services {
+        dialog_errors: Some(dialog_error_rx),
         // Commands' file dialogs run on their own thread (#191): a dialog on the UI thread
         // stopped the window answering the compositor, which then reported the app as hung.
         picker: Some(Box::new(move |req: lcc_ui_egui::pick::PickRequest| {
@@ -594,25 +611,27 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
             std::thread::Builder::new()
                 .name("file-dialog".into())
                 .spawn(move || {
-                    let mut d = file_dialog();
-                    if let Some(t) = &req.title {
-                        d = d.set_title(t);
-                    }
-                    if let Some((name, exts)) = &req.filter {
-                        d = d.add_filter_nocase(name.clone(), exts);
-                    }
-                    if let Some(n) = &req.file_name {
-                        d = d.set_file_name(n);
-                    }
-                    let s = |p: std::path::PathBuf| p.to_string_lossy().to_string();
-                    let paths: Vec<String> = match req.kind {
-                        PickKind::Files => d.pick_files().unwrap_or_default().into_iter().map(s).collect(),
-                        PickKind::File => d.pick_file().map(s).into_iter().collect(),
-                        PickKind::Folder => d.pick_folder().map(s).into_iter().collect(),
-                        PickKind::Save => d.save_file().map(s).into_iter().collect(),
-                    };
+                    let result = native_dialog::run(|| {
+                        let mut d = file_dialog();
+                        if let Some(t) = &req.title {
+                            d = d.set_title(t);
+                        }
+                        if let Some((name, exts)) = &req.filter {
+                            d = d.add_filter_nocase(name.clone(), exts);
+                        }
+                        if let Some(n) = &req.file_name {
+                            d = d.set_file_name(n);
+                        }
+                        let s = |p: std::path::PathBuf| p.to_string_lossy().to_string();
+                        match req.kind {
+                            PickKind::Files => d.pick_files().unwrap_or_default().into_iter().map(s).collect(),
+                            PickKind::File => d.pick_file().map(s).into_iter().collect(),
+                            PickKind::Folder => d.pick_folder().map(s).into_iter().collect(),
+                            PickKind::Save => d.save_file().map(s).into_iter().collect(),
+                        }
+                    });
                     // the app may have quit meanwhile: nobody to tell
-                    let _ = tx.send(paths);
+                    let _ = tx.send(result);
                     // on macOS the panel is a window of its own: once it closes, the app's window isn't key again,
                     // so the first click on it (Import in the review that follows) only brought it back to the front
                     #[cfg(target_os = "macos")]
@@ -623,16 +642,16 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
             Ok(rx)
         })),
         log_file: log_file.map(|p| p.display().to_string()),
-        pick_lightroom_catalog: Some(Box::new(|| {
+        pick_lightroom_catalog: picker!(|| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Import Lightroom Catalog"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Lightroom Classic Catalog"), &["lrcat"])
                 .pick_file()
                 .map(|p| p.to_string_lossy().to_string())
-        })),
-        pick_folder: Some(Box::new(|| {
+        }),
+        pick_folder: picker!(|| {
             file_dialog().set_title(lcc_ui_egui::i18n::tr("Open Library")).pick_folder().map(|p| p.to_string_lossy().to_string())
-        })),
+        }),
         #[cfg(target_os = "linux")]
         open_model_folder: Some(std::sync::Arc::new(|path: &str| {
             std::process::Command::new("xdg-open")
@@ -672,7 +691,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .map_err(|e| e.to_string())
                 .and_then(|s| if s.success() || cfg!(target_os = "windows") { Ok(()) } else { Err(format!("reveal failed: {s}")) })
         })),
-        pick_files: Some(Box::new(|| {
+        pick_files: picker!(|| {
             file_dialog()
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Photos"), lcc_engine::import::EXTENSIONS)
                 .pick_files()
@@ -680,15 +699,15 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .into_iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect()
-        })),
-        pick_denoise_model: Some(Box::new(|| {
+        }),
+        pick_denoise_model: picker!(|| {
             file_dialog()
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("ONNX model"), &["onnx"])
                 .pick_file()
                 .map(|p| vec![p.to_string_lossy().into_owned()])
                 .unwrap_or_default()
-        })),
-        pick_preset_files: Some(Box::new(|| {
+        }),
+        pick_preset_files: picker!(|| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Import Presets"))
                 .add_filter_nocase(
@@ -700,23 +719,23 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .into_iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect()
-        })),
-        pick_model_file: Some(Box::new(|| {
+        }),
+        pick_model_file: picker!(|| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Add a Face Recognition Model"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Face models (ONNX)"), &["onnx"])
                 .pick_file()
                 .map(|p| vec![p.to_string_lossy().to_string()])
                 .unwrap_or_default()
-        })),
-        pick_tracklog: Some(Box::new(|| {
+        }),
+        pick_tracklog: picker!(|| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Auto-Tag from Tracklog"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("GPS Track Log"), &["gpx"])
                 .pick_file()
                 .map(|p| vec![p.to_string_lossy().to_string()])
                 .unwrap_or_default()
-        })),
+        }),
         // macOS, Linux and Windows don't colour-manage the window: previews follow the screen's profile (#787)
         #[cfg(target_os = "macos")]
         screen_profile: Some(Box::new(screen_profile::icc)),
@@ -732,7 +751,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         }),
         #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         screen_profile: None,
-        pick_display_profile: Some(Box::new(|| {
+        pick_display_profile: picker!(|| {
             let mut d = file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Choose Monitor Profile"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("ICC Profiles"), &["icc", "icm"]);
@@ -740,32 +759,32 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 d = d.set_directory(dir);
             }
             d.pick_file().map(|p| vec![p.to_string_lossy().to_string()]).unwrap_or_default()
-        })),
-        save_preset_file: Some(Box::new(|name: &str| {
+        }),
+        save_preset_file: picker!(|name: &str| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Export Presets"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("{app} Preset"), &[lcc_brand::PRESET_EXT])
                 .set_file_name(name)
                 .save_file()
                 .map(|p| p.to_string_lossy().to_string())
-        })),
-        pick_keyword_list: Some(Box::new(|| {
+        }),
+        pick_keyword_list: picker!(|| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Import Keywords"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Keyword Lists"), &["txt", "utf8"])
                 .pick_file()
                 .map(|p| vec![p.to_string_lossy().to_string()])
                 .unwrap_or_default()
-        })),
-        save_keyword_list: Some(Box::new(|name: &str| {
+        }),
+        save_keyword_list: picker!(|name: &str| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Export Keywords"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Keyword Lists"), &["txt"])
                 .set_file_name(name)
                 .save_file()
                 .map(|p| p.to_string_lossy().to_string())
-        })),
-        pick_curve_preset_files: Some(Box::new(|| {
+        }),
+        pick_curve_preset_files: picker!(|| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Import Point Curve Presets"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Point Curve Presets"), &["lccurve", "json"])
@@ -774,27 +793,27 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .into_iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect()
-        })),
-        save_curve_preset_file: Some(Box::new(|name: &str| {
+        }),
+        save_curve_preset_file: picker!(|name: &str| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Export Point Curve Presets"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Point Curve Presets"), &["lccurve"])
                 .set_file_name(name)
                 .save_file()
                 .map(|p| p.to_string_lossy().to_string())
-        })),
-        pick_list_file: Some(Box::new(|| {
+        }),
+        pick_list_file: picker!(|| {
             rfd::FileDialog::new()
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Collection definitions and keyword lists"), &["json", "txt"])
                 .pick_file()
                 .map(|p| vec![p.to_string_lossy().to_string()])
                 .unwrap_or_default()
-        })),
-        save_list_file: Some(Box::new(|name: &str| {
+        }),
+        save_list_file: picker!(|name: &str| {
             let ext = std::path::Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("txt").to_string();
             rfd::FileDialog::new().add_filter_nocase(&ext, &[ext.as_str()]).set_file_name(name).save_file().map(|p| p.to_string_lossy().to_string())
-        })),
-        pick_slideshow_templates: Some(Box::new(|| {
+        }),
+        pick_slideshow_templates: picker!(|| {
             rfd::FileDialog::new()
                 .set_title(lcc_ui_egui::i18n::tr("Import Slideshow Templates"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Slideshow Templates"), &["json"])
@@ -803,16 +822,16 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .into_iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect()
-        })),
-        save_slideshow_template: Some(Box::new(|name: &str| {
+        }),
+        save_slideshow_template: picker!(|name: &str| {
             rfd::FileDialog::new()
                 .set_title(lcc_ui_egui::i18n::tr("Export Slideshow Template"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Slideshow Templates"), &["json"])
                 .set_file_name(name)
                 .save_file()
                 .map(|p| p.to_string_lossy().to_string())
-        })),
-        pick_print_templates: Some(Box::new(|| {
+        }),
+        pick_print_templates: picker!(|| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Import Print Templates"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Print Templates"), &[lcc_engine::print::template::FILE_EXT])
@@ -821,15 +840,15 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .into_iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect()
-        })),
-        save_print_template: Some(Box::new(|name: &str| {
+        }),
+        save_print_template: picker!(|name: &str| {
             file_dialog()
                 .set_title(lcc_ui_egui::i18n::tr("Export Print Template"))
                 .add_filter_nocase(lcc_ui_egui::i18n::tr("Print Templates"), &[lcc_engine::print::template::FILE_EXT])
                 .set_file_name(name)
                 .save_file()
                 .map(|p| p.to_string_lossy().to_string())
-        })),
+        }),
         // atomic (temp file + sync + rename): a failed write never leaves a truncated file
         write_shared: Some(std::sync::Arc::new(lcc_engine::export::write_file)),
         write: Some(Box::new(lcc_engine::export::write_file)),
