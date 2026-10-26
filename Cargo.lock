@@ -4475,6 +4475,7 @@ version = "26.43.7"
 dependencies = [
  "bytemuck",
  "chrono",
+ "dispatch2",
  "eframe",
  "egui",
  "getrandom 0.3.4",
