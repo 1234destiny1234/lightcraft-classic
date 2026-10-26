@@ -304,5 +304,12 @@
   "Where should the Lightroom catalog “{catalog}” go?": "Ke mana katalog Lightroom “{catalog}” diimpor?",
   "Merge into the open library “{library}” ({count} photo{})": "Gabungkan ke pustaka yang terbuka “{library}” ({count} foto{:.0})",
   "{n} folder{} could not be read": "Folder yang tidak bisa dibaca: {n}{:.0}",
-  "{n} file{} skipped (not a supported photo type)": "File yang dilewati (bukan jenis foto yang didukung): {n}{:.0}"
+  "{n} file{} skipped (not a supported photo type)": "File yang dilewati (bukan jenis foto yang didukung): {n}{:.0}",
+  "about {h} h {m} min left": "sekitar {h} j {m} mnt lagi",
+  "about {n} min left": "sekitar {n} mnt lagi",
+  "Adjustments: {n}": "Penyesuaian: {n}",
+  "{n} done": "{n} selesai",
+  ", {n} failed": ", {n} gagal",
+  "{n} failed": "{n} gagal",
+  "Show each photo ({n})": "Tampilkan setiap foto ({n})"
 }

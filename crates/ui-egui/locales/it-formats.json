@@ -318,5 +318,6 @@
   "{n} done": "{n} completate",
   ", {n} failed": ", {n} non riuscite",
   "{n} failed": "{n} non riuscite",
-  "Show each photo ({n})": "Mostra ogni foto ({n})"
+  "Show each photo ({n})": "Mostra ogni foto ({n})",
+  "Adjustments: {n}": "Regolazioni: {n}"
 }

@@ -303,5 +303,12 @@
   "Where should the Lightroom catalog “{catalog}” go?": "Nhập danh mục Lightroom «{catalog}» vào đâu?",
   "Merge into the open library “{library}” ({count} photo{})": "Gộp vào thư viện đang mở «{library}» ({count} ảnh{:.0})",
   "{n} folder{} could not be read": "Thư mục không đọc được: {n}{:.0}",
-  "{n} file{} skipped (not a supported photo type)": "Đã bỏ qua tệp (không phải loại ảnh được hỗ trợ): {n}{:.0}"
+  "{n} file{} skipped (not a supported photo type)": "Đã bỏ qua tệp (không phải loại ảnh được hỗ trợ): {n}{:.0}",
+  "about {h} h {m} min left": "còn khoảng {h} giờ {m} phút",
+  "about {n} min left": "còn khoảng {n} phút",
+  "Adjustments: {n}": "Điều chỉnh: {n}",
+  "{n} done": "{n} xong",
+  ", {n} failed": ", {n} thất bại",
+  "{n} failed": "{n} thất bại",
+  "Show each photo ({n})": "Hiện từng ảnh ({n})"
 }
