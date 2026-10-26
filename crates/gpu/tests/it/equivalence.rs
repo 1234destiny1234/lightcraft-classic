@@ -70,7 +70,7 @@ fn diff(a: &Rgba8, b: &Rgba8) -> (f64, u8, f64) {
 
 fn check(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) -> (f64, u8) {
     let cpu = render(src, info, s, req).image;
-    let gpu = lcc_gpu::render(src, info, s, req, None).expect("gpu render");
+    let gpu = lcc_gpu::render(src, info, s, req, None).unwrap_or_else(|| panic!("gpu render ({:?})", lcc_gpu::last_fallback()));
     let (mean, max, over) = diff(&cpu, &gpu.image);
     eprintln!("{name:<28} {}x{}  mean {mean:.4}  max {max}  >1: {:.4}%", cpu.width, cpu.height, over * 100.0);
     assert!(mean < MEAN_LSB && max <= MAX_LSB, "{name}: mean {mean:.4} LSB, max {max} LSB");
@@ -80,7 +80,7 @@ fn check(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, 
 /// [`check`] for a healed spot: a few pixels may differ by up to 8 LSB, the mean must stay tiny.
 fn check_spot(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) {
     let cpu = render(src, info, s, req).image;
-    let gpu = lcc_gpu::render(src, info, s, req, None).expect("gpu render");
+    let gpu = lcc_gpu::render(src, info, s, req, None).unwrap_or_else(|| panic!("gpu render ({:?})", lcc_gpu::last_fallback()));
     let (mean, max, over) = diff(&cpu, &gpu.image);
     eprintln!("{name:<28} {}x{}  mean {mean:.4}  max {max}  >1: {:.4}%", cpu.width, cpu.height, over * 100.0);
     assert!(mean < MEAN_LSB / 10.0 && max <= 8, "{name}: mean {mean:.4} LSB, max {max} LSB");
@@ -91,7 +91,7 @@ fn check_spot(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSetti
 /// Such flips are allowed for at most 0.01 % of the pixels; everything else is held to [`check`]'s bounds.
 fn check_warned(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) {
     let cpu = render(src, info, s, req).image;
-    let gpu = lcc_gpu::render(src, info, s, req, None).expect("gpu render");
+    let gpu = lcc_gpu::render(src, info, s, req, None).unwrap_or_else(|| panic!("gpu render ({:?})", lcc_gpu::last_fallback()));
     let (mean, _, over) = diff(&cpu, &gpu.image);
     let flips = cpu.data.iter().zip(&gpu.image.data).filter(|(p, q)| (0..3).any(|c| p[c].abs_diff(q[c]) > MAX_LSB)).count();
     let share = flips as f64 / cpu.data.len() as f64;
