@@ -1266,6 +1266,8 @@ fn main() -> eframe::Result {
                 // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
                 // and the user's own download locations, one base URL per line (<PREFIX>_SAM3_MIRRORS too)
                 session = session.with_default_sam3_model();
+                // automatic XMP writes don't hold up the edit that made them (on a network share a write is many round trips)
+                session.set_background_sidecar_writes(true);
                 // updates: a run that keeps no settings (--memory, <PREFIX>_NO_PREFS) neither reads
                 // nor writes the settings folder's updates.json, and never checks at start
                 let keeps_settings = !in_memory && !lcc_brand::env_is_set("NO_PREFS");
