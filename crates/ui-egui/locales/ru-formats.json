@@ -27,6 +27,7 @@
   "Added {n} photo{} to My Photos": "В «Мои фото» добавлено фото: {n}{:.0}",
   "Added {n} photo{} to “{}”": "В «{1}» добавлено фото: {n}{0:.0}",
   "Added {what} to {name}": "{what}: добавлено в {name}",
+  "Adjustments: {n}": "Корректировки: {n}",
   "Adding photos… {} of {}": "Добавление фото… {} из {}",
   "All {n} selected photos move by the same amount.": "Все выбранные фото ({n}) сдвигаются на одно и то же значение.",
   "Already in the library, in Recently Deleted: {} photo{} selected · right-click ▸ Restore, or Delete Permanently to import afresh": "Уже в библиотеке, в «Недавно удалённых»: выбрано фото: {}{:.0} · щёлкните правой кнопкой → Восстановить или Удалить навсегда, чтобы импортировать заново",
@@ -305,5 +306,13 @@
   "Could not read {name}: {e}": "Не удалось прочитать {name}: {e}",
   "Added {n} photo{}": "Добавлено фото: {n}{:.0}",
   "Where should the Lightroom catalog “{catalog}” go?": "Куда импортировать каталог Lightroom «{catalog}»?",
-  "Merge into the open library “{library}” ({count} photo{})": "Объединить с открытой библиотекой «{library}» (фото: {count}){:.0}"
+  "Merge into the open library “{library}” ({count} photo{})": "Объединить с открытой библиотекой «{library}» (фото: {count}){:.0}",
+  "{n} file{} skipped (not a supported photo type)": "Пропущено файлов (неподдерживаемый тип фото): {n}{:.0}",
+  "{n} folder{} could not be read": "Папок, которые не удалось прочитать: {n}{:.0}",
+  "about {n} min left": "осталось около {n} мин",
+  "about {h} h {m} min left": "осталось около {h} ч {m} мин",
+  "{n} done": "готово: {n}",
+  ", {n} failed": ", с ошибкой: {n}",
+  "{n} failed": "с ошибкой: {n}",
+  "Show each photo ({n})": "Показать отдельные фото ({n})"
 }

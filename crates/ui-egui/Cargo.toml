@@ -70,4 +70,4 @@ lcc-brand = { workspace = true }
 # What's New: joins docs/whats-new/ and docs/whats-new.md into $OUT_DIR/whats-new.md
 lcc-notes = { workspace = true }
 serde_json = { workspace = true }
-toml = "1"
+toml = { workspace = true }

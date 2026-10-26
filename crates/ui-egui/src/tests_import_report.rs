@@ -45,9 +45,9 @@ fn import_warnings_are_one_toast_line_and_a_window_that_selects_and_saves() {
     h.step_until(SETTLE, |h| matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. })));
     assert_eq!(h.request("ui.dialog.confirm", json!({}), T)["ok"], true);
     // (the toast is read as soon as the import ends: it fades in a few seconds)
-    h.step_until(SETTLE, |h| h.app.import.is_none() && h.app.ui.toast.is_some());
+    h.step_until(SETTLE, |h| h.app.import.is_none() && h.app.ui.toast().is_some());
 
-    let toast = h.app.ui.toast.clone().expect("a toast").0;
+    let toast = h.app.ui.toast().cloned().expect("a toast").0;
     assert!(!toast.contains('\n') && !toast.contains("IMG_0"), "one line, no file list: {toast}");
     let report = h.app.import_report.as_ref().expect("the warnings are kept");
     assert!(report.open, "a chosen import opens the window");

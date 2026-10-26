@@ -17,7 +17,8 @@ impl Dice {
 }
 
 /// A library of `n` photos in three folders, with ratings, flags, keywords and dates spread over them, an album
-/// holding every third photo, a smart album of the photos without keywords, and a stack.
+/// holding every third photo, a smart album of the photos without keywords, and a stack. About one photo in four
+/// has the content of another (some as a Duplicate's `:dup` key), and a few have no content hash.
 fn library(n: usize) -> (Session, Vec<PhotoId>, u64, u64) {
     let mut s = Session::new();
     let mut ids = Vec::new();
@@ -34,6 +35,11 @@ fn library(n: usize) -> (Session, Vec<PhotoId>, u64, u64) {
             &format!("2026-01-{:02}T10:00:00", 1 + i % 9),
         );
         p.captured = Some(format!("2025-{:02}-{:02}T10:00:{:02}", 1 + i % 12, 1 + i % 28, i % 60));
+        p.content_hash = match i % 13 {
+            0 => None,
+            5 => Some(format!("{:032x}:dup{}", (i * 7) % (n * 4 / 5).max(1), id.0)),
+            _ => Some(format!("{:032x}", (i * 7) % (n * 4 / 5).max(1))),
+        };
         s.commit("Add", Op::AddPhoto { photo: Box::new(p) }).unwrap();
         ids.push(id);
     }
@@ -56,8 +62,9 @@ fn library(n: usize) -> (Session, Vec<PhotoId>, u64, u64) {
 }
 
 /// One edit at random: most touch a photo or a few (what it is rated, flagged, keyworded, developed; when it was
-/// taken; where its file is; whether it is in the library at all), some change an album, a stack or the library's
-/// past, and now and then a photo is added or removed for good.
+/// taken; where its file is and what is in it; whether it is in the library at all), some change an album, a stack
+/// or the library's past, and now and then a photo is added (at times with the content of one the library has) or
+/// removed for good.
 fn edit(s: &mut Session, dice: &mut Dice, ids: &mut Vec<PhotoId>, album: u64) {
     let chosen: Vec<u64> = (0..1 + dice.roll(3)).map(|_| ids[dice.roll(ids.len())].0).collect();
     let one = PhotoId(chosen[0]);
@@ -80,6 +87,7 @@ fn edit(s: &mut Session, dice: &mut Dice, ids: &mut Vec<PhotoId>, album: u64) {
             let name = format!("NEW_{n:04}.jpg");
             let mut p = Photo::new(id, Source::File { path: format!("/pics/{}/{name}", n % 3) }, &name, "JPEG", 60, 40, "2026-02-01T10:00:00");
             p.captured = Some(format!("2025-{:02}-11T09:00:00", 1 + n % 12));
+            p.content_hash = s.catalog.photo(ids[dice.roll(ids.len())]).and_then(|q| q.content_hash.clone()).filter(|_| n.is_multiple_of(8));
             if s.commit("Add", Op::AddPhoto { photo: Box::new(p) }).is_ok() {
                 ids.push(id);
             }
@@ -87,6 +95,23 @@ fn edit(s: &mut Session, dice: &mut Dice, ids: &mut Vec<PhotoId>, album: u64) {
         }
         2 if n % 4 == 1 => {
             let _ = s.commit("Remove", Op::RemovePhoto { id: one });
+            return;
+        }
+        2 if n % 4 == 2 => {
+            // the file's content changed (Reload): it is now the same as another photo's, or has no hash
+            let content_hash = s.catalog.photo(ids[dice.roll(ids.len())]).and_then(|q| q.content_hash.clone()).filter(|_| n % 8 == 2);
+            if let Some(p) = s.catalog.photo(one) {
+                let op = Op::SetContent {
+                    id: one,
+                    width: p.width,
+                    height: p.height,
+                    file_size: p.file_size,
+                    content_hash,
+                    preview_only: p.preview_only.clone(),
+                    preview_checked: p.preview_checked.clone(),
+                };
+                let _ = s.commit("Reload", op);
+            }
             return;
         }
         2 => {
@@ -150,7 +175,13 @@ fn following_an_edit_gives_the_list_worked_out_from_every_photo() {
         json!({"key": "editDate", "ascending": false}),
         json!({"key": "importDate", "ascending": true}),
     ];
-    let filters = [json!({"rating": 0, "text": ""}), json!({"rating": 3, "text": ""}), json!({"rating": 0, "text": "travel"})];
+    let same_content = json!({"match": "all", "rules": [{"field": "sameContent", "op": "is", "value": true}]});
+    let filters = [
+        json!({"rating": 0, "text": ""}),
+        json!({"rating": 3, "text": ""}),
+        json!({"rating": 0, "text": "travel"}),
+        json!({"rating": 0, "text": "", "ruleSet": same_content}),
+    ];
     let mut checked = 0;
     for (i, source) in sources.iter().enumerate() {
         for (j, sort) in sorts.iter().enumerate() {
@@ -360,6 +391,35 @@ fn an_edit_to_many_photos_or_to_more_than_photos_is_worked_out_whole() {
     assert_eq!((s.view_followed, s.view_worked_out), (followed + 1, whole + 2));
 }
 
+/// A keyword created in the keyword list, inside another and given to the selected photo at once, changes no photo
+/// but that one: the view and the albums' counts follow it from that photo instead of asking every photo again.
+#[test]
+fn a_keyword_created_inside_another_and_given_to_a_photo_is_followed_from_that_photo() {
+    use lcc_catalog::{AlbumId, tally::AlbumTally};
+    let (mut s, ids, _, smart) = library(600);
+    let _ = s.visible_cloned();
+    let mut tally = AlbumTally::of(&s.catalog);
+    let (followed, whole) = (s.view_followed, s.view_worked_out);
+    // (the second photo has no keywords: it is in the smart album of those)
+    let bare = ids[1];
+    assert!(s.catalog.photo(bare).is_some_and(|p| p.meta.keywords.is_empty()));
+    let unkeyworded = tally.counts()[&AlbumId(smart)];
+    s.execute("library.select", &json!({"ids": [bare.0]})).unwrap();
+    s.execute("keyword.create", &json!({"name": "Rome", "parent": "travel", "addToSelected": true})).unwrap();
+    let _ = s.visible_cloned();
+    assert_eq!((s.view_followed, s.view_worked_out), (followed + 1, whole), "followed, not worked out whole");
+    assert!(tally.update(&s.catalog), "the counts followed");
+    assert_eq!(tally.counts()[&AlbumId(smart)], unkeyworded - 1, "the photo has a keyword now");
+    // a keyword created on its own, for no photo: nothing else to follow
+    s.execute("keyword.create", &json!({"name": "Paris", "parent": "travel"})).unwrap();
+    let _ = s.visible_cloned();
+    assert_eq!((s.view_followed, s.view_worked_out), (followed + 2, whole));
+    assert!(tally.update(&s.catalog));
+    // and what was followed is what every photo says
+    assert_eq!(s.visible_cloned(), s.visible_in_full());
+    assert_eq!(tally.counts()[&AlbumId(smart)], s.catalog.album_count(AlbumId(smart)));
+}
+
 #[test]
 fn the_albums_counts_followed_through_edits_are_the_counts_made_from_every_photo() {
     use lcc_catalog::tally::AlbumTally;
@@ -374,6 +434,9 @@ fn the_albums_counts_followed_through_edits_are_the_counts_made_from_every_photo
         json!({"edited": true}),
         json!({"dateFrom": "2025-06-01"}),
         json!({"text": "REN"}),
+        // whether another photo has the same content: an edit to one photo changes it for others
+        json!({"ruleSet": {"match": "all", "rules": [{"field": "sameContent", "op": "is", "value": true}]}}),
+        json!({"ruleSet": {"match": "all", "rules": [{"field": "sameContent", "op": "is", "value": false}]}}),
     ] {
         let made = s.execute("album.createSmart", &json!({"name": "More", "rules": rules}));
         assert!(made.is_ok(), "{rules}: {made:?}");
@@ -402,7 +465,10 @@ fn the_albums_counts_followed_through_edits_are_the_counts_made_from_every_photo
         let moved = tally.revision() != s.catalog.revision;
         match (moved, tally.update(&s.catalog)) {
             (true, true) => followed += 1,
-            (true, false) => whole += 1,
+            (true, false) => {
+                tally = AlbumTally::of(&s.catalog);
+                whole += 1;
+            }
             // (an edit that was refused changed nothing: nothing to follow)
             (false, _) => {}
         }
@@ -428,8 +494,10 @@ fn the_albums_counts_followed_through_edits_are_the_counts_made_from_every_photo
     let many: Vec<u64> = if many.len() >= 300 { many } else { s.visible_cloned().iter().take(300).map(|id| id.0).collect() };
     if many.len() > 256 {
         s.execute("library.select", &json!({"ids": many})).unwrap();
+        let before = shown(&tally);
         s.execute("photo.rate", &json!({"rating": 5})).unwrap();
         assert!(!tally.update(&s.catalog), "more photos than are followed one by one");
-        assert_eq!(shown(&tally), fresh(&s));
+        assert_eq!(shown(&tally), before, "not followed: left as they were, to be counted again");
+        assert_eq!(shown(&AlbumTally::of(&s.catalog)), fresh(&s));
     }
 }

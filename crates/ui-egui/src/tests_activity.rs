@@ -97,6 +97,55 @@ fn not_cancellable_rows_have_no_cross() {
     assert!(!has(&h, &format!("activity:cancel:{}", g.id())));
 }
 
+/// a batch is one row with the time left and the failures; its photos fold under it; when it ends,
+/// what it did shows once as a message.
+#[test]
+fn a_batch_row_folds_its_photos_and_says_how_it_went() {
+    use crate::panels::activity::{eta_text, summary_text};
+    assert_eq!(eta_text(20_000), "less than a minute left");
+    assert_eq!(eta_text(6 * 60_000), "about 6 min left");
+    assert_eq!(eta_text(150 * 60_000), "about 2 h 30 min left");
+    let mut h = demo();
+    let b = h.app.session.activity.start_batch("denoise", "AI Denoise", Cancel::Yes);
+    b.progress(0, 200);
+    std::thread::sleep(Duration::from_millis(30));
+    b.item_done();
+    b.item_failed("IMG_0002.CR3: the file is damaged");
+    let photo = b.child("denoise", "AI Denoise");
+    photo.detail("IMG_0003.CR3");
+    wait_visible(&mut h);
+    let parent = format!("activity:row:{}", b.id());
+    let child = format!("activity:row:{}", photo.id());
+    assert!(has(&h, &parent));
+    assert!(!has(&h, &child), "the photo's row is folded under its batch");
+    let line = crate::panels::activity::detail_line_for_tests(&h.app.session.activity.list()[0]);
+    assert!(line.starts_with("2 of 200 · about ") && line.contains("1 failed"), "{line}");
+    let fold = format!("activity:children:{}", b.id());
+    click(&mut h, &fold);
+    assert!(has(&h, &child), "opened");
+    assert!(rect(&h, &child).left() > rect(&h, &parent).left(), "set in under its batch");
+    click(&mut h, &fold);
+    assert!(!has(&h, &child), "folded again");
+    // the batch ends: its summary shows once
+    drop(photo);
+    drop(b);
+    h.step();
+    let toast = h.app.ui.toast().map(|t| t.0.clone()).unwrap_or_default();
+    assert_eq!(toast, "AI Denoise: 1 done, 1 failed: IMG_0002.CR3: the file is damaged");
+    h.app.ui.toasts.clear();
+    h.step();
+    assert!(h.app.ui.toast().is_none(), "said once");
+    // a job that reports itself (an export) isn't repeated
+    let e = h.app.session.activity.start_batch("export", "Exporting", Cancel::Yes);
+    e.reports_itself();
+    e.item_done();
+    drop(e);
+    h.step();
+    assert!(h.app.ui.toast().is_none());
+    let s = h.app.session.activity.finished();
+    assert_eq!(summary_text(s.last().unwrap()), "Exporting: 1 done");
+}
+
 #[test]
 fn stale_cancel_is_harmless() {
     let mut h = demo();
@@ -107,13 +156,13 @@ fn stale_cancel_is_harmless() {
     let r = h.request("engine.execute", json!({"command": "activity.cancel", "params": {"id": id}}), T);
     assert_eq!(r["ok"], false, "an error result, not a panic: {r}");
     h.step();
-    assert!(h.app.ui.toast.is_none(), "{:?}", h.app.ui.toast);
+    assert!(h.app.ui.toast().is_none(), "{:?}", h.app.ui.toasts);
     // the same through the row's ✕ (clicked in the frame the task ended): no message in the status bar either
     h.app.ui.status = "Ready".into();
     crate::panels::activity::cancel(&mut h.app, id);
     h.step();
     assert_eq!(h.app.ui.status, "Ready");
-    assert!(h.app.ui.toast.is_none(), "{:?}", h.app.ui.toast);
+    assert!(h.app.ui.toast().is_none(), "{:?}", h.app.ui.toasts);
 }
 
 #[test]
@@ -255,7 +304,7 @@ fn import_cancelled_by_command_reports_cancelled() {
     h.app.session.activity.cancel(tasks[0].id).unwrap();
     assert!(h.step_until(Duration::from_secs(60), |h| h.app.import.is_none()));
     assert!(h.app.session.activity.list().is_empty());
-    assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.0.starts_with("Import cancelled")), "{:?}", h.app.ui.toast);
+    assert!(h.app.ui.toast().is_some_and(|t| t.0.starts_with("Import cancelled")), "{:?}", h.app.ui.toasts);
     assert!(h.app.session.catalog.len() < n, "stopped part-way");
     assert_eq!(h.app.session.undo.len(), undo0 + 1, "one undo step");
     let _ = std::fs::remove_dir_all(&dir);
@@ -339,7 +388,7 @@ fn final_merge_shows_a_row_and_cancels() {
         assert!(h.app.merge.last_result.is_none(), "{command}: nothing merged");
         assert_eq!(h.app.session.catalog.len(), before, "{command}: no photo added");
         assert!(h.app.session.activity.list().is_empty());
-        let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+        let toast = h.app.ui.toast().map(|t| t.0.clone()).unwrap_or_default();
         assert_eq!(toast, cancelled);
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -479,17 +528,17 @@ fn rows_added_later_grow_the_stack() {
 fn immediate_library_commands_and_auto_sync_show_completion() {
     let mut h = demo();
     assert!(h.app.run("library.clearPreviews", json!({})).is_ok());
-    assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("✓ Discard Preview Cache"));
+    assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("✓ Discard Preview Cache"));
 
     assert_eq!(h.app.run("develop.autoSync", json!({"on": true})).unwrap()["on"], true);
-    assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Auto Sync: On"));
+    assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Auto Sync: On"));
 
     assert_eq!(h.app.run("develop.autoSync", json!({"on": false})).unwrap()["on"], false);
-    assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Auto Sync: Off"));
+    assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Auto Sync: Off"));
 
     // This demo has no on-disk library to optimize. A failed command must not
     // report completion (or accidentally keep its preceding success toast).
-    h.app.ui.toast = None;
+    h.app.ui.toasts.clear();
     assert!(h.app.run("library.compact", json!({})).is_err());
-    assert!(h.app.ui.toast.is_none());
+    assert!(h.app.ui.toast().is_none());
 }

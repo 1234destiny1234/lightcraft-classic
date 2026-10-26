@@ -86,7 +86,7 @@ mod tests {
             picker: Some(Box::new(move |req| {
                 requests.lock().unwrap().push(req);
                 let (tx, rx) = std::sync::mpsc::channel();
-                tx.send(vec![answer.clone()]).unwrap();
+                tx.send(Ok(vec![answer.clone()])).unwrap();
                 Ok(rx)
             })),
             ..Default::default()
@@ -113,7 +113,7 @@ mod tests {
         let run = h.app.session.slideshow_export.clone().unwrap();
         let mut r = run.result().unwrap().unwrap();
         r["sawRow"] = json!(seen_row);
-        r["toast"] = json!(h.app.ui.toast.as_ref().map(|t| t.0.clone()));
+        r["toast"] = json!(h.app.ui.toast().map(|t| t.0.clone()));
         r
     }
 

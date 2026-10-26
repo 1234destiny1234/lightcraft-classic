@@ -446,7 +446,7 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
                     u.collapsed_sidebar.retain(|id| crate::sidebar::SidebarSection::from_id(id).is_none());
                     // a script's values get the same range checks as a settings file's
                     u.clamp_ranges();
-                    u.toast = app.ui.toast.clone();
+                    u.toasts = app.ui.toasts.clone();
                     u.dialog = app.ui.dialog.clone();
                     u.status = app.ui.status.clone();
                     crate::docking::cancel_replaced_gesture(app, u.docking.as_ref());

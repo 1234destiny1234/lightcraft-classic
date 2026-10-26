@@ -599,8 +599,8 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                 let _ = app.run("view.infoOverlay", json!({}));
                 continue;
             }
-            // Delete acts on what's being edited: the active mask in the Masking panel; never the
-            // photo while retouching (spots are removed from their own panel).
+            // Delete acts on what's being edited: the active mask in the Masking panel, the selected
+            // spot or red-eye correction; never the photo while retouching.
             if f == "photo.delete" {
                 use crate::state::RightPanel as R;
                 match app.ui.right {
@@ -632,7 +632,13 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                         }
                         continue;
                     }
-                    R::RedEye => continue,
+                    R::RedEye => {
+                        let eyes = app.session.active().and_then(|id| app.session.develop_of(id)).map(|d| d.red_eye.len()).unwrap_or(0);
+                        if app.ui.eye < eyes {
+                            let _ = app.run("redeye.delete", json!({"index": app.ui.eye}));
+                        }
+                        continue;
+                    }
                     _ => {}
                 }
                 // in an album, Delete takes the photos out of the album only, as in Lightroom: they
@@ -1138,30 +1144,30 @@ mod tests {
         for shift in [false, true] {
             for (k, name) in [("6", "Red"), ("7", "Yellow"), ("8", "Green"), ("9", "Blue")] {
                 h.app.session.execute("library.select", &json!({"ids": [1]})).unwrap();
-                h.app.ui.toast = None;
+                h.app.ui.toasts.clear();
                 key(&mut h, k, shift);
-                assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some(format!("{name} Label").as_str()));
-                assert_eq!(h.app.ui.toast.as_ref().and_then(|t| t.2), h.app.session.catalog.photo(PhotoId(1)).unwrap().label);
+                assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some(format!("{name} Label").as_str()));
+                assert_eq!(h.app.ui.toast().and_then(|t| t.2), h.app.session.catalog.photo(PhotoId(1)).unwrap().label);
                 assert_eq!(h.app.session.active(), Some(PhotoId(if shift { 2 } else { 1 })));
             }
         }
         // Menus and the Info-panel swatches dispatch the same command, including purple/clear.
         h.app.run("photo.label", json!({"label": "purple"})).unwrap();
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Purple Label"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Purple Label"));
         h.app.run("photo.label", json!({"label": "none"})).unwrap();
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
-        assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.2.is_none()), "clear uses neutral feedback");
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert!(h.app.ui.toast().is_some_and(|t| t.2.is_none()), "clear uses neutral feedback");
         h.app.session.execute("label.setNames", &json!({"names": {"red": "Needs review"}})).unwrap();
         key(&mut h, "6", false);
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Needs review Label"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Needs review Label"));
         // Native menu callbacks run before logic() catches up to the current frame's clock.
         let now = h.view.ctx.input(|i| i.time);
         h.app.last_time = now - 10.0;
         h.app.run("photo.label", json!({"label": "blue"})).unwrap();
-        assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.1 > now), "menu feedback must survive an idle gap");
-        h.app.ui.toast = None;
+        assert!(h.app.ui.toast().is_some_and(|t| t.1 > now), "menu feedback must survive an idle gap");
+        h.app.ui.toasts.clear();
         assert!(h.app.run("photo.label", json!({"label": "invalid"})).is_err());
-        assert!(h.app.ui.toast.is_none(), "failed actions must not announce success");
+        assert!(h.app.ui.toast().is_none(), "failed actions must not announce success");
     }
 
     #[test]
@@ -1174,23 +1180,23 @@ mod tests {
         // Press 6 to assign Red
         key(&mut h, "6", false);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, Some(ColorLabel::Red));
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Red Label"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Red Label"));
 
         // Press 6 again to toggle off (issue #412)
         key(&mut h, "6", false);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
-        assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.2.is_none()));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert!(h.app.ui.toast().is_some_and(|t| t.2.is_none()));
 
         // Press 7 to assign Yellow
         key(&mut h, "7", false);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, Some(ColorLabel::Yellow));
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Yellow Label"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Yellow Label"));
 
         // Press 7 again to toggle off
         key(&mut h, "7", false);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Color label cleared"));
 
         // Shift+8 (Green) assigns Green and advances to photo 2
         key(&mut h, "8", true);
@@ -1201,7 +1207,7 @@ mod tests {
         h.app.session.execute("library.select", &json!({"ids": [1]})).unwrap();
         key(&mut h, "8", true);
         assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
-        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert_eq!(h.app.ui.toast().map(|t| t.0.as_str()), Some("Color label cleared"));
         assert_eq!(h.app.session.active(), Some(PhotoId(2)));
     }
 

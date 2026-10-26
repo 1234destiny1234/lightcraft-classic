@@ -28,7 +28,7 @@ use lcc_camdb::calibration::{Calibration, CameraModel, CctBin, Editor, Evidence,
 use lcc_color::{D50, D65, Mat3, SRGB, Xy};
 use lcc_raw::profile::ToneCurve;
 
-mod linalg;
+pub(crate) mod linalg;
 mod model;
 pub(crate) mod pipe;
 mod real;

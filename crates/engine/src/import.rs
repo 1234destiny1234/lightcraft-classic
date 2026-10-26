@@ -15,7 +15,8 @@
 //! 6. Apply each photo's XMP sidecar (or a raw/DNG file's embedded XMP): the sidecar wins for
 //!    metadata and develop settings are restored (see [`crate::sidecar`]). Its capture time fills
 //!    in when the file has none (read before step 5, so it also files and names the copy).
-//! 7. Optionally apply a preset and add keywords (the import dialog's options).
+//! 7. Optionally apply a preset, then a batch-edit recipe (one more History step), and add
+//!    keywords (the import dialog's options).
 //! 8. Commit all new photos as one undoable op. (Undoing a move removes the catalog records;
 //!    the files stay at the destination — undo never moves files back over a card.)
 //! 9. Copy and Move rename sequences use checked platform-sized numbers: the last number is usable once, and any
@@ -121,6 +122,16 @@ pub struct ImportOptions {
     pub metadata_preset: Option<String>,
     /// Copy: raws are copied as DNG (Copy as DNG).
     pub convert_dng: bool,
+    /// A batch-edit recipe: develop control id / value pairs (e.g. `light.exposure` → 0.5),
+    /// applied to every imported photo *after* its XMP sidecar, camera default and import preset,
+    /// as one more History step (`Import adjustments`). Only the named controls change; the recipe
+    /// is a snapshot taken when the import starts, so editing a preset afterwards cannot change it.
+    /// It names plain adjustments only (no white balance, geometry or crop: `cmd::check_recipe`),
+    /// and [`ImportJob::new`] refuses anything else.
+    /// Empty (the default) = no recipe. A photo the library already has keeps its own settings:
+    /// one skipped as a duplicate, restored from Recently Deleted, or joined from a browsed
+    /// folder (Local) is never touched, as the preset and keywords never are.
+    pub recipe: Vec<(String, f64)>,
     /// Import files whose content the library already has as new photos (Lightroom's "Don't
     /// Import Suspected Duplicates" unchecked). A file at a path the library already lists, or one
     /// in Recently Deleted, is still handled as a duplicate.
@@ -185,8 +196,12 @@ pub struct ImportCandidate {
     /// `"path"` (already in the library), `"content"` (same bytes in the library or earlier in this
     /// list): skipped by the import.
     pub duplicate: Option<String>,
-    /// The photo that already has it.
+    /// The photo that already has it. On a browsed candidate (`local`): its record.
     pub existing: Option<u64>,
+    /// The file was only browsed in Local: the library has a record of it (`existing`) that is not in
+    /// the library, so it is not a duplicate and importing it promotes that record.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub local: bool,
     /// Not readable.
     pub error: Option<String>,
     /// A raw variant that can't be decoded yet (why): it imports as preview only.
@@ -335,6 +350,21 @@ pub struct ImportDefaults {
     pub auto_album: Option<String>,
     /// Open the import review when a camera or memory card is connected.
     pub show_on_card: bool,
+    /// Synchronize Folder brings in files whose content a photo of the library already has (at
+    /// another path) as photos of their own: "Don't import files already in the library" turned
+    /// off, and kept as it was last left. Off (such files left out) unless turned on.
+    pub import_duplicates: bool,
+    /// AI Denoise on for new raw photos shot at this ISO or above (`None` = off). Their denoised
+    /// pictures are queued after the import, under one row in the activity stack.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub denoise_above_iso: Option<u32>,
+}
+
+impl ImportDefaults {
+    /// Whether a new photo gets AI Denoise switched on ([`ImportDefaults::denoise_above_iso`]).
+    pub fn denoise_on_import(&self, p: &Photo) -> bool {
+        self.denoise_above_iso.is_some_and(|min| min > 0 && p.meta.iso.is_some_and(|iso| iso >= min)) && crate::denoise::eligible(p)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -390,10 +420,17 @@ pub fn apply_import_defaults(s: &Session, p: &mut Photo) {
             p.import_look = None;
         }
     }
-}
-
-pub fn is_supported(path: &Path) -> bool {
-    path.extension().is_some_and(|e| EXTENSIONS.contains(&e.to_string_lossy().to_lowercase().as_str()))
+    // AI Denoise above the ISO chosen (Settings ▸ Import): part of the look the photo starts from
+    if s.import_defaults.denoise_on_import(p) && !p.develop.enhance.denoise_enabled() {
+        let mut d = (*p.develop).clone();
+        d.enhance.denoise_on = Some(true);
+        if !(d.enhance.denoise.is_finite() && d.enhance.denoise > 0.0) {
+            d.enhance.denoise = 50.0;
+        }
+        let look = std::sync::Arc::new(d);
+        p.develop = look.clone();
+        p.import_look = Some(look);
+    }
 }
 
 /// The web file picker's accept list, derived from [`EXTENSIONS`]. Each extension
@@ -432,6 +469,15 @@ pub fn accept_list() -> String {
     out
 }
 
+/// An XMP sidecar (`.xmp`, any letter case): read with its photo on import, never a photo itself.
+fn is_xmp_sidecar(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xmp"))
+}
+
+pub fn is_supported(path: &Path) -> bool {
+    path.extension().is_some_and(|e| EXTENSIONS.contains(&e.to_string_lossy().to_lowercase().as_str()))
+}
+
 /// Expand files and folders (recursively) into supported files. `skip` (e.g. the library folder)
 /// is never descended into. Each folder's walk is bounded ([`crate::walk::Limits::default`]); a
 /// walk that stops at a bound is logged.
@@ -450,19 +496,57 @@ pub(crate) fn expand_noting(
     paths: &[String],
     skip: Option<&Path>,
     limits: crate::walk::Limits,
-    mut note: Option<crate::walk::NoteFolder>,
+    note: Option<crate::walk::NoteFolder>,
 ) -> (Vec<String>, bool) {
-    let mut out = Vec::new();
-    let mut truncated = false;
+    let e = expand_report_noting(paths, skip, limits, note);
+    (e.files, e.truncated)
+}
+
+/// What expanding import sources found, and what the walks left out ([`expand_report`]), so a
+/// review can say that it did not see everything.
+#[derive(Clone, Debug, Default)]
+pub struct Expansion {
+    /// Supported files, folders walked recursively and deduplicated by path, in walk order.
+    pub files: Vec<String>,
+    /// A walk stopped at a depth or entry bound: there may be more files.
+    pub truncated: bool,
+    /// Folders whose contents couldn't be listed (permissions, a folder that vanished or went offline).
+    pub unreadable: usize,
+    /// Files found inside the folders walked that are not a supported type (see [`is_supported`]),
+    /// not counting XMP sidecars, which the import reads with their photos. A file named directly
+    /// is attempted whatever its extension and is never counted here. Both counts add up over the
+    /// sources, so a folder named twice (or inside another source) counts twice.
+    pub unsupported: usize,
+}
+
+/// [`expand_within`] keeping the walks' diagnostics. A walk that stops at a bound is logged here
+/// (once per folder), as it always was.
+pub fn expand_report(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits) -> Expansion {
+    expand_report_noting(paths, skip, limits, None)
+}
+
+/// ([`expand_report`], handing the listing of every folder that is walked to `note`, as
+/// [`expand_noting`] does.)
+fn expand_report_noting(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits, mut note: Option<crate::walk::NoteFolder>) -> Expansion {
+    let mut out = Expansion::default();
     for p in paths {
         let p = Path::new(p);
         if skip.is_some_and(|s| p == s) {
             continue;
         }
         if p.is_dir() {
+            // XMP sidecars are read with their photos, not skipped: they are left out of the count
+            let mut sidecars = 0usize;
+            let keep = |f: &Path| {
+                let keep = is_supported(f);
+                if !keep && is_xmp_sidecar(f) {
+                    sidecars = sidecars.saturating_add(1);
+                }
+                keep
+            };
             let w = match note.as_mut() {
-                Some(note) => crate::walk::files_in_noting(p, skip, limits, is_supported, &mut **note),
-                None => crate::walk::files_in(p, skip, limits, is_supported),
+                Some(note) => crate::walk::files_in_noting(p, skip, limits, keep, &mut **note),
+                None => crate::walk::files_in(p, skip, limits, keep),
             };
             if w.truncated {
                 log::warn!(
@@ -473,16 +557,18 @@ pub(crate) fn expand_noting(
                     limits.max_depth
                 );
             }
-            truncated |= w.truncated;
-            out.extend(w.files.into_iter().map(|f| f.to_string_lossy().to_string()));
+            out.truncated |= w.truncated;
+            out.unreadable = out.unreadable.saturating_add(w.unreadable);
+            out.unsupported = out.unsupported.saturating_add(w.skipped.saturating_sub(sidecars));
+            out.files.extend(w.files.into_iter().map(|f| f.to_string_lossy().to_string()));
         } else {
             // explicitly named files are attempted even with an unknown extension (sniffed)
-            out.push(p.to_string_lossy().to_string());
+            out.files.push(p.to_string_lossy().to_string());
         }
     }
     let mut seen = std::collections::HashSet::new();
-    out.retain(|p| seen.insert(p.clone()));
-    (out, truncated)
+    out.files.retain(|p| seen.insert(p.clone()));
+    out
 }
 
 /// What a path given on the command line at launch becomes ([`launch_path`]).
@@ -493,6 +579,23 @@ pub enum LaunchPath {
     /// Not imported: `path` (absolute) is a whole drive or the whole home folder, which is never
     /// walked without being chosen in the app (issue #374).
     Refused { path: String, why: String },
+    /// Open this (absolute) library folder: the argument was a library's `catalog.snap` or its folder, as a
+    /// double-click on a catalog in the file manager gives. Never imported.
+    Library(String),
+}
+
+/// The library folder `path` names: a library's catalog file (`catalog.snap`, or the v4 store's `catalog.redb`; its
+/// folder), or a folder holding one. `None` for anything else (photos, folders of photos).
+pub fn library_dir_of(path: &Path) -> Option<PathBuf> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let names = [lcc_catalog::journal::SNAPSHOT, lcc_catalog::db::DB_FILE];
+    #[cfg(target_arch = "wasm32")]
+    let names = [lcc_catalog::journal::SNAPSHOT];
+    let named = path.file_name().is_some_and(|n| names.iter().any(|c| n.to_string_lossy().eq_ignore_ascii_case(c)));
+    if named && path.is_file() {
+        return path.parent().map(Path::to_path_buf);
+    }
+    (path.is_dir() && names.iter().any(|c| path.join(c).is_file())).then(|| path.to_path_buf())
 }
 
 /// Resolve a launch argument for importing (issue #374). An empty argument is ignored (`None`);
@@ -535,6 +638,9 @@ pub fn launch_path(arg: &str, cwd: Option<&Path>, home: Option<&Path>, dcim: imp
     let key = lcc_catalog::query::folder_key;
     if home.is_some_and(|h| key(&h.to_string_lossy()) == key(&shown)) {
         return Some(LaunchPath::Refused { path: shown, why: "the whole home folder".into() });
+    }
+    if let Some(dir) = library_dir_of(&abs) {
+        return Some(LaunchPath::Library(dir.to_string_lossy().to_string()));
     }
     Some(LaunchPath::Import(shown))
 }
@@ -639,7 +745,7 @@ pub struct ScanInput {
 /// The library's photos of `files`: path → (photo, its summary as a candidate that is there
 /// already). One pass over the library, and a record only for a file that was found: a folder of
 /// a hundred files in a library of millions costs a hundred records.
-fn library_files(library: &lcc_catalog::Catalog, files: &[String]) -> HashMap<PathBuf, (PhotoId, ImportCandidate)> {
+fn library_files(library: &lcc_catalog::Catalog, files: &[String]) -> HashMap<PathBuf, (PhotoId, ImportCandidate, Option<String>)> {
     let found: std::collections::HashSet<&Path> = files.iter().map(Path::new).collect();
     let mut by_path = HashMap::new();
     if found.is_empty() {
@@ -657,34 +763,53 @@ fn library_files(library: &lcc_catalog::Catalog, files: &[String]) -> HashMap<Pa
                 height: p.height,
                 file_size: p.file_size,
                 captured: p.captured.clone(),
-                // a Local (browsed) photo isn't in the library yet: importing it adds it
-                duplicate: (!p.local).then(|| "path".into()),
-                existing: (!p.local).then_some(p.id.0),
+                // a file that was only browsed (Local) is not in the library: importing it promotes it
+                // (a trashed browse record still counts as the path's)
+                duplicate: (!p.local || p.deleted).then(|| "path".into()),
+                existing: Some(p.id.0),
+                local: p.local && !p.deleted,
                 ..Default::default()
             };
-            by_path.insert(PathBuf::from(path), (p.id, c));
+            by_path.insert(PathBuf::from(path), (p.id, c, p.content_hash.clone()));
         }
     }
     by_path
 }
 
+/// Records that photo `id`, whose catalog key is `key`, has the content `key` stands for: the map
+/// is keyed by the content (a Duplicate's `:dup<id>` key is the original's plus a suffix, and a
+/// file's own hash is the plain one). Where several photos have the content, the one with the
+/// plain key is kept, else the later one.
+fn note_content<V>(by_hash: &mut HashMap<String, (bool, V)>, key: &str, value: V) {
+    let base = crate::sync::base_hash(key);
+    let plain = base.len() == key.len();
+    match by_hash.get_mut(base) {
+        Some((had_plain, _)) if *had_plain && !plain => {}
+        Some(slot) => *slot = (plain, value),
+        None => {
+            by_hash.insert(base.to_string(), (plain, value));
+        }
+    }
+}
+
 /// Which photo of the library has each of the contents `hashes` (the later one where several
-/// have it). One pass over the library, and an entry only for a content that was asked about.
+/// have it; a copy that was only browsed in Local isn't in the library). One pass over the
+/// library, and an entry only for a content that was asked about.
 fn library_hashes<'a>(library: &lcc_catalog::Catalog, hashes: impl Iterator<Item = &'a str>) -> HashMap<String, PhotoId> {
     let wanted: std::collections::HashSet<&str> = hashes.collect();
     let mut by_hash = HashMap::new();
     if wanted.is_empty() {
-        return by_hash;
+        return HashMap::new();
     }
     for p in library.photos() {
         if let Some(h) = &p.content_hash
             && !p.local
-            && wanted.contains(h.as_str())
+            && wanted.contains(crate::sync::base_hash(h))
         {
-            by_hash.insert(h.clone(), p.id);
+            note_content(&mut by_hash, h, p.id);
         }
     }
-    by_hash
+    by_hash.into_iter().map(|(h, (_, id))| (h, id)).collect()
 }
 
 /// Progress and cancellation of a running [`scan_with`].
@@ -701,6 +826,12 @@ pub struct ScanProgress {
 pub struct ScanOutput {
     pub candidates: Vec<ImportCandidate>,
     pub probes: HashMap<String, ProbeInfo>,
+    /// A folder walk stopped at a depth or entry bound: there may be more photos ([`Expansion`]).
+    pub truncated: bool,
+    /// Folders whose contents couldn't be listed.
+    pub unreadable: usize,
+    /// Files inside the folders that are not a supported photo type (XMP sidecars not counted).
+    pub unsupported: usize,
 }
 
 impl ScanInput {
@@ -728,20 +859,32 @@ impl ScanInput {
 /// against the library and earlier candidates). Nothing is added; the probes are kept for the
 /// import that follows.
 pub fn scan(s: &mut Session, paths: &[String]) -> Vec<ImportCandidate> {
+    scan_report(s, paths).candidates
+}
+
+/// [`scan`] keeping what the walks left out. The probes are already kept in the session for the
+/// import that follows, so `probes` of the output is empty.
+pub fn scan_report(s: &mut Session, paths: &[String]) -> ScanOutput {
     let (input, paths) = ScanInput::new(s, paths);
-    let out = scan_with(input, &paths, &ScanProgress::default());
-    s.import_probes = out.probes;
-    out.candidates
+    let mut out = scan_with(input, &paths, &ScanProgress::default());
+    s.import_probes = std::mem::take(&mut out.probes);
+    out
 }
 
 /// [`scan`] without the session, so it can run on a worker thread. Stops early (returning what it
 /// has) when `progress.cancel` is set.
 pub fn scan_with(input: ScanInput, paths: &[String], progress: &ScanProgress) -> ScanOutput {
-    let files = expand(paths, input.skip.as_deref());
-    scan_files(input, files, progress)
+    let expansion = expand_report(paths, input.skip.as_deref(), crate::walk::Limits::default());
+    let mut out = scan_files(input, expansion.files, progress);
+    out.truncated = expansion.truncated;
+    out.unreadable = expansion.unreadable;
+    out.unsupported = expansion.unsupported;
+    out
 }
 
-/// [`scan_with`] for files that were found already (`paths` expanded, [`expand`]).
+/// [`scan_with`] for files that were found already (`paths` expanded, [`expand`]). The walks'
+/// diagnostics ([`ScanOutput::truncated`] and friends) are left empty: who expanded the paths has
+/// them ([`expand_report`]).
 pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &ScanProgress) -> ScanOutput {
     use std::sync::atomic::Ordering::Relaxed;
     let by_path = library_files(&input.library, &files);
@@ -769,15 +912,34 @@ pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &Sc
     crate::memory::release();
     let mut probes: HashMap<String, Result<ProbeInfo, String>> = todo.into_iter().zip(probed).collect();
     // (who in the library has a content that was probed: asked once the probes are in)
-    let probed_hashes = probes.values().filter_map(|r| r.as_ref().ok()).filter_map(|info| info.content_hash.as_deref());
+    let probed_hashes = probes
+        .values()
+        .filter_map(|r| r.as_ref().ok())
+        .filter_map(|info| info.content_hash.as_deref())
+        // (and the browsed files the library has by path: they are offered unless it has the content too)
+        .chain(by_path.values().filter(|(_, c, _)| c.local).filter_map(|(_, _, h)| h.as_deref()));
     let mut seen_hash: HashMap<String, Option<u64>> =
         library_hashes(&input.library, probed_hashes).into_iter().map(|(h, id)| (h, Some(id.0))).collect();
     let mut out = Vec::with_capacity(files.len());
     let mut kept = HashMap::new();
     for f in files {
-        if let Some((_, c)) = by_path.get(Path::new(&f)) {
+        if let Some((id, c, hash)) = by_path.get(Path::new(&f)) {
             let mut c = c.clone();
             c.name = Path::new(&f).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| f.clone());
+            // a browsed file the library has the content of (or an earlier file here promotes) is a duplicate
+            if c.local
+                && let Some(h) = hash
+            {
+                match seen_hash.get(h) {
+                    Some(existing) => {
+                        c.duplicate = Some("content".into());
+                        c.existing = *existing;
+                    }
+                    None => {
+                        seen_hash.insert(h.clone(), Some(id.0));
+                    }
+                }
+            }
             out.push(c);
             continue;
         }
@@ -810,7 +972,8 @@ pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &Sc
         }
         out.push(c);
     }
-    ScanOutput { candidates: out, probes: kept }
+    // (the walks' diagnostics are [`scan_with`]'s: these files were found already)
+    ScanOutput { candidates: out, probes: kept, truncated: false, unreadable: 0, unsupported: 0 }
 }
 
 /// Import files/folders. See the module docs.
@@ -848,7 +1011,7 @@ pub struct ImportJob {
     /// as the options said when the import was set up).
     library: Option<(lcc_catalog::Catalog, bool)>,
     /// path → (photo, a Local browse record?)
-    by_path: HashMap<String, (PhotoId, bool)>,
+    by_path: HashMap<String, (PhotoId, bool, Option<String>)>,
     /// content hash → the photo that has it (`None`: a file earlier in this import)
     by_hash: HashMap<String, Option<PhotoId>>,
     probe: Option<crate::media::FileProbe>,
@@ -925,13 +1088,13 @@ impl Prepared {
     /// Preparation may have run while another import added the same path or content.
     pub fn revalidate_add(&mut self, s: &Session) {
         let mut paths = HashMap::new();
-        let mut hashes = HashMap::new();
+        let mut hashes: HashMap<String, (bool, PhotoId)> = HashMap::new();
         for photo in s.catalog.photos() {
             if let Source::File { path } = &photo.source {
                 paths.insert(normalize_import_path(path), photo.id);
             }
             if let Some(hash) = &photo.content_hash {
-                hashes.insert(hash.clone(), photo.id);
+                note_content(&mut hashes, hash, photo.id);
             }
         }
         let mut items = Vec::with_capacity(self.items.len());
@@ -942,7 +1105,7 @@ impl Prepared {
             };
             let ReadyFile { path, stored, info, sidecar, placed } = *ready;
             let existing_path = paths.get(&normalize_import_path(&stored)).copied().or_else(|| paths.get(&normalize_import_path(&path)).copied());
-            let existing_hash = info.content_hash.as_ref().and_then(|hash| hashes.get(hash).copied());
+            let existing_hash = info.content_hash.as_ref().and_then(|hash| hashes.get(crate::sync::base_hash(hash)).map(|(_, id)| *id));
             if let Some(existing) = existing_path.or(existing_hash) {
                 if let Some(placed) = &placed {
                     crate::import_move::rollback(placed);
@@ -970,6 +1133,8 @@ impl ImportJob {
     /// Snapshot what an import with `opts` needs from the session (no file-system calls). Takes
     /// the probes a preceding scan left ([`Session::import_probes`]).
     pub fn new(s: &mut Session, opts: ImportOptions) -> crate::Result<Self> {
+        // a recipe is checked before any file is read or placed, not when the photos are committed
+        crate::cmd::check_recipe(&opts.recipe).map_err(|e| crate::cmd::bad("library.import", e))?;
         let mode = opts.mode;
         // Only a library on disk has an `Originals/` folder. The browser build keeps the bytes of
         // every added file in its own storage already, so "copy" there means "add".
@@ -1039,21 +1204,25 @@ impl ImportJob {
     /// of the shared stem sidecars they read ([`crate::sidecar::ImportStems`]).
     fn look_up_library(&mut self) -> Option<lcc_catalog::Catalog> {
         let (library, fresh) = self.library.take()?;
+        let mut by_hash = HashMap::new();
         for p in library.photos() {
             // a trashed photo is replaced by a fresh import, so it doesn't count as a duplicate
             if p.deleted && fresh {
                 continue;
             }
             if let Source::File { path } = &p.source {
-                self.by_path.insert(path.clone(), (p.id, p.local));
+                self.by_path.insert(path.clone(), (p.id, p.local, p.content_hash.clone()));
             }
             // importing suspected duplicates: only a trashed photo's content still matches
+            // (and a copy that was only browsed in Local isn't in the library)
             if let Some(h) = &p.content_hash
+                && !p.local
                 && (p.deleted || !self.opts.import_duplicates)
             {
-                self.by_hash.insert(h.clone(), Some(p.id));
+                note_content(&mut by_hash, h, Some(p.id));
             }
         }
+        self.by_hash.extend(by_hash.into_iter().map(|(h, (_, id))| (h, id)));
         Some(library)
     }
 
@@ -1067,14 +1236,24 @@ impl ImportJob {
         let mut out = Prepared { scanned: files.len(), items: Vec::new() };
         let mut todo = Vec::new();
         for f in files {
-            match self.by_path.get(f.as_str()).copied() {
-                Some((id, true)) if !opts.local => {
+            match self.by_path.get(f.as_str()).cloned() {
+                Some((id, true, hash)) if !opts.local => {
+                    // a library photo with the same content comes first, and a file promoted earlier
+                    // (here or in a previous batch) counts as the library's from then on
+                    if let Some(h) = &hash {
+                        if let Some(existing) = self.by_hash.get(h) {
+                            out.items.push(PreparedItem::Duplicate { path: f, existing: *existing, reason: "content", hash });
+                            self.done.fetch_add(1, Relaxed);
+                            continue;
+                        }
+                        self.by_hash.insert(h.clone(), Some(id));
+                    }
                     // a file that was only browsed (Local) joins the library when it is imported for real
-                    self.by_path.insert(f, (id, false));
+                    self.by_path.insert(f, (id, false, hash));
                     out.items.push(PreparedItem::Promote(id));
                     self.done.fetch_add(1, Relaxed);
                 }
-                Some((id, _)) => {
+                Some((id, _, _)) => {
                     out.items.push(PreparedItem::Duplicate { path: f, existing: Some(id), reason: "path", hash: None });
                     self.done.fetch_add(1, Relaxed);
                 }
@@ -1463,11 +1642,12 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     // photos added by this batch, by content (a duplicate of a file earlier in the import names it)
     let mut new_hash: HashMap<String, PhotoId> = HashMap::new();
     // Fresh: trashed photos a new import replaces (by content or by file), each removed once
-    let (mut trash_hash, mut trash_path): (HashMap<String, PhotoId>, HashMap<String, PhotoId>) = Default::default();
+    let mut trash_content: HashMap<String, (bool, PhotoId)> = HashMap::new();
+    let mut trash_path: HashMap<String, PhotoId> = HashMap::new();
     if opts.on_deleted == OnDeleted::Fresh {
         for p in s.catalog.photos().filter(|p| p.deleted) {
             if let Some(h) = &p.content_hash {
-                trash_hash.insert(h.clone(), p.id);
+                note_content(&mut trash_content, h, p.id);
             }
             if let Source::File { path } = &p.source {
                 trash_path.insert(path.clone(), p.id);
@@ -1489,12 +1669,32 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 if s.catalog.photo(id).is_some_and(|p| p.local) {
                     ops.push(Op::SetLocal { id, local: false });
                 }
+                // "Import as new": a trashed photo with the same content is replaced, as for a new file
+                if let Some(old) = s
+                    .catalog
+                    .photo(id)
+                    .and_then(|p| p.content_hash.as_ref())
+                    .and_then(|h| trash_content.get(crate::sync::base_hash(h)).map(|(_, id)| id))
+                    && purged.insert(*old)
+                {
+                    purge.push(*old);
+                }
                 report.imported.push(id.0);
             }
             PreparedItem::Duplicate { path, existing, reason, hash } => {
                 let existing = existing.or_else(|| {
                     let h = hash?;
-                    new_hash.get(&h).copied().or_else(|| s.catalog.photos().find(|p| p.content_hash.as_deref() == Some(h.as_str())).map(|p| p.id))
+                    new_hash
+                        .get(&h)
+                        .copied()
+                        .or_else(|| s.catalog.photos().find(|p| !p.local && p.content_hash.as_deref() == Some(h.as_str())).map(|p| p.id))
+                        // a Duplicate's `<hash>:dup<id>` stands for its content too
+                        .or_else(|| {
+                            s.catalog
+                                .photos()
+                                .find(|p| !p.local && p.content_hash.as_deref().is_some_and(|k| crate::sync::base_hash(k) == h.as_str()))
+                                .map(|p| p.id)
+                        })
                 });
                 let trashed = existing.filter(|id| s.catalog.photo(*id).is_some_and(|p| p.deleted));
                 match trashed {
@@ -1504,7 +1704,11 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                             ops.push(Op::SetDeleted { id, deleted: false });
                             // matched by content from another path, and the file the record
                             // points at is gone (moved, renamed): the photo follows the file
-                            if reason == "content" && trashed_file_is_gone(&s.catalog, id) {
+                            // (not onto a path another record holds, a file only browsed in Local)
+                            if reason == "content"
+                                && trashed_file_is_gone(&s.catalog, id)
+                                && !s.catalog.photos().any(|p| matches!(&p.source, Source::File { path: held } if *held == path))
+                            {
                                 ops.push(crate::cmd::missing::relink_op(id, &path));
                             }
                             report.restored.push(id.0);
@@ -1522,7 +1726,8 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 if let Some(h) = &info.content_hash {
                     new_hash.insert(h.clone(), id);
                 }
-                for old in info.content_hash.as_ref().and_then(|h| trash_hash.get(h)).into_iter().chain(trash_path.get(&stored)) {
+                for old in info.content_hash.as_ref().and_then(|h| trash_content.get(h)).map(|(_, id)| id).into_iter().chain(trash_path.get(&stored))
+                {
                     if purged.insert(*old) {
                         purge.push(*old);
                     }
@@ -1584,6 +1789,19 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     p.edited = Some(now.clone());
                     p.history.push(lcc_catalog::HistoryStep { label, settings: d });
                 }
+                // the batch-edit recipe goes on top of everything above (sidecar, camera default,
+                // preset): only the controls it names change, through the same specs the sliders use
+                if !opts.recipe.is_empty() {
+                    let mut d = (*p.develop).clone();
+                    for (id, v) in &opts.recipe {
+                        // (`ImportJob::new` refused any id `set` would not write, and `set` clamps to the range)
+                        lcc_develop::controls::set(&mut d, id, *v);
+                    }
+                    let d = std::sync::Arc::new(d);
+                    p.develop = d.clone();
+                    p.edited = Some(now.clone());
+                    p.history.push(lcc_catalog::HistoryStep { label: "Import adjustments".into(), settings: d });
+                }
                 report.imported.push(id.0);
                 p.local = opts.local;
                 if opts.local {
@@ -1613,6 +1831,15 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     }
     if !placed.is_empty() {
         finish_moves(s, placed, log0, &mut report);
+    }
+    // AI Denoise switched on at import (above the ISO chosen): their pictures are made in the background
+    // (not for a folder being browsed: nothing was imported)
+    if s.import_defaults.denoise_above_iso.is_some() && !opts.local {
+        let on: Vec<PhotoId> =
+            report.imported.iter().map(|i| PhotoId(*i)).filter(|id| s.develop_of(*id).is_some_and(|d| d.denoise_amount() > 0.0)).collect();
+        if !on.is_empty() {
+            s.denoise_enqueue_all(&on);
+        }
     }
     crate::cmd::plugins::restore_fields(s, &plugin_fields);
     // photos that came with an XMP sidecar start in step with it (the metadata-vs-file badge)

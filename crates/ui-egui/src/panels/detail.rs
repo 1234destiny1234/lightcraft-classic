@@ -3900,7 +3900,7 @@ fn eye_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, map: 
     let o = map.screen(Point::new(0.0, 0.0));
     let (sx, sy) = (map.screen(Point::new(1.0, 0.0)).distance(o), map.screen(Point::new(0.0, 1.0)).distance(o));
     let per_long = sx.max(sy);
-    let p = ui.painter();
+    let p = ui.painter().clone();
     for (i, e) in d.red_eye.iter().enumerate() {
         let c = map.screen(e.center);
         let r = vec2(e.rx as f32 * per_long, e.ry as f32 * per_long);
@@ -3909,6 +3909,9 @@ fn eye_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, map: 
         p.add(egui::Shape::ellipse_stroke(c, r, Stroke::new(if sel { 1.5 } else { 1.0 }, col)));
         p.line_segment([c - vec2(4.0, 0.0), c + vec2(4.0, 0.0)], Stroke::new(1.0, col));
         p.line_segment([c - vec2(0.0, 4.0), c + vec2(0.0, 4.0)], Stroke::new(1.0, col));
+    }
+    if eye_keys(app, ui, map, d, per_long) {
+        return;
     }
     if resp.hover_pos().is_some() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
@@ -3948,6 +3951,69 @@ fn eye_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, map: 
     {
         app.ui.eye = i;
     }
+}
+
+/// Keyboard stand-ins for the Red Eye tool: each correction's centre (the arrows move it), its
+/// right edge (left / right change its width) and bottom edge (up / down its height), one undo
+/// step a press; focusing one selects it, so Delete removes it. A placement point that the arrows
+/// move turns into a new correction of the default size on Return. True when one was added.
+fn eye_keys(app: &mut LccApp, ui: &mut egui::Ui, map: &CanvasMap, d: &DevelopSettings, per_long: f32) -> bool {
+    for (i, e) in d.red_eye.iter().enumerate() {
+        let c = map.screen(e.center);
+        let name = format!("{} {}", crate::i18n::tr(if e.pet { "Pet Eye" } else { "Red Eye" }), i + 1);
+        let value = format!(
+            "{}, {} {:.0}%, {} {:.0}%",
+            crate::canvas_keys::position_text(e.center.x, e.center.y),
+            crate::i18n::tr("width"),
+            e.rx * 200.0,
+            crate::i18n::tr("height"),
+            e.ry * 200.0
+        );
+        let parts = [
+            ("", format!("eye:{i}"), c),
+            ("right edge", format!("eye:{i}:width"), c + vec2(e.rx as f32 * per_long, 0.0)),
+            ("bottom edge", format!("eye:{i}:height"), c + vec2(0.0, e.ry as f32 * per_long)),
+        ];
+        for (k, (part, key, at)) in parts.into_iter().enumerate() {
+            let label = if part.is_empty() { name.clone() } else { format!("{name} {}", crate::i18n::tr(part)) };
+            let keys = crate::canvas_keys::handle(ui, &key, &label, value.clone(), at);
+            if ui.memory(|m| m.has_focus(crate::canvas_keys::id(&key))) {
+                app.ui.eye = i;
+            }
+            let Some((dx, dy)) = keys.delta else { continue };
+            let params = match k {
+                0 => json!({"index": i, "move": [dx, dy]}),
+                1 => json!({"index": i, "rx": e.rx + dx}),
+                _ => json!({"index": i, "ry": e.ry + dy}),
+            };
+            let _ = app.run("develop.beginInteraction", json!({"label": "Edit Red Eye"}));
+            let _ = app.run("redeye.update", params);
+            let _ = app.run("develop.endInteraction", json!({}));
+        }
+    }
+    // where a new correction goes: the photo's centre at first, then wherever the arrows took it
+    let key = egui::Id::new("lc-eye-placement");
+    let place: (f64, f64) = ui.data(|m| m.get_temp(key)).unwrap_or((0.5, 0.5));
+    let q = map.screen(Point::new(place.0, place.1));
+    let keys = crate::canvas_keys::handle(
+        ui,
+        "eye:new",
+        crate::i18n::tr("New red eye correction (Return adds it here)"),
+        crate::canvas_keys::position_text(place.0, place.1),
+        q,
+    );
+    if let Some((dx, dy)) = keys.delta {
+        let moved = ((place.0 + dx).clamp(0.0, 1.0), (place.1 + dy).clamp(0.0, 1.0));
+        ui.data_mut(|m| m.insert_temp(key, moved));
+    }
+    if keys.activated {
+        let r = app.run("redeye.add", json!({"center": [place.0, place.1], "pet": app.ui.eye_pet}));
+        if let Ok(v) = r {
+            app.ui.eye = v["index"].as_u64().unwrap_or(0) as usize;
+        }
+        return true;
+    }
+    false
 }
 
 // ------------------------------------------------------------------------ filmstrip
@@ -4089,7 +4155,6 @@ pub(crate) fn filmstrip(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
             }
             register(ui.ctx(), format!("film:{}", id.0), cr);
             let state = app.session.selection.state_of(*id);
-            let sel = state == lcc_engine::SelectionState::Active;
             let p = ui.painter();
             let label = app.session.catalog.photo(*id).and_then(|ph| ph.label);
             let selected = state != lcc_engine::SelectionState::NotSelected;
@@ -4121,11 +4186,7 @@ pub(crate) fn filmstrip(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
                 let s = (img_area.width() / tw as f32).min(img_area.height() / th as f32);
                 let fr = Rect::from_center_size(img_area.center(), vec2(tw as f32 * s, th as f32 * s));
                 p.image(tex.tex.id(), fr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-                if sel {
-                    p.rect_stroke(fr, 0.0, Stroke::new(1.5, Color32::WHITE), StrokeKind::Outside);
-                } else if state == lcc_engine::SelectionState::Selected {
-                    p.rect_stroke(fr, 0.0, Stroke::new(1.5, Color32::from_gray(170)), StrokeKind::Outside);
-                }
+                super::grid::selection_ring(p, &t, fr, state);
                 if app.ui.settings.film_badges
                     && let Some(ph) = app.session.catalog.photo(*id)
                 {
@@ -4648,6 +4709,7 @@ mod tests {
                 proof: None,
                 window: None,
                 display: None,
+                downscale: Default::default(),
             },
             key: 0,
             cache: None,

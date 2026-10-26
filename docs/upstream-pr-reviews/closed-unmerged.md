@@ -15,15 +15,15 @@ Summary: 7 adopted, 6 to learn from, 161 skipped, of 174 reviewed.
 | #2528 | Control port: close gracefully so the peer reads the last reply (Windows reset) | SKIP | duplicate: already upstream via #2377, so in the fork |  |
 | #2480 | Local: no freeze on a slow share; list subfolders in parallel (4/4 of #2001) | SKIP | duplicate: folded into #2459 upstream (parallel subfolder listing) |  |
 | #2426 | test: fix folder-drop tests on Windows (widget ids use forward slashes) | SKIP | duplicate: folder-drop widget ids fixed by #1975 |  |
-| #2416 | Persistently ignore and restore face detections (catalog format 10) | LEARN | persistent Ignore Faces (catalog format 10): not in the fork; needs catalog-format work on the fork's catalog |  |
+| #2416 | Persistently ignore and restore face detections (catalog format 10) | LEARN | persistent Ignore Faces (catalog format 10): not in the fork; needs catalog-format work on the fork's catalog || fork #526 |
 | #2377 | Ci/cross platform tests | SKIP | duplicate: already upstream via #2667, so in the fork |  |
-| #2364 | Convert Negative: film-negative conversion from the Photo menu | LEARN | Convert Negative: not in the fork; upstream re-split it as the still-open #2490 chain |  |
+| #2364 | Convert Negative: film-negative conversion from the Photo menu | LEARN | Convert Negative: not in the fork; upstream re-split it as the still-open #2490 chain || not ported: ~4000 lines and a new film crate that overlaps the fork's film-lab negative filter; the open re-split #2490 belongs to the open-PR review |
 | #2348 | Withdrawn: in-app CLIP/YOLO tagging | SKIP | withdrawn by its author; C++ ONNX models |  |
 | #2346 | Run batch Reload from Disk on background import workers | SKIP | duplicate: already upstream via #1998, so in the fork |  |
 | #2335 | fix(ci): cfg(unix) the staging-test import so Windows clippy passes | SKIP | split or folded upstream into #2334 (reviewed there) |  |
 | #2333 | feat: Lightroom-style straighten band, lock-aspect on A and press-started Guided Upright guides | SKIP | split or folded upstream into #2334 (reviewed there) |  |
 | #2292 | ui: scrollable profile menu | SKIP | duplicate: already upstream via #2069, so in the fork |  |
-| #2262 | LRC-DEV-PROCESS: process V3, over-range colors keep their hue and saturation | LEARN | over-range colours keep hue and saturation: not in the fork; needs its own process-version bump |  |
+| #2262 | LRC-DEV-PROCESS: process V3, over-range colors keep their hue and saturation | LEARN | over-range colours keep hue and saturation: not in the fork; needs its own process-version bump || fork #523 (as process V5) |
 | #2229 | engine: refuse malformed mask and spot targets | SKIP | duplicate: already upstream via #2101, so in the fork |  |
 | #2228 | engine: refuse fractional command indices | SKIP | duplicate: already upstream via #2100, so in the fork |  |
 | #2214 | Web: List every importable raw in the Import Photos picker (#2212) | SKIP | duplicate: #2430 merged the same picker change |  |
@@ -37,7 +37,7 @@ Summary: 7 adopted, 6 to learn from, 161 skipped, of 174 reviewed.
 | #2186 | Imported profiles: read and delete only the library's own copies in Profiles/ (#2123) | ADOPT | author abandoned it; imported profiles read/deleted only inside Profiles/ | fork #515 |
 | #2185 | Edit In: start only the editor set in Settings, never one a client names (#2115) | SKIP | duplicate: the fork fixed #2115 itself (b34d09c20, #479: Edit In starts only editors set in Settings) |  |
 | #2183 | engine: stop the export batch's lane queue on every scope exit (#2132) | SKIP | duplicate: already upstream via #2145, so in the fork |  |
-| #2182 | Decoder memory budgets: header-only GIF/BMP/JXL sizes, byte budgets, tile and lossy-JPEG limits (#2116, #2117, #2118, #2125) | LEARN | decoder byte budgets (GIF/BMP/JXL headers, tile budget, lossy JPEG): conflicts with fork codecs/raw throughout; re-implement as a follow-up |  |
+| #2182 | Decoder memory budgets: header-only GIF/BMP/JXL sizes, byte budgets, tile and lossy-JPEG limits (#2116, #2117, #2118, #2125) | LEARN | decoder byte budgets (GIF/BMP/JXL headers, tile budget, lossy JPEG): conflicts with fork codecs/raw throughout; re-implement as a follow-up || fork #527 (codecs side; raw batching/lossy JPEG on the upstream-learn2 branch) |
 | #2171 | mcp: file-writing helpers report destructiveHint: true (#2139) | SKIP | duplicate: already upstream via #2152, so in the fork |  |
 | #2167 | M12: SAM 3 on the GPU outside macOS (wgpu): a photo's analysis ~33 → ~0.6 s, a description ~5 → ~0.5–0.7 s | SKIP | split or folded upstream into #2533 (reviewed there) |  |
 | #2163 | LR-PREF-INTERFACE: grid badges on Stars on hover keep flags and labels on every tile, stars only on hover or selection | SKIP | split or folded upstream into #2164 (reviewed there) |  |
@@ -66,7 +66,7 @@ Summary: 7 adopted, 6 to learn from, 161 skipped, of 174 reviewed.
 | #1826 | LR-BEHAV-EMPTY-STATES: the samples say what they bring (stacked on #1825) | SKIP | split or folded upstream into #1781 (reviewed there) |  |
 | #1825 | LR-BEHAV-EMPTY-STATES: the first edit on a sample gets a payoff (stacked on #1824) | SKIP | split or folded upstream into #1781 (reviewed there) |  |
 | #1824 | LR-BEHAV-EMPTY-STATES: the welcome stands out from the window around it (stacked on #1811) | SKIP | split or folded upstream into #1781 (reviewed there) |  |
-| #1819 | fix(lightroom): read large catalogs through bounded file-backed pages | LEARN | lrcat WAL streaming and per-page cancellation (not in #842): worth adding to the fork's catalog import |  |
+| #1819 | fix(lightroom): read large catalogs through bounded file-backed pages | LEARN | lrcat WAL streaming and per-page cancellation (not in #842): worth adding to the fork's catalog import || already in the fork (08f282474) |
 | #1811 | LR-BEHAV-EMPTY-STATES: the welcome and the samples banner use the button component (stacked on #1803 and #1810) | SKIP | split or folded upstream into #1781 (reviewed there) |  |
 | #1803 | LR-BEHAV-EMPTY-STATES: every way to the samples leads to the editor, which invites a first edit (stacked on #1799) | SKIP | split or folded upstream into #1781 (reviewed there) |  |
 | #1799 | LR-BEHAV-EMPTY-STATES: the welcome reads for everyone (stacked on #1789) | SKIP | split or folded upstream into #1781 (reviewed there) |  |
@@ -177,7 +177,7 @@ Summary: 7 adopted, 6 to learn from, 161 skipped, of 174 reviewed.
 | #539 | Add offline GPS map projection primitives | SKIP | duplicate: already upstream via #797, so in the fork |  |
 | #537 | LRC-LIB-CATALOG-IMPORT: read Lightroom's Custom white balance by its as-shot shift on relative-WB raws (#510) | SKIP | duplicate: the fork reads relative Custom WB (crs.rs, lightroom_catalog.rs tests) |  |
 | #488 | LRC-LIB-CATALOG-IMPORT: import crops from catalog develop settings (#483) | SKIP | duplicate: already upstream via #489, so in the fork |  |
-| #481 | Advance selection to next photo after deleting (#441) | LEARN | neighbour selection after photo.deletePermanently, the part #451 didn't cover |  |
+| #481 | Advance selection to next photo after deleting (#441) | LEARN | neighbour selection after photo.deletePermanently, the part #451 didn't cover || already in the fork (c0ff290e7) |
 | #467 | Issue #441: keep the grid's scroll position when deleting photos | SKIP | duplicate: already upstream via #441, so in the fork |  |
 | #466 | HDR editing, Visualize HDR range, headroom limit, HDR export and HDR display | SKIP | the fork already ships HDR editing and display (0.8.2) |  |
 | #456 | Fix/issue 425 missing simplified chinese font | SKIP | CJK fonts come from craft-fonts in the fork |  |

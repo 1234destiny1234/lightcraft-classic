@@ -71,6 +71,14 @@ leaves them apart. The transposed convolution's merged store ran right on that c
 `nn::tests::a_layer_stores_every_pixels_channels_where_the_next_reads_them` catches the fault on such a card;
 `a_transposed_convolution_stores_every_pixels_channels_where_the_next_reads_them` checks the other store exactly.
 
+FXC also cannot address two things the WGSL looks harmless with, and answers with `X3550 … forcing loop to unroll`
+and then `X3511 unable to unroll loop` (the shader module fails, so the pipeline is never made): an array handed to a
+function through a pointer (`ptr<function, array<…>>`) that the function then indexes with a loop variable, and a vector
+indexed with a loop variable on the left of an assignment (`acc[ch] = …` with `acc: vec4<f32>`). The block-matching
+kernels (`wgsl/bm3d_*.wgsl`) keep their working arrays at module scope (`var<private>`, one copy of the transforms
+generated per array, `bm3d_transform.wgsl`) and accumulate in `array<f32, 4>` instead. A GPU test that only records a
+skip when the device cannot build the kernels hides this, so read the skip note (`cargo test … -- --nocapture`).
+
 **Off the startup path.** The compute device is created on a background thread once the window is
 up (`gpu::warm_up` from the first frame's settings), and never while GPU rendering is off: with
 Settings ▸ Performance ▸ *Use the GPU for rendering* unchecked (applied before the window opens),
@@ -338,6 +346,14 @@ average ≈ 105 on 32 threads, so compare the ratio, not the absolute numbers: 1
 6000×4000 670 → 336 ms (σ 6.8, best of 5). Full-resolution colour NR on the CPU is still over the
 16 ms slider budget at loupe size; the GPU path (unchanged, full-resolution blur, 10–18 ms for the
 whole NR drag) is the one that meets it.
+
+On Windows / DX12 the kernels cost more: FXC compiles each pipeline single-threaded inside
+`create_compute_pipeline` (issue #471). Built one after another, the 27 took ~2.2 s on an Intel Core
+Ultra 7 165U iGPU (`app.gpu` 2.4 s median, up to 7 s on the first run after an install), so
+`ctx::build_kernels` shares them out to worker threads (issue #2936): ~1.05 s there (`app.gpu` 1.2 s),
+most likely the largest kernel (`finish.wgsl`) alone (not timed per kernel). wgpu's error scopes are per thread, so every worker
+opens its own; a refused kernel still means no GPU. The `gpu:` info log line gives the kernel count
+and build time.
 
 ## Opening a photo (M5.4)
 - The loupe shows a stand-in at once (`media::QuickJob`): the photo's cached view render for its

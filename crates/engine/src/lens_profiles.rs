@@ -157,6 +157,12 @@ pub struct GivenLens {
     pub aperture: Option<f64>,
 }
 
+impl From<&lcc_develop::ChosenLens> for GivenLens {
+    fn from(c: &lcc_develop::ChosenLens) -> Self {
+        GivenLens { maker: c.make.clone(), model: c.model.clone(), focal: c.focal, aperture: None }
+    }
+}
+
 impl GivenLens {
     /// Check a lens given from outside (a command or agent): a nonempty name of at most [`MAX_NAME`] characters,
     /// a finite focal length in 0–10000 mm and an f-number in 0.5–256.
@@ -309,6 +315,24 @@ pub fn resolve_raw(raw: &lcc_raw::RawInfo, meta: impl FnOnce() -> lcc_meta::Meta
         let (w, h) = raw.developed_size();
         lookup_with(&db, &meta(), given, w as f64, h as f64, raw.orientation)
     })
+}
+
+/// The lens correction for a raw when the user may have picked a lens (`picked`, [`lcc_develop::Optics::lens`]): a
+/// picked lens's database profile, even over the file's own correction (an explicit choice wins); else
+/// [`resolve_raw`] without a given lens. A picked lens the database lacks (or without a focal length) gives none.
+pub fn resolve_picked(
+    raw: &lcc_raw::RawInfo,
+    meta: impl FnOnce() -> lcc_meta::Metadata,
+    picked: Option<&GivenLens>,
+) -> Option<(EmbeddedLens, Applied)> {
+    match picked {
+        Some(g) => {
+            let db = database()?;
+            let (w, h) = raw.developed_size();
+            lookup_with(&db, &meta(), Some(g), w as f64, h as f64, raw.orientation)
+        }
+        None => resolve_raw(raw, meta, None),
+    }
 }
 
 /// The order itself: the file's own correction (`file`) wins; else the database's (`database`, which applies a

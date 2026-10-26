@@ -383,11 +383,12 @@ impl Headless {
         }
     }
 
-    /// Is anything still in progress (renders, file-system checks the sidebar waits for, queued
-    /// input)?
+    /// Is anything still in progress (renders, file-system checks the sidebar waits for, the albums' counts,
+    /// queued input)?
     pub fn busy(&self) -> bool {
         self.app.renderer.in_flight() > 0
             || crate::panels::left::fs_cached_running(&self.view.ctx) > 0
+            || self.app.caches.album_recount_running()
             || self.app.merge.busy()
             || self.app.scan.is_some()
             || self.app.sync.is_some()
@@ -541,8 +542,10 @@ impl crate::render::RenderOffload for RenderGate {
 
 #[cfg(test)]
 mod tests {
+    /// A raw photo is offered the AI Denoise switch with no set-up and one click turns it on with the built-in
+    /// denoiser; Settings still offers installing a model, and a photo that is not raw is not offered it.
     #[test]
-    fn detail_offers_ai_denoise_for_raw_photos_and_leads_to_its_settings() {
+    fn detail_offers_ai_denoise_for_raw_photos_without_any_set_up() {
         use crate::state::Dialog;
         use lcc_catalog::{MediaKind, Op, Photo, PhotoId, Source};
         // tall enough that the Detail panel's setup button is on screen above the Sync bar, whatever the panel order
@@ -573,13 +576,17 @@ mod tests {
         h.step();
         h.step();
         let w = widgets(&mut h);
-        assert!(w.contains("\"denoise:setup\""), "a raw photo with no model is offered the setup: {w}");
-        // One click lands in Settings, with local installation available even without a download offer.
-        let r = h.request("ui.clickWidget", json!({"id": "denoise:setup"}), t);
+        assert!(w.contains("\"denoise:enabled\"") && !w.contains("\"denoise:setup\""), "a raw photo is offered the switch, with no set-up: {w}");
+        // One click turns it on with the built-in denoiser: nothing to install first.
+        let r = h.request("ui.clickWidget", json!({"id": "denoise:enabled"}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.step();
         h.step();
-        assert_eq!(h.app.ui.dialog, Some(Dialog::Settings { tab: "denoise".into() }));
+        assert_eq!(h.app.ui.dialog, None);
+        assert!(h.app.session.develop_of(id).is_some_and(|d| d.enhance.denoise_enabled()));
+        assert_eq!(h.app.session.execute("denoise.status", &json!({})).unwrap()["model"]["id"], "builtin");
+        // Settings still offers installing a model of one's own.
+        h.app.ui.dialog = Some(Dialog::Settings { tab: "denoise".into() });
         h.settle(SETTLE);
         let listed = h.app.session.execute("denoise.models.list", &json!({})).unwrap();
         assert_eq!(listed["models"].as_array().unwrap().len(), lcc_denoise::known::all().len(), "{listed}");
@@ -594,7 +601,7 @@ mod tests {
         h.settle(SETTLE);
         h.step();
         h.step();
-        assert!(!widgets(&mut h).contains("\"denoise:setup\""), "nothing is offered for a photo denoise does not apply to");
+        assert_eq!(h.app.session.denoise_photo_state(h.app.session.active().unwrap()), lcc_engine::denoise::PhotoState::NotApplicable);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2821,7 +2828,7 @@ mod tests {
         let args = calls.lock().unwrap().clone();
         assert_eq!(args.len(), 1);
         assert_eq!(args[0][args[0].len() - 2..], written[..], "the files written go to Photos");
-        let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+        let toast = h.app.ui.toast().map(|t| t.0.clone()).unwrap_or_default();
         assert!(toast.contains("2 added to Apple Photos album “Trip “2026””"), "{toast}");
         // Export with Previous repeats it
         assert_eq!(h.app.session.last_export.as_ref().unwrap()["addToPhotos"], true);
@@ -2945,11 +2952,11 @@ mod tests {
         assert!(t0.elapsed() < Duration::from_secs(25), "answered at once: {r}");
         assert_eq!(r["result"]["running"], true, "{r}");
         go.send(()).unwrap();
-        while !h.app.ui.toast.as_ref().is_some_and(|t| t.0.contains("Apple Photos")) {
+        while !h.app.ui.toast().is_some_and(|t| t.0.contains("Apple Photos")) {
             assert!(t0.elapsed() < Duration::from_secs(90), "the outcome is announced");
             h.step();
         }
-        assert_eq!(h.app.ui.toast.as_ref().unwrap().0, "1 added to Apple Photos album “Slow”");
+        assert_eq!(h.app.ui.toast().unwrap().0, "1 added to Apple Photos album “Slow”");
         if cfg!(target_os = "macos") {
             let t1 = Instant::now();
             let p = json!({"dir": out.to_string_lossy(), "longEdge": 32, "addToPhotos": true});
@@ -2958,7 +2965,7 @@ mod tests {
             assert_eq!(r["result"]["applePhotos"]["running"], true, "{r}");
             assert_eq!(r["result"]["applePhotos"]["job"], 2, "{r}");
             go.send(()).unwrap();
-            while !h.app.ui.toast.as_ref().is_some_and(|t| t.0.starts_with("1 added to Apple Photos") && !t.0.contains("Slow")) {
+            while !h.app.ui.toast().is_some_and(|t| t.0.starts_with("1 added to Apple Photos") && !t.0.contains("Slow")) {
                 assert!(t1.elapsed() < Duration::from_secs(20), "the outcome is announced");
                 h.step();
             }
@@ -3225,7 +3232,7 @@ mod tests {
         let r = h.request("ui.clickWidget", json!({"id": "button:reloadPreviewOnly:info"}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.settle(SETTLE);
-        assert_eq!(h.app.ui.toast.clone().map(|x| x.0).as_deref(), Some("This raw variant still can't be decoded"));
+        assert_eq!(h.app.ui.toast().cloned().map(|x| x.0).as_deref(), Some("This raw variant still can't be decoded"));
         // a regular photo: no notice
         h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [other.0]}}), t);
         h.app.ui.right = crate::state::RightPanel::Edit;
@@ -3816,6 +3823,41 @@ mod tests {
         assert!(h.quit_requested());
     }
 
+    /// File → Import from Folder… on a folder that was browsed in Local offers its photos, adding
+    /// them in place (they aren't "In library" yet), and confirming brings them into the library.
+    #[test]
+    fn import_from_folder_offers_the_photos_browsed_in_local() {
+        let mut h = demo([1300.0, 900.0]);
+        let t = Duration::from_secs(10);
+        let dir = std::env::temp_dir().join(format!("lc-ui-browsed-import-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let img = lcc_raster::Rgba8::from_fn(24, 16, |x, y| [(x * 9) as u8, (y * 12) as u8, 80, 255]);
+        let o = lcc_engine::export::ExportOptions { format: lcc_engine::export::ExportFormat::Png, ..Default::default() };
+        for (i, name) in ["a.png", "b.png"].iter().enumerate() {
+            let mut img = img.clone();
+            img.data[0][0] = i as u8; // different bytes per file
+            std::fs::write(dir.join(name), lcc_engine::export::encode_image(&img, &o).unwrap()).unwrap();
+        }
+        let library_before = h.app.session.catalog.photos().filter(|p| !p.local).count();
+        let r = h.request("engine.execute", json!({"command": "library.browse", "params": {"path": dir.to_string_lossy()}}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        assert_eq!(h.app.session.catalog.photos().filter(|p| p.local).count(), 2, "both browsed");
+        let r = h.request("engine.execute", json!({"command": "file.addFolder", "params": {"path": dir.to_string_lossy()}}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        let Some(crate::state::Dialog::Import { opts }) = &h.app.ui.dialog else { panic!("no import review: {:?}", h.app.ui.dialog) };
+        assert_eq!(opts.candidates.len(), 2);
+        assert!(opts.candidates.iter().all(|c| c.duplicate.is_none()), "browsed is not \"In library\": {:?}", opts.candidates);
+        assert_eq!(opts.selected_paths().len(), 2, "both offered, checked");
+        assert_eq!(h.request("ui.dialog.confirm", json!({}), t)["ok"], true);
+        h.settle(SETTLE);
+        assert_eq!(h.app.session.catalog.photos().filter(|p| !p.local).count(), library_before + 2, "both joined the library");
+        assert_eq!(h.app.session.catalog.photos().filter(|p| p.local).count(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// File → Import from Folder… opens the import review for a folder (searched recursively).
     #[test]
     fn add_folder_opens_the_import_review() {
@@ -4371,7 +4413,7 @@ mod tests {
                 h.step();
             }
             assert!(h.app.import.is_none(), "finished");
-            let toast = h.app.ui.toast.clone().map(|t| t.0).unwrap_or_default();
+            let toast = h.app.ui.toast().cloned().map(|t| t.0).unwrap_or_default();
             let photos = &h.app.session.catalog;
             assert_eq!(photos.photos().filter(|p| !p.deleted).count(), 2, "{choice}");
             let old = photos.photo(lcc_catalog::PhotoId(id));
@@ -5512,7 +5554,7 @@ mod tests {
                 let expected = locale.tr(key);
                 assert_eq!(h.request("ui.key", json!({"key": "i", "cmd": true}), t)["ok"], true);
                 assert_eq!(serde_json::to_value(h.app.ui.info_overlay).unwrap(), json!(mode));
-                assert_eq!(h.app.ui.toast.as_ref().expect("overlay toast").0, expected);
+                assert_eq!(h.app.ui.toast().expect("overlay toast").0, expected);
                 h.step();
                 let painted = h.painted_text();
                 assert!(painted.iter().any(|text| text == expected), "{painted:?}");

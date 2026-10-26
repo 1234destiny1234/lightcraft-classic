@@ -21,7 +21,7 @@ use lcc_denoise::run::{Error, TileRunner};
 use wgpu::util::DeviceExt;
 
 /// Longest wait for one tile's GPU work before the device is given up on.
-const TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const TIMEOUT: Duration = Duration::from_secs(60);
 /// The largest tile side (in input cells) the dispatch sizes and 32-bit indexing are checked for.
 const MAX_TILE: usize = 1024;
 /// The largest single buffer used: indices in the kernels are 32-bit element offsets.
@@ -32,18 +32,18 @@ const WORKSPACES: usize = 2;
 // ---------------------------------------------------------------------------------------------------------------------
 // the device
 
-struct Dev {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    info: wgpu::AdapterInfo,
-    limits: wgpu::Limits,
+pub(crate) struct Dev {
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) info: wgpu::AdapterInfo,
+    pub(crate) limits: wgpu::Limits,
 }
 
 static DEV: OnceLock<Result<Dev, String>> = OnceLock::new();
 static BROKEN: AtomicBool = AtomicBool::new(false);
 static BROKEN_WHY: Mutex<Option<String>> = Mutex::new(None);
 
-fn mark_broken(why: &str) {
+pub(crate) fn mark_broken(why: &str) {
     let mut w = BROKEN_WHY.lock().unwrap_or_else(|e| e.into_inner());
     if w.is_none() {
         *w = Some(why.to_string());
@@ -56,7 +56,7 @@ pub fn broken_reason() -> Option<String> {
     BROKEN.load(Ordering::Relaxed).then(|| BROKEN_WHY.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_else(|| "device error".into()))
 }
 
-fn dev() -> Result<&'static Dev, String> {
+pub(crate) fn dev() -> Result<&'static Dev, String> {
     if let Some(why) = broken_reason() {
         return Err(format!("stopped after a GPU failure: {why}"));
     }
@@ -72,7 +72,7 @@ fn dev() -> Result<&'static Dev, String> {
 }
 
 /// Why nothing runs on the GPU once [`crate::begin_shutdown`] was called.
-const CLOSING: &str = "the app is closing";
+pub(crate) const CLOSING: &str = "the app is closing";
 
 fn create_device() -> Result<Dev, String> {
     let Some(backends) = crate::backend::compute_backends() else { return Err(format!("disabled by {}=off", lcc_brand::env_var("GPU_BACKEND"))) };
@@ -499,7 +499,7 @@ struct Pipelines {
     built: Vec<(String, f64)>,
 }
 
-fn entry(binding: u32, ty: wgpu::BufferBindingType) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn entry(binding: u32, ty: wgpu::BufferBindingType) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,
@@ -508,7 +508,7 @@ fn entry(binding: u32, ty: wgpu::BufferBindingType) -> wgpu::BindGroupLayoutEntr
     }
 }
 
-fn pipeline(d: &Dev, label: &str, src: &str, layout: &wgpu::BindGroupLayout) -> wgpu::ComputePipeline {
+pub(crate) fn pipeline(d: &Dev, label: &str, src: &str, layout: &wgpu::BindGroupLayout) -> wgpu::ComputePipeline {
     let module = d.device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(label), source: wgpu::ShaderSource::Wgsl(src.into()) });
     let pl = d.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[Some(layout)], immediate_size: 0 });
     d.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -593,7 +593,7 @@ struct Shared {
     dummy: wgpu::Buffer,
 }
 
-fn storage(d: &Dev, label: &str, bytes: u64, extra: wgpu::BufferUsages) -> wgpu::Buffer {
+pub(crate) fn storage(d: &Dev, label: &str, bytes: u64, extra: wgpu::BufferUsages) -> wgpu::Buffer {
     d.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: bytes.max(16),
@@ -929,6 +929,25 @@ impl TileRunner for NetRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The denoise kernels validate without a GPU: the pooling kernel, and the convolution for every block size the
+    /// planner picks for these layer widths and channel counts.
+    #[test]
+    fn the_network_kernels_validate_without_a_gpu() {
+        assert_eq!(crate::validate_wgsl("nn_pool", include_str!("wgsl/nn_pool.wgsl")), Ok(()));
+        let mut sizes: Vec<(u32, u32, u32)> = Vec::new();
+        for n in [1usize, 3, 8, 16, 24, 32, 48, 64, 96, 128, 256, 512] {
+            for cin in [1usize, 3, 4, 8, 16, 32, 48, 64, 128, 256, 512] {
+                let b = blocks(n, cin);
+                if !sizes.contains(&b) {
+                    sizes.push(b);
+                }
+            }
+        }
+        for (bm, bn, bk) in sizes {
+            assert_eq!(crate::validate_wgsl(&format!("nn_conv {bm}x{bn}x{bk}"), &conv_source(bm, bn, bk)), Ok(()));
+        }
+    }
     use lcc_denoise::{onnx, reference, synthetic};
 
     fn net(tile: u64, ch: u64, depth: usize, seed: u64) -> Net {

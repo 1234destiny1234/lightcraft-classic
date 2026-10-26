@@ -173,6 +173,7 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
     let restore_backend = backend.clone();
     Services {
         picker: None,
+        dialog_errors: None,
         pick_display_profile: None,
         screen_profile: None,
         backup_library: Some(Box::new(move |session: &mut Session| {
@@ -755,7 +756,7 @@ impl eframe::App for WebApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         for text in safety::take_notices() {
             let now = ctx.input(|i| i.time);
-            self.app.ui.toast = Some((text, now + NOTICE_SECS, None));
+            self.app.ui.show_toast((text, now + NOTICE_SECS, None));
         }
         self.run_inbox();
         settle_requests();

@@ -25,6 +25,7 @@
   "Added {n} photo{} to My Photos": "{n} photo{} ajoutée(s) à Mes photos",
   "Added {n} photo{} to “{}”": "{n} photo{} ajoutée(s) à « {} »",
   "Added {what} to {name}": "{what} ajouté à {name}",
+  "Adjustments: {n}": "Réglages : {n}",
   "Adding photos… {} of {}": "Ajout des photos… {} sur {}",
   "All {n} selected photos move by the same amount.": "Les {n} photos sélectionnées se déplacent de la même valeur.",
   "Already in the library, in Recently Deleted: {} photo{} selected · right-click ▸ Restore, or Delete Permanently to import afresh": "Déjà dans la bibliothèque, dans « Supprimés récemment » : {} photo{} sélectionnée(s) · clic droit → Restaurer, ou Supprimer définitivement pour importer à nouveau",
@@ -305,5 +306,13 @@
   "Could not read {name}: {e}": "Impossible de lire {name} : {e}",
   "Added {n} photo{}": "{n} photo{} ajoutée(s)",
   "Where should the Lightroom catalog “{catalog}” go?": "Où importer le catalogue Lightroom « {catalog} » ?",
-  "Merge into the open library “{library}” ({count} photo{})": "Fusionner avec la bibliothèque ouverte « {library} » ({count} photo{})"
+  "Merge into the open library “{library}” ({count} photo{})": "Fusionner avec la bibliothèque ouverte « {library} » ({count} photo{})",
+  "{n} file{} skipped (not a supported photo type)": "Fichiers ignorés (type de photo non pris en charge) : {n}{:.0}",
+  "{n} folder{} could not be read": "Dossiers illisibles : {n}{:.0}",
+  "about {n} min left": "environ {n} min restantes",
+  "about {h} h {m} min left": "environ {h} h {m} min restantes",
+  "{n} done": "{n} terminées",
+  ", {n} failed": ", {n} en échec",
+  "{n} failed": "{n} en échec",
+  "Show each photo ({n})": "Afficher chaque photo ({n})"
 }

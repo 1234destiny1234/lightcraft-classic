@@ -60,10 +60,15 @@ winresource = "0.1"
 # (`wayland_hdr`)
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
-winit = { version = "0.30", default-features = false, features = ["x11"] }
+# GNOME on Wayland draws no window frame: winit draws one (vector minimize, maximize and close buttons,
+# no title font embedded; upstream #1928)
+winit = { version = "0.30", default-features = false, features = ["x11", "wayland-csd-adwaita-notitle"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rfd = { workspace = true }
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+midir = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { workspace = true }
@@ -79,6 +84,7 @@ muda = { workspace = true }
 objc2 = { workspace = true }
 objc2-app-kit = { workspace = true }
 objc2-foundation = { workspace = true }
+dispatch2 = "0.3.1"
 
 [dev-dependencies]
 # tests record why they skip (`cargo xtask ci` lists the skips)

@@ -873,6 +873,13 @@ pub enum KeywordChips {
     Grouped,
 }
 
+/// A short message at the bottom of the photo view: its text, when it goes (app time, s), and the colour label it is
+/// shown in, if any.
+pub type Toast = (String, f64, Option<lcc_catalog::ColorLabel>);
+
+/// The most toasts on screen at once: a newer one pushes the oldest out.
+pub const MAX_TOASTS: usize = 3;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
@@ -1129,6 +1136,11 @@ pub struct UiState {
     pub mask_curve_channel: String,
     /// Selected mixer mode: "hue" | "saturation" | "luminance" | "all".
     pub mixer_mode: String,
+    /// What the Color Mixer adjusts by: "hsl" (eight sliders per Hue / Saturation / Luminance) |
+    /// "color" (one colour at a time). HSL by default.
+    pub mixer_adjust: String,
+    /// The HSL group shown: "hue" | "sat" | "lum" | "all".
+    pub mixer_group: String,
     /// Selected colour grading tab: "3way" | "shadows" | "midtones" | "highlights".
     pub grading_mode: String,
     /// Colour grading wheels (shadows, midtones, highlights) hidden for viewing by their eye, and
@@ -1290,7 +1302,7 @@ pub struct UiState {
     pub reference: Option<u64>,
     /// Transient toast text, expiry (seconds of app time), and optional colour-label styling.
     #[serde(skip)]
-    pub toast: Option<(String, f64, Option<lcc_catalog::ColorLabel>)>,
+    pub toasts: Vec<Toast>,
     /// The result of the last Find Missing Photos (it searches in the background).
     #[serde(skip)]
     pub last_find_missing: Option<serde_json::Value>,
@@ -1312,6 +1324,9 @@ pub struct UiState {
     /// A Settings section to bring into view once (`app.settings {section}`), e.g. `lensProfiles`.
     #[serde(skip)]
     pub settings_section: Option<String>,
+    /// Develop ▸ Lens Corrections: the lens maker picked in the lens picker before a model (issue #307).
+    #[serde(skip)]
+    pub lens_pick_make: Option<String>,
     /// The start-up update check has run (once per session; Help ▸ Check for Updates… is manual).
     #[serde(skip)]
     pub update_checked_at_startup: bool,
@@ -1715,6 +1730,10 @@ pub enum Dialog {
         /// What the scan found (`None` while it runs).
         counts: Option<SyncCounts>,
         import_new: bool,
+        /// With `import_new`, the files whose content a photo already has come in too ("Don't
+        /// import files already in the library" unticked; the library's setting, saved on Synchronize).
+        #[serde(default)]
+        import_duplicates: bool,
         #[serde(default = "yes")]
         relink_moved: bool,
         remove_missing: bool,
@@ -1751,7 +1770,12 @@ pub struct SyncCounts {
     #[serde(default)]
     pub offline: bool,
     pub new: usize,
+    /// Files whose content a photo already has.
     pub duplicates: usize,
+    /// Of those, the ones "Don't import files already in the library" unticked brings in (not copies
+    /// of a photo in Recently Deleted: see `lcc_engine::sync::FolderChanges::importable_duplicates`).
+    #[serde(default)]
+    pub copies: usize,
     pub unreadable: usize,
     pub missing: usize,
     pub metadata: usize,
@@ -1761,9 +1785,19 @@ pub struct SyncCounts {
 
 impl SyncCounts {
     /// The folder is there and the scan found nothing to bring in, relink, remove or read: the
-    /// dialog only says so (files it skipped are not changes).
+    /// dialog only says so (files it skipped are not changes). Files the library has elsewhere
+    /// ([`SyncCounts::copies`]) can be brought in by unticking "Don't import files already in the
+    /// library", so the dialog keeps that choice for them.
     pub fn up_to_date(&self) -> bool {
-        !self.offline && self.new + self.moved + self.missing + self.metadata == 0
+        !self.offline && self.new == 0 && self.copies == 0 && self.moved == 0 && self.missing == 0 && self.metadata == 0
+    }
+    /// Whether Synchronize, with Import new photos as `import_new` says and the box under it as
+    /// `import_duplicates` says, would bring in, relink, remove or read nothing: [`SyncCounts::up_to_date`],
+    /// but new files count only when Import new photos is ticked, and files the library has elsewhere
+    /// only when it is and that box brings them in.
+    pub fn nothing_to_do(&self, import_new: bool, import_duplicates: bool) -> bool {
+        let has_incoming = import_new && (self.new != 0 || (import_duplicates && self.copies != 0));
+        !self.offline && !has_incoming && self.moved == 0 && self.missing == 0 && self.metadata == 0
     }
 }
 
@@ -1864,7 +1898,9 @@ impl Default for UiState {
             dragging_section: None,
             curve_channel: "parametric".into(),
             mask_curve_channel: "master".into(),
-            mixer_mode: "hue".into(),
+            mixer_mode: "red".into(),
+            mixer_adjust: "hsl".into(),
+            mixer_group: "hue".into(),
             grading_mode: "3way".into(),
             grading_hidden: None,
             tool: String::new(),
@@ -1942,7 +1978,7 @@ impl Default for UiState {
             local_browse_root: None,
             compare: None,
             reference: None,
-            toast: None,
+            toasts: Vec::new(),
             last_find_missing: None,
             last_find_missing_result: None,
             #[cfg(test)]
@@ -1951,6 +1987,7 @@ impl Default for UiState {
             status: String::new(),
             dialog: None,
             settings_section: None,
+            lens_pick_make: None,
             update_checked_at_startup: false,
             update_checked_at: 0.0,
             update_pending: None,
@@ -1961,6 +1998,36 @@ impl Default for UiState {
 }
 
 impl UiState {
+    /// The newest toast on screen.
+    pub fn toast(&self) -> Option<&Toast> {
+        self.toasts.last()
+    }
+
+    /// Take the newest toast off the screen.
+    pub fn take_toast(&mut self) -> Option<Toast> {
+        self.toasts.pop()
+    }
+
+    /// Show a toast below those already showing: one no longer hides another (upstream #1936). The same message again
+    /// (same text and label) is not shown twice: it moves to the newest place and stays until the later of its times.
+    /// Past [`MAX_TOASTS`] the oldest goes.
+    pub fn show_toast(&mut self, toast: Toast) {
+        let (text, until, label) = toast;
+        let until = match self.toasts.iter().position(|t| t.0 == text && t.2 == label) {
+            Some(at) => self.toasts.remove(at).1.max(until),
+            None => until,
+        };
+        self.toasts.push((text, until, label));
+        if self.toasts.len() > MAX_TOASTS {
+            self.toasts.drain(..self.toasts.len() - MAX_TOASTS);
+        }
+    }
+
+    /// Let go of the toasts whose time is over at `now`.
+    pub fn expire_toasts(&mut self, now: f64) {
+        self.toasts.retain(|t| t.1 >= now);
+    }
+
     /// Which colour grading wheels (shadows, midtones, highlights) are hidden for viewing `photo`.
     pub fn grading_hidden_for(&self, photo: lcc_catalog::PhotoId) -> [bool; 3] {
         match self.grading_hidden {
@@ -2178,5 +2245,32 @@ mod loupe_info_tests {
         assert_eq!(saved["loupeMessages"], false);
         let read: AppSettings = serde_json::from_value(saved).unwrap();
         assert!(!read.loupe_messages);
+    }
+}
+
+#[cfg(test)]
+mod toast_tests {
+    use super::{MAX_TOASTS, UiState};
+
+    /// Two messages close together both stay on screen; the same one again is not shown twice; past the limit the
+    /// oldest goes; each expires at its own time.
+    #[test]
+    fn toasts_stack_instead_of_replacing_one_another() {
+        let mut ui = UiState::default();
+        ui.show_toast(("Red Label".into(), 2.0, None));
+        ui.show_toast(("Cache cleared".into(), 3.0, None));
+        assert_eq!(ui.toasts.len(), 2);
+        assert_eq!(ui.toast().map(|t| t.0.as_str()), Some("Cache cleared"));
+        ui.show_toast(("Red Label".into(), 4.0, None));
+        assert_eq!(ui.toasts.len(), 2, "the same message is shown once");
+        assert_eq!(ui.toast().map(|t| (t.0.as_str(), t.1)), Some(("Red Label", 4.0)));
+        for i in 0..5 {
+            ui.show_toast((format!("m{i}"), 10.0, None));
+        }
+        assert_eq!(ui.toasts.len(), MAX_TOASTS);
+        assert_eq!(ui.toasts.first().map(|t| t.0.as_str()), Some("m2"));
+        ui.show_toast(("short".into(), 1.0, None));
+        ui.expire_toasts(5.0);
+        assert!(ui.toasts.iter().all(|t| t.0 != "short"));
     }
 }

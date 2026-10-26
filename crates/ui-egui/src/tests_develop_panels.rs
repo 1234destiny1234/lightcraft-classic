@@ -114,3 +114,29 @@ fn the_color_mixer_has_mixer_and_point_color_tabs() {
     h.settle(SETTLE);
     assert!(!h.app.ui.flyout_open("pointColor"), "Mixer tab");
 }
+
+/// The Mixer adjusts by HSL by default, one group of eight colour sliders at a time; its group
+/// tabs and `view.colorMixer` pick what is shown, and a targeted adjustment whose group is hidden
+/// is put down.
+#[test]
+fn the_color_mixer_adjusts_by_hsl_groups() {
+    let mut h = develop();
+    let r = h.request("engine.execute", json!({"command": "section.mixer", "params": {"solo": true}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert_eq!(h.app.ui.mixer_adjust, "hsl");
+    let r = h.request("ui.clickWidget", json!({"id": "button:mixerGroup-sat"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert_eq!(h.app.ui.mixer_group, "sat");
+    h.app.ui.tool = "tat:sat".into();
+    let r = h.request("engine.execute", json!({"command": "view.colorMixer", "params": {"group": "lum"}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(h.app.ui.mixer_group, "lum");
+    assert!(h.app.ui.tool.is_empty(), "the hidden group's targeted adjustment is put down");
+    let r = h.request("engine.execute", json!({"command": "view.colorMixer", "params": {"adjust": "color", "band": "blue"}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!((h.app.ui.mixer_adjust.as_str(), h.app.ui.mixer_mode.as_str()), ("color", "blue"));
+    let r = h.request("engine.execute", json!({"command": "view.colorMixer", "params": {"group": "nope"}}), T);
+    assert_ne!(r["ok"], true, "an unknown group is refused: {r}");
+}

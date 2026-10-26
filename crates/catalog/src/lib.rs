@@ -409,6 +409,9 @@ impl Aspects {
     pub const ANALYSIS: Aspects = Aspects(1 << 7);
     /// Whether it is in the library at all: added, removed, deleted, restored, taken in from Local.
     pub const PRESENCE: Aspects = Aspects(1 << 8);
+    /// The keyword list (keywords on their own and their attributes): of no photo, and read by no rule, filter or
+    /// sort, only by what lists keywords (the keyword tree, export names).
+    pub const KEYWORD_LIST: Aspects = Aspects(1 << 9);
     /// Everything: the photo may count differently for any tally.
     pub const ALL: Aspects = Aspects(u16::MAX);
 
@@ -433,9 +436,11 @@ struct Changes {
     touched: std::collections::VecDeque<(u64, PhotoId, Aspects)>,
     /// What the op being applied changes of its photo.
     now: Aspects,
-    /// The latest revision made by an op that changed more than photos of its own (an album, a stack, a keyword of
-    /// the list…): what it changed for which photos is not known.
+    /// The latest revision made by an op that changed more than photos of its own (an album, a stack…): what it
+    /// changed for which photos is not known.
     broad: u64,
+    /// The latest revision made by an op that changed the keyword list ([`Aspects::KEYWORD_LIST`]).
+    keyword_list: u64,
     /// Changes up to this revision are no longer all in `touched`.
     floor: u64,
     /// The revision the last op recorded here made. When the catalog's revision is another, it was set from
@@ -719,7 +724,8 @@ impl Catalog {
         if !self.remembers(revision) {
             return None;
         }
-        Some(self.changes.touched.iter().filter(|(r, _, _)| *r > revision).fold(Aspects::NONE, |all, (_, _, a)| all.with(*a)))
+        let photos = self.changes.touched.iter().filter(|(r, _, _)| *r > revision).fold(Aspects::NONE, |all, (_, _, a)| all.with(*a));
+        Some(if self.changes.keyword_list > revision { photos.with(Aspects::KEYWORD_LIST) } else { photos })
     }
 
     /// Whether every change since the catalog was at `revision` is remembered photo by photo.
@@ -772,6 +778,7 @@ impl Catalog {
         // the revision was set from outside: what is remembered is of another past
         self.forget_other_past();
         let broad = self.changes.broad;
+        let keyword_list = self.changes.keyword_list;
         self.changes.torn = false;
         let inv = match self.apply_inner(op) {
             Ok(inv) => inv,
@@ -793,6 +800,7 @@ impl Catalog {
                         self.changes.touched.pop_back();
                     }
                     self.changes.broad = broad;
+                    self.changes.keyword_list = keyword_list;
                 }
                 return Err(e);
             }
@@ -841,10 +849,33 @@ impl Catalog {
     }
 
     fn apply_inner(&mut self, op: Op) -> Result<Op> {
+        // a photo that comes, goes, is deleted or restored, is imported from Local or gets other content can change
+        // whether the photos with its content have the same content as another one (`index::content_key`), when
+        // anything asks
+        let photo = match &op {
+            Op::AddPhoto { photo } => Some(photo.id),
+            Op::RemovePhoto { id } | Op::SetDeleted { id, .. } | Op::SetLocal { id, .. } | Op::SetContent { id, .. } => Some(*id),
+            _ => None,
+        }
+        .filter(|_| self.follows_contents());
+        let albums = matches!(op, Op::AddAlbum { .. } | Op::RemoveAlbum { .. } | Op::SetAlbumRules { .. });
+        let before = photo.and_then(|id| self.content_of(id));
+        let inv = self.apply_op(op)?;
+        if let Some(id) = photo {
+            let after = self.content_of(id);
+            self.content_moved(id, before, after);
+        }
+        if albums {
+            self.index.albums_changed();
+        }
+        Ok(inv)
+    }
+
+    fn apply_op(&mut self, op: Op) -> Result<Op> {
         self.index.op_applied(&op);
-        // An op that changes one photo says which (`photo_mut`, and adding or removing it below). Every other kind
-        // can change what any photo matches or where it sorts: an album's photos or rules, a stack, a keyword's
-        // name. Listed kind by kind, so a new one has to be put on one side.
+        // An op that changes one photo says which (`photo_mut`, and adding or removing it below). Most other kinds
+        // can change what any photo matches or where it sorts: an album's photos or rules, a stack. The keyword
+        // list changes only lists of keywords. Listed kind by kind, so a new one has to be put on one side.
         match &op {
             // (a photo that comes, goes, or changes what it is to the library counts for every tally; so do the
             // rare kinds whose reach nobody has to think about)
@@ -903,9 +934,10 @@ impl Catalog {
             | Op::SetStack { .. }
             | Op::SetLabelName { .. }
             | Op::SetBrowsed { .. }
-            | Op::SetKeyword { .. }
             | Op::SetFolderRecord { .. }
             | Op::SetSavedLocation { .. } => self.changes.broad = self.revision.saturating_add(1),
+            // (no photo matches, counts or sorts by it: only lists of keywords change)
+            Op::SetKeyword { .. } => self.changes.keyword_list = self.revision.saturating_add(1),
         }
         match &op {
             // (a file name breaks every key's ties)

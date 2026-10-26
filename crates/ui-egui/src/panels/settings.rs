@@ -475,6 +475,28 @@ fn import_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             let _ = app.run("library.preferences", json!({"import": {"perCamera": per}}));
         }
     });
+    // AI Denoise for the high-ISO photos of a shoot, switched on as they come in
+    let mut iso = d.denoise_above_iso.unwrap_or(0);
+    row(ui, t, crate::i18n::tr("AI Denoise from"), |ui| {
+        let off = crate::i18n::tr("Off");
+        let opts = [(0u32, off), (800, "ISO 800"), (1600, "ISO 1600"), (3200, "ISO 3200"), (6400, "ISO 6400"), (12_800, "ISO 12800")];
+        // an ISO set by an agent that isn't offered shows as its own choice
+        let other = (!opts.iter().any(|(v, _)| *v == iso)).then(|| format!("ISO {iso}"));
+        let mut all: Vec<(u32, &str)> = opts.to_vec();
+        if let Some(o) = &other {
+            all.push((iso, o.as_str()));
+        }
+        if choices(ui, "settingsDenoiseIso", &all, &mut iso) {
+            let _ = app.run("library.preferences", json!({"import": {"denoiseAboveIso": iso}}));
+        }
+    });
+    hint(
+        ui,
+        t,
+        crate::i18n::tr(
+            "New raw photos shot at this ISO or above start with AI Denoise on, and their denoised pictures are made in the background after the import. Needs a denoise model (Settings, AI Denoise).",
+        ),
+    );
     if per {
         let cams = cameras(app);
         if cams.is_empty() {
@@ -1600,7 +1622,7 @@ fn theme_preview(ui: &mut egui::Ui, kind: crate::theme::ThemeKind, width: f32) {
         let thumb = cell.shrink(2.5);
         painter.rect_filled(thumb, 0.0, Color32::from_rgb(0x6f + 8 * i as u8, 0x80, 0x8f));
         if selected {
-            painter.rect_stroke(thumb, 0.0, Stroke::new(1.0, p.pick), StrokeKind::Outside);
+            super::grid::selection_ring(&painter, &p, thumb, lcc_engine::SelectionState::Active);
         }
     }
 }

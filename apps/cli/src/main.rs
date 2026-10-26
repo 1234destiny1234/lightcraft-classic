@@ -14,6 +14,7 @@
 //! <cli> controls [--json]
 //! <cli> calibrate [--max N] [--out DIR] FOLDERS/FILES…
 //! <cli> calibrate-lightroom preset|fit|add|list|verify …
+//! <cli> calibrate-chart --shot RAW --corners "x,y x,y x,y x,y" [--light L] [--shot …]… [--chart 2014|2005] [--dcp OUT] [--preview DIR]
 //! <cli> compare REFERENCE TEST [--size N] [--no-align] [--diff OUT.png] [--json]
 //! <cli> camdb extract [--contributor NAME] NATIVE.dng…
 //! <cli> camdb show MAKE MODEL
@@ -22,6 +23,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod alloc_release;
+mod calibrate_chart;
 mod calibrate_lightroom;
 mod catalog_migrate;
 mod compare;
@@ -161,6 +163,13 @@ USAGE:
   {cli} calibrate-lightroom probe-check --probes DIR --exports DIR [--json] [-o FILE]
       Read Lightroom's probe exports back by position: the default render's ΔE00 against {app}'s, and for each
       slider step the {app} value whose change matches Lightroom's best, next to the value the import uses.
+  {cli} calibrate-chart --shot RAW --corners 'x,y x,y x,y x,y' [--light L] [--shot …]… [--chart 2014|2005]
+          [--dcp OUT.dcp] [--preview DIR] [--report FILE.json] [--contributor NAME]
+      Measure a camera's colour from raw shots of an X-Rite ColorChecker Classic (24 patches): one shot in
+      daylight, ideally another under tungsten (--light daylight|d65|d50|shade|tungsten|KELVIN, default
+      daylight). --corners: the centres of the four corner patches as fractions of the photo's width and height,
+      in any order. Prints a camera database entry (TOML) and the colour error per patch before and after;
+      --dcp also writes a camera profile to try at once, --preview a picture of where each patch was read.
   {cli} camdb extract [--contributor NAME] NATIVE.dng…
       Print camera database entries (TOML, for data/cameras/<maker>.toml in the camdb crate) from DNGs the
       camera wrote itself. DNGs written by Adobe software or by {app}'s own export are refused.
@@ -250,6 +259,7 @@ fn main() -> ExitCode {
         Some("calibrate") => calibrate(&args[1..]),
         Some("camdb") => camdb(&args[1..]),
         Some("calibrate-lightroom") => calibrate_lightroom::run(&args[1..]),
+        Some("calibrate-chart") => calibrate_chart::run(&args[1..]),
         Some("compare") => compare::run(&args[1..]),
         Some("--version" | "-V" | "version") => {
             println!("{CLI} {}", env!("CARGO_PKG_VERSION"));

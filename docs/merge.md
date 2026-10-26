@@ -66,9 +66,21 @@ corrections.
 verification, focal from homographies (or EXIF 35 mm), rotations chained along a maximum spanning
 tree, Levenberg–Marquardt bundle adjustment of rotations + focal lengths, straightening.
 Projections: spherical, cylindrical, perspective; *Auto* picks perspective for compact fields of
-view < 110°, cylindrical when the vertical field is < 90°, else spherical. Exposure: EXIF, then
-gain compensation from the overlaps. Seams: each pixel goes to the image with the highest
-centre-weighted feather weight; multi-band blending (Laplacian pyramids) in log space. Boundary
+view < 110°, cylindrical when the vertical field is < 90°, else spherical. Exposure: EXIF, then three
+steps fitted from the overlaps (`vignette.rs`, `compensate_exposure`, `level.rs`):
+- **Residual vignetting:** the falloff the frames' own correction left (a DNG's lens-shading gain map rarely fits
+  exactly), shared by all frames, `ln V = c₁r² + c₂r⁴ + c₃r⁶`, fitted with a log gain per frame from overlap pixel
+  pairs (as PTGui and Hugin do; d'Angelo 2007), then divided out. Fits beyond a factor of 1.6 are not used.
+- **Gain and flare offset per frame:** paired overlap pixels sorted by brightness into 8 bins, a gain and an additive
+  offset per frame by least squares. A frame facing the sun records the scene plus veiling flare, which a gain alone
+  lines up in the midtones and leaves as lifted shadows. Offsets are relative to the frame with the least flare and
+  subtracted in the camera white's colour, never more than half of a pixel.
+- **Seam leveling:** what is left at the seams (each frame's sky gradient, flare growing towards the sun) evened out
+  on a ≤ 384-cell grid: at every seam cell both frames move half way to each other in log colour, spread over each
+  frame by a membrane (Laplace) solve: gradient-domain stitching (Levin et al. 2004) for the low frequencies only.
+
+Seams: each pixel goes to the image with the highest centre-weighted feather weight; multi-band blending (Laplacian
+pyramids) in log space. `<PREFIX>_PROFILE=1` prints each overlap's brightness levels. Boundary
 Warp: a separable stretch of the smoothed valid-area edges to the canvas edges. Auto Crop: the
 largest rectangle of image data (set as the develop crop, so it stays adjustable). Fill Edges:
 push–pull diffusion. Output: 16-bit integer DNG (16-bit float for HDR panoramas).
@@ -183,7 +195,15 @@ scale in `BaselineExposure`; raw sources keep their DNG colour tags (camera RGB)
   not patch synthesis.
 - *Create Stack*: the result goes on top of a collapsed stack of its sources (`Catalog::stack_with_ops`); its
   caption also lists them.
-- Panorama output is limited to `maxMegapixels` (default 40) — blending memory is ~25 bytes/pixel.
+- Before Photo Merge decodes source pixels, it estimates the working set against the existing merge memory budget
+  (75% of RAM less the app cache budget; 8 GiB RAM is assumed when unknown, clamped to the target's addressable range).
+  The estimate uses the catalog's photo dimensions, so nothing is read or decoded before a set is refused. HDR,
+  panoramas and HDR panoramas include their operation-specific working memory; panorama estimates allow the projected
+  canvas to exceed source area (perspective bounds use the stitcher's 12× input-area limit), and previews account for
+  1024 px frames, concurrent decoder work and the retained preview cache. Inputs above the budget are refused with the estimate and advice to select fewer photos or lower-resolution
+  originals. HDR for Each Bracket Set checks each bracket independently.
+- Panorama output is limited to `maxMegapixels` (default 40) and may be scaled down further to fit the available memory,
+  including the output border and multiband tile padding — blending memory is ~25 bytes/pixel.
 - HDR memory: every frame is held as 32-bit float RGB (~0.86 GB per 67 MP frame at the peak, plus ~1.2 GB); full-size
   photos are decoded one at a time. Measured on 67 MP raws: 3 frames 3.8 GB, 4 frames 4.7 GB, 5 frames 5.5 GB (was
   4.8 / 6.3 GB for 3 / 4). Half-float frames would halve the per-frame share.
