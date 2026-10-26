@@ -309,5 +309,11 @@
   "Where should the Lightroom catalog “{catalog}” go?": "Lightroom カタログ「{catalog}」をどこに読み込みますか？",
   "Merge into the open library “{library}” ({count} photo{})": "開いているライブラリ「{library}」に統合（写真{count}枚）{:.0}",
   "{n} file{} skipped (not a supported photo type)": "スキップしたファイル（非対応の写真形式）：{n}個{:.0}",
-  "{n} folder{} could not be read": "読み取れなかったフォルダー：{n}個{:.0}"
+  "{n} folder{} could not be read": "読み取れなかったフォルダー：{n}個{:.0}",
+  "about {n} min left": "残り約{n}分",
+  "about {h} h {m} min left": "残り約{h}時間{m}分",
+  "{n} done": "{n}件完了",
+  ", {n} failed": "、{n}件失敗",
+  "{n} failed": "{n}件失敗",
+  "Show each photo ({n})": "各写真を表示（{n}）"
 }

@@ -312,5 +312,11 @@
   "Where should the Lightroom catalog “{catalog}” go?": "სად გადავიტანოთ Lightroom-ის კატალოგი „{catalog}“?",
   "Merge into the open library “{library}” ({count} photo{})": "გაერთიანება ღია ბიბლიოთეკასთან „{library}“ (ფოტოები: {count}){:.0}",
   "{n} folder{} could not be read": "საქაღალდეები, რომლებიც ვერ წაიკითხა: {n}{:.0}",
-  "{n} file{} skipped (not a supported photo type)": "გამოტოვებული ფაილები (მხარდაუჭერელი ფოტოს ტიპია): {n}{:.0}"
+  "{n} file{} skipped (not a supported photo type)": "გამოტოვებული ფაილები (მხარდაუჭერელი ფოტოს ტიპია): {n}{:.0}",
+  "about {n} min left": "დარჩა დაახლ. {n} წთ",
+  "about {h} h {m} min left": "დარჩა დაახლ. {h} სთ {m} წთ",
+  "{n} done": "{n} მზადაა",
+  ", {n} failed": ", {n} ვერ შესრულდა",
+  "{n} failed": "{n} ვერ შესრულდა",
+  "Show each photo ({n})": "თითოეული ფოტოს ჩვენება ({n})"
 }

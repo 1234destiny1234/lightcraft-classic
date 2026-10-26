@@ -62,7 +62,9 @@ pub fn start(app: &mut LccApp, mut items: Vec<PreparedExport>, opts: ExportOptio
     let cancel = Arc::new(AtomicBool::new(false));
     let (tx, rx) = channel();
     let (p, c) = (progress.clone(), cancel.clone());
-    let guard = app.session.activity.start("export", "Exporting", Cancel::Flag(cancel.clone()));
+    // one batch row: the photos done, the time left; the export says how it went itself
+    let guard = app.session.activity.start_batch("export", "Exporting", Cancel::Flag(cancel.clone()));
+    guard.reports_itself();
     guard.progress(0, total as u64);
     let row = guard.handle();
     // video clips stop within a frame on ✕ and show how far the movie is
@@ -259,6 +261,14 @@ pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
         Ok(r) => {
             let cancelled = matches!(&r, Ok((_, _, true)));
             let total = task.total;
+            // the batch's summary (`activity.list` → finished): photos placed, the failures and why
+            if let Ok((files, _, _)) = &r {
+                task.guard.progress(files.len() as u64, total as u64);
+                for f in files.iter().filter(|f| f.get("error").is_some()) {
+                    let name = f.get("file").and_then(Value::as_str).unwrap_or("");
+                    task.guard.count_failed(&format!("{name}: {}", f["error"].as_str().unwrap_or("error")));
+                }
+            }
             #[cfg(not(target_arch = "wasm32"))]
             let destination = task.plugin_destination.clone();
             app.export = None;
