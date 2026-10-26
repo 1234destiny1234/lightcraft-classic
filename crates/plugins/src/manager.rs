@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::context::{CallContext, HostApi};
-use crate::manifest::dialog_args;
+use crate::manifest::{dialog_args, parse_version};
 use crate::permissions::Permissions;
 use crate::runtime::{Limits, Plugin};
 use crate::store::{NamespaceStore, write_atomic};
@@ -56,6 +56,7 @@ impl Installed {
         let m = self.plugin.manifest();
         json!({
             "id": m.id, "name": m.name, "version": m.version, "description": m.description, "author": m.author,
+            "requires": m.requires,
             "enabled": self.enabled, "size": self.plugin.size(),
             "requested": m.permissions, "granted": self.effective(),
             "commands": m.commands, "hooks": m.hooks, "publish": m.publish,
@@ -70,7 +71,7 @@ struct State {
     plugins: BTreeMap<String, Entry>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Entry {
     enabled: bool,
     grant: Permissions,
@@ -100,16 +101,61 @@ impl PendingCall {
     }
 }
 
+/// A module in the plug-in folder that didn't load.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Failed {
+    pub file: String,
+    pub error: String,
+    /// The host features it requires that this version lacks (empty: it failed for another reason).
+    pub missing: Vec<String>,
+    /// The plug-in's id, to remove it by ([`Manager::uninstall`]): its manifest's when that could be
+    /// read, else the file's name without `.wasm` (installed modules are `<id>.wasm`). Empty: not a
+    /// module in the folder.
+    pub id: String,
+    /// The module file, deleted when the plug-in is removed.
+    pub path: Option<PathBuf>,
+}
+
+impl Failed {
+    /// A failure that isn't a module in the folder (the folder itself couldn't be opened).
+    pub fn new(file: String, error: String) -> Failed {
+        Failed { file, error, missing: Vec::new(), id: String::new(), path: None }
+    }
+}
+
 /// The set of installed plug-ins.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Manager {
     dir: Option<PathBuf>,
     limits: Limits,
+    /// The host features plug-ins may require ([`crate::HOST_FEATURES`]).
+    features: Vec<String>,
     plugins: BTreeMap<String, Installed>,
-    /// `(file, error)` for modules in the folder that failed to load.
-    pub failed: Vec<(String, String)>,
+    /// Modules in the folder that failed to load.
+    pub failed: Vec<Failed>,
+    /// `plugins.json` entries of modules that didn't load, written back unchanged, so a plug-in that
+    /// loads again (the app updated, the module replaced) keeps its enabled state and grant.
+    kept: BTreeMap<String, Entry>,
+    /// The versions of modules that didn't load because they need features this version lacks, by
+    /// id: installing an older one over them is still a downgrade.
+    unloaded: BTreeMap<String, String>,
     /// The open library's id: plug-in data is kept per library (photo ids are per library).
     library: String,
+}
+
+impl Default for Manager {
+    fn default() -> Self {
+        Manager {
+            dir: None,
+            limits: Limits::default(),
+            features: crate::HOST_FEATURES.iter().map(|f| f.to_string()).collect(),
+            plugins: BTreeMap::new(),
+            failed: Vec::new(),
+            kept: BTreeMap::new(),
+            unloaded: BTreeMap::new(),
+            library: String::new(),
+        }
+    }
 }
 
 impl Manager {
@@ -121,6 +167,11 @@ impl Manager {
     /// Opens the plug-in folder `dir` (created when missing) and loads every installed module;
     /// a module that fails to load is listed in [`Manager::failed`] and skipped.
     pub fn open(dir: &Path) -> Result<Manager> {
+        Manager::open_with_features(dir, crate::HOST_FEATURES)
+    }
+
+    /// [`Manager::open`] for a host that has `features` (tests; the app has [`crate::HOST_FEATURES`]).
+    pub fn open_with_features(dir: &Path, features: &[&str]) -> Result<Manager> {
         let io = |e: std::io::Error| Error::Io(format!("{}: {e}", dir.display()));
         std::fs::create_dir_all(dir).map_err(io)?;
         let state: State = match std::fs::read(dir.join("plugins.json")) {
@@ -131,6 +182,7 @@ impl Manager {
             Err(_) => State::default(),
         };
         let mut m = Manager { dir: Some(dir.to_path_buf()), ..Manager::default() };
+        m.set_features(features);
         let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
             .map_err(io)?
             .filter_map(|e| e.ok().map(|e| e.path()))
@@ -139,17 +191,81 @@ impl Manager {
         files.sort();
         files.truncate(MAX_PLUGINS);
         for f in files {
-            match read_module(&f, &m.limits).and_then(|b| Plugin::load(&b, m.limits.clone())) {
-                Ok(p) => {
-                    let id = p.id().to_string();
-                    // not in plugins.json (copied in by hand): disabled, nothing granted
-                    let (enabled, grant) = state.plugins.get(&id).map_or((false, Permissions::default()), |e| (e.enabled, e.grant.clone()));
-                    m.plugins.insert(id, Installed { plugin: Arc::new(p), enabled, grant, log: VecDeque::new(), store: None, busy: false });
+            let file = f.display().to_string();
+            // installed modules are `<id>.wasm`: the id when the manifest can't be read
+            let stem = f.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let loaded = read_module(&f, &m.limits).and_then(|b| Plugin::load(&b, m.limits.clone()));
+            let p = match loaded {
+                Ok(p) => p,
+                Err(e) => {
+                    m.keep(&state, &stem);
+                    m.failed.push(Failed { file, error: e.to_string(), missing: Vec::new(), id: stem, path: Some(f) });
+                    continue;
                 }
-                Err(e) => m.failed.push((f.display().to_string(), e.to_string())),
+            };
+            let id = p.id().to_string();
+            let missing = p.manifest().missing_features(&m.features);
+            if !missing.is_empty() {
+                // the app was downgraded: keep its grant and data for when it's updated again
+                m.keep(&state, &id);
+                m.unloaded.insert(id.clone(), p.manifest().version.clone());
+                m.failed.push(Failed { file, error: Error::Unsupported(missing.clone()).to_string(), missing, id, path: Some(f) });
+                continue;
             }
+            // not in plugins.json (copied in by hand): disabled, nothing granted
+            let (enabled, grant) = state.plugins.get(&id).map_or((false, Permissions::default()), |e| (e.enabled, e.grant.clone()));
+            let mut log = VecDeque::new();
+            if let Err(e) = p.manifest().semver() {
+                log.push_back(format!("loaded without a valid version ({e}); installing a new version will need one"));
+            }
+            m.plugins.insert(id, Installed { plugin: Arc::new(p), enabled, grant, log, store: None, busy: false });
         }
         Ok(m)
+    }
+
+    /// Keeps `id`'s `plugins.json` entry from `state` (its module didn't load).
+    fn keep(&mut self, state: &State, id: &str) {
+        if let Some(e) = state.plugins.get(id) {
+            self.kept.insert(id.to_string(), e.clone());
+        }
+    }
+
+    /// The host features plug-ins may require (default [`crate::HOST_FEATURES`]). Affects installs
+    /// from now on; [`Manager::open_with_features`] sets them for loading.
+    pub fn set_features(&mut self, features: &[&str]) {
+        self.features = features.iter().map(|f| f.to_string()).collect();
+    }
+
+    /// The host features plug-ins may require.
+    pub fn features(&self) -> &[String] {
+        &self.features
+    }
+
+    /// The version of plug-in `id` in the folder: loaded, or kept there because it needs features
+    /// this version lacks.
+    pub fn installed_version(&self, id: &str) -> Option<String> {
+        self.plugins.get(id).map(|i| i.plugin.manifest().version.clone()).or_else(|| self.unloaded.get(id).cloned())
+    }
+
+    /// A plug-in in the folder that didn't load because it needs features this version lacks: its
+    /// version and the grant it keeps.
+    pub fn unloaded(&self, id: &str) -> Option<(String, Permissions)> {
+        let version = self.unloaded.get(id)?.clone();
+        Some((version, self.kept.get(id).map(|e| e.grant.clone()).unwrap_or_default()))
+    }
+
+    /// Why `manifest` can't be installed over what is installed now, as `(missing features,
+    /// version problem, downgrade from)`, for the install dialog ([`Manager::install_bytes`]
+    /// refuses each one; a downgrade only without `allow_downgrade`).
+    pub fn install_check(&self, manifest: &crate::Manifest) -> (Vec<String>, Option<String>, Option<String>) {
+        let missing = manifest.missing_features(&self.features);
+        let new = manifest.semver();
+        let old = self.installed_version(&manifest.id);
+        let downgrade = match (&new, old) {
+            (Ok(new), Some(old)) => parse_version(&old).ok().filter(|o| new.cmp_precedence(o) == std::cmp::Ordering::Less).map(|_| old),
+            _ => None,
+        };
+        (missing, new.err(), downgrade)
     }
 
     /// Limits for plug-ins installed from now on.
@@ -182,37 +298,72 @@ impl Manager {
     /// install dialog. `None` grants nothing new: a fresh install gets no permissions, an update
     /// keeps the previous grant (cut back to what the new version still asks for), so an update
     /// can never gain a capability without the user approving it. The plug-in starts enabled.
-    pub fn install_bytes(&mut self, bytes: &[u8], grant: Option<Permissions>) -> Result<&Installed> {
+    ///
+    /// Refused, with nothing written: a plug-in that requires host features this version lacks, a
+    /// `version` that isn't semver, and a lower version than the installed one unless
+    /// `allow_downgrade` (the same version again is a repair, and allowed).
+    pub fn install_bytes(&mut self, bytes: &[u8], grant: Option<Permissions>, allow_downgrade: bool) -> Result<&Installed> {
         let plugin = Plugin::load(bytes, self.limits.clone())?;
+        let (missing, version, downgrade) = self.install_check(plugin.manifest());
+        if !missing.is_empty() {
+            return Err(Error::Unsupported(missing));
+        }
+        if let Some(e) = version {
+            return Err(Error::Manifest(e));
+        }
+        let new = plugin.manifest().version.clone();
+        if let Some(installed) = &downgrade
+            && !allow_downgrade
+        {
+            return Err(Error::Downgrade { installed: installed.clone(), new });
+        }
         let id = plugin.id().to_string();
-        let previous = self.plugins.get(&id).map(|i| i.grant.clone()).unwrap_or_default();
+        // a module that stopped loading keeps its grant for the version that replaces it
+        let previous = self.plugins.get(&id).map(|i| i.grant.clone()).or_else(|| self.kept.get(&id).map(|e| e.grant.clone())).unwrap_or_default();
         let grant = grant.unwrap_or(previous).intersect(&plugin.manifest().permissions);
         if let Some(dir) = &self.dir {
             write_atomic(&dir.join(format!("{id}.wasm")), bytes)?;
+            let file = dir.join(format!("{id}.wasm")).display().to_string();
+            self.failed.retain(|f| f.file != file);
         }
+        self.kept.remove(&id);
+        self.unloaded.remove(&id);
         let log = self.plugins.remove(&id).map(|i| i.log).unwrap_or_default();
         self.plugins.insert(id.clone(), Installed { plugin: Arc::new(plugin), enabled: true, grant, log, store: None, busy: false });
         self.save()?;
         self.plugins
             .get_mut(&id)
             .map(|i| {
-                i.push_log(format!("installed version {}", i.plugin.manifest().version));
+                i.push_log(match downgrade {
+                    Some(old) => format!("downgraded from {old} to {new}"),
+                    None => format!("installed version {new}"),
+                });
                 &*i
             })
             .ok_or(Error::NotFound(id))
     }
 
-    /// Reads a `.wasm` file and installs it.
-    pub fn install_file(&mut self, path: &Path, grant: Option<Permissions>) -> Result<&Installed> {
+    /// Reads a `.wasm` file and installs it (see [`Manager::install_bytes`]).
+    pub fn install_file(&mut self, path: &Path, grant: Option<Permissions>, allow_downgrade: bool) -> Result<&Installed> {
         let bytes = read_module(path, &self.limits)?;
-        self.install_bytes(&bytes, grant)
+        self.install_bytes(&bytes, grant, allow_downgrade)
     }
 
     /// Removes a plug-in, its module and its data.
+    ///
+    /// A plug-in in the folder that didn't load ([`Manager::failed`]: it needs features this version
+    /// lacks, or its module can't be read) is removed the same way, by its id there.
     pub fn uninstall(&mut self, id: &str) -> Result<()> {
-        self.plugins.remove(id).ok_or_else(|| Error::NotFound(id.into()))?;
+        let is_failed = |f: &Failed| !id.is_empty() && f.id == id;
+        if !self.plugins.contains_key(id) && !self.failed.iter().any(is_failed) {
+            return Err(Error::NotFound(id.into()));
+        }
+        // the files first: if one can't be deleted, nothing is forgotten (its entry stays saved)
         if let Some(dir) = &self.dir {
-            for f in [dir.join(format!("{id}.wasm")), dir.join("data").join(format!("{id}.json"))] {
+            let modules: Vec<PathBuf> = self.failed.iter().filter(|f| is_failed(f)).filter_map(|f| f.path.clone()).collect();
+            // the modules before the data: a module that can't be deleted keeps its data too
+            let files = std::iter::once(dir.join(format!("{id}.wasm"))).chain(modules).chain([dir.join("data").join(format!("{id}.json"))]);
+            for f in files {
                 match std::fs::remove_file(&f) {
                     Ok(()) => {}
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -220,6 +371,10 @@ impl Manager {
                 }
             }
         }
+        self.plugins.remove(id);
+        self.failed.retain(|f| !is_failed(f));
+        self.kept.remove(id);
+        self.unloaded.remove(id);
         self.save()
     }
 
@@ -251,8 +406,9 @@ impl Manager {
 
     fn save(&self) -> Result<()> {
         let Some(dir) = &self.dir else { return Ok(()) };
-        let state =
-            State { plugins: self.plugins.iter().map(|(id, p)| (id.clone(), Entry { enabled: p.enabled, grant: p.grant.clone() })).collect() };
+        let mut plugins = self.kept.clone();
+        plugins.extend(self.plugins.iter().map(|(id, p)| (id.clone(), Entry { enabled: p.enabled, grant: p.grant.clone() })));
+        let state = State { plugins };
         let bytes = serde_json::to_vec_pretty(&state).map_err(|e| Error::Io(e.to_string()))?;
         write_atomic(&dir.join("plugins.json"), &bytes)
     }

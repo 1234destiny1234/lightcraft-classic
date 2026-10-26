@@ -53,7 +53,7 @@ fn mutated_modules_never_panic() {
         }
         let mut m = Manager::in_memory();
         m.set_limits(limits());
-        let Ok(p) = m.install_bytes(b, Some(grant())) else { return };
+        let Ok(p) = m.install_bytes(b, Some(grant()), false) else { return };
         let id = p.plugin.id().to_string();
         let _ = m.set_enabled(&id, true);
         let _ = m.run_command(&id, "go", &json!({}), &["1".into()], &mut NoHost);
@@ -63,11 +63,47 @@ fn mutated_modules_never_panic() {
 
 #[test]
 fn manifests_never_panic() {
-    lcc_fuzzkit::run_json("plugins.manifest", &[MANIFEST], 3000, |s| {
+    let seeds = [MANIFEST, r#"{"id":"t","name":"T","version":"2.0.0-rc.1+b.7","requires":["jobs","settings"]}"#];
+    lcc_fuzzkit::run_json("plugins.manifest", &seeds, 3000, |s| {
         if let Ok(m) = Manifest::parse(s.as_bytes()) {
             let _ = m.validate();
+            let _ = (m.semver(), m.missing_features(&["jobs"]));
         }
     });
+}
+
+/// `requires` and `version` from a hostile manifest: errors, never a panic.
+#[test]
+fn hostile_requires_and_versions_are_errors() {
+    let huge: Vec<String> = (0..100_000).map(|i| format!("f{i}")).collect();
+    let requires = [json!(huge), json!([1, true, null, {}]), json!(["é"]), json!(["a".repeat(10_000)]), json!(null), json!(7)];
+    for r in requires {
+        let m = json!({"id": "t", "name": "T", "version": "1.0.0", "requires": r}).to_string();
+        let mut mgr = Manager::in_memory();
+        assert!(Manifest::parse(m.as_bytes()).is_err() || m.len() > lcc_plugins::manifest::MAX_MANIFEST_BYTES, "{r}");
+        if m.len() <= lcc_plugins::manifest::MAX_MANIFEST_BYTES {
+            assert!(mgr.install_bytes(&module(&m, "{}"), None, false).is_err(), "{r}");
+        }
+    }
+    let versions = [
+        "1".repeat(60_000),
+        "99999999999999999999999.0.0".into(),
+        "1.18446744073709551616.0".into(),
+        "１.２.３".into(),
+        "1.0.0-é".into(),
+        "1.0.0-".into(),
+        "1.0.0+".into(),
+        "\u{0}1.0.0".into(),
+        "01.0.0".into(),
+    ];
+    for v in versions {
+        let man = Manifest::parse(json!({"id": "t", "name": "T", "version": v}).to_string().as_bytes()).unwrap();
+        assert!(man.semver().is_err(), "{v:?}");
+        let m = json!({"id": "t", "name": "T", "version": v}).to_string();
+        if m.len() <= lcc_plugins::manifest::MAX_MANIFEST_BYTES {
+            assert!(Manager::in_memory().install_bytes(&module(&m, "{}"), None, false).is_err(), "{v:?}");
+        }
+    }
 }
 
 /// Replies of a plug-in's command and publish hooks (the plug-in is untrusted code).
@@ -77,7 +113,7 @@ fn hostile_replies_never_panic() {
     lcc_fuzzkit::run_json("plugins.reply", &seeds, 150, |reply| {
         let mut m = Manager::in_memory();
         m.set_limits(limits());
-        if m.install_bytes(&module(MANIFEST, reply), Some(grant())).is_err() {
+        if m.install_bytes(&module(MANIFEST, reply), Some(grant()), false).is_err() {
             return;
         }
         let _ = m.set_enabled("test.plugin", true);

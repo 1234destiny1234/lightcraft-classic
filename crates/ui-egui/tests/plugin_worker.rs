@@ -7,7 +7,7 @@ use serde_json::json;
 /// An export-hook plug-in that spins for `spins` loop turns before answering `{seen: true}`
 /// (a stand-in for a slow upload).
 fn slow_hook(id: &str, spins: u32) -> Vec<u8> {
-    let manifest = format!(r#"{{"id":"{id}","name":"Slow","hooks":{{"export":true}}}}"#);
+    let manifest = format!(r#"{{"id":"{id}","name":"Slow","version":"1.0.0","hooks":{{"export":true}}}}"#);
     let reply = r#"{"ok":{"seen":true}}"#;
     let esc = |s: &str| s.replace('"', "\\\"");
     let src = format!(

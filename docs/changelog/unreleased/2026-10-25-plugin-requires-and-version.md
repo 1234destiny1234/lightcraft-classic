@@ -1,0 +1,3 @@
+## Interface
+
+- **Plug-in compatibility:** a plug-in's manifest lists the host features it uses (`requires`); one that needs a feature this version lacks isn't installed, and the error names each missing feature. A plug-in that stops loading after a downgrade of the app keeps its `plugins.json` entry and data, and a plug-in that didn't load can now be removed (`plugin.uninstall`, a Remove button in the Plug-in Manager). `version` is now required, in semver, and installing an older version needs `allowDowngrade` (an *Install Older Version* button in the dialog). `plugin.list` reports the host's ABI and features. (no PR)

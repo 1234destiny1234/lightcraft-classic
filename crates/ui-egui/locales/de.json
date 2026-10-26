@@ -2204,7 +2204,6 @@
   "Separate several keywords with commas. Return gives them to the selected photos.": "Mehrere Stichwörter durch Kommas trennen. Die Eingabetaste weist sie den ausgewählten Fotos zu.",
   "Add Face Model…": "Gesichtsmodell hinzufügen…",
   "Cancel Face Model Download": "Download des Gesichtsmodells abbrechen",
-  "Cancel Pending Photo Action": "Ausstehende Fotoaktion abbrechen",
   "Choose Face Recognition Model": "Gesichtserkennungsmodell wählen",
   "Choose a model below (Use) to start.": "Wähle unten ein Modell („Verwenden“), um zu beginnen.",
   "Detect Faces": "Gesichter erkennen",

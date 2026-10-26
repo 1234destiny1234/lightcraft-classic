@@ -1647,8 +1647,6 @@
   "Back to this person": "Wróć do tej osoby",
   "AI Denoise": "Odszumianie AI",
   "AI Denoise Model": "Model odszumiania AI",
-  "AI Denoise is off: press Use on a model.": "Odszumianie AI jest wyłączone: kliknij „Użyj” przy modelu.",
-  "AI Denoise needs a model. Install one in Settings.": "Odszumianie AI wymaga modelu. Zainstaluj go w Ustawieniach.",
   "Accept & Download": "Akceptuj i pobierz",
   "Already installed. Remove it before installing a replacement.": "Już zainstalowano. Usuń obecny model przed zainstalowaniem nowego.",
   "Automatic uses the graphics card where it is faster than the processor: both are timed on this computer the first time a photo is made.": "Tryb automatyczny używa karty graficznej, jeśli jest szybsza od procesora. Przy pierwszym przetwarzaniu zdjęcia {app} mierzy wydajność obu urządzeń.",
