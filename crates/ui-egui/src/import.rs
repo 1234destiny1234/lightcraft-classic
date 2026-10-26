@@ -150,10 +150,18 @@ impl ImportDialog {
             }
         }
     }
+    /// Candidate `i` is a file whose photo is only browsed (Local): the scan offers it (it isn't in the
+    /// library). Importing it brings that record into the library where the file is, whatever the
+    /// transfer mode.
+    pub fn is_browsed(&self, i: usize) -> bool {
+        self.candidates.get(i).is_some_and(|c| c.error.is_none() && c.duplicate.is_none() && c.local)
+    }
     /// Candidate `i` can be checked: a readable file the library doesn't have, or one whose photo
-    /// is in Recently Deleted — even with "Leave them", a click picks it (issue #1285).
+    /// is in Recently Deleted — even with "Leave them", a click picks it (issue #1285). A browsed
+    /// photo can't be copied or moved: the engine would add it in place, so copying leaves it out.
     pub fn importable(&self, i: usize) -> bool {
         self.candidates.get(i).is_some_and(|c| c.error.is_none() && (c.duplicate.is_none() || self.is_trashed(i)))
+            && !(self.copy && self.candidates.get(i).is_some_and(|c| c.local))
             || (self.import_duplicates && self.is_suspected_duplicate(i))
     }
     /// Candidate `i` has the same content as a photo the library has (not in Recently Deleted) or
@@ -188,7 +196,7 @@ impl ImportDialog {
     }
     /// Any file of type `ty` is checked.
     pub fn type_checked(&self, ty: &str) -> bool {
-        self.candidates.iter().zip(&self.checked).any(|(c, on)| *on && file_type(c) == ty)
+        self.candidates.iter().zip(&self.checked).enumerate().any(|(i, (c, on))| *on && self.importable(i) && file_type(c) == ty)
     }
     /// Check (the importable ones) or uncheck every file of type `ty`: the raws only, say, and not
     /// the JPEGs kept beside them (issue #344).
@@ -261,6 +269,12 @@ impl ImportDialog {
             }
             o => Ok(Some(o.to_string())),
         }
+    }
+    /// Keywords or a preset are set while a checked browsed photo would join the library as it is:
+    /// the engine applies them to new files only, so the review says so.
+    pub(crate) fn options_skip_browsed(&self) -> bool {
+        let has_options = !self.keywords().is_empty() || !self.preset.is_empty() || !self.metadata_preset.is_empty();
+        has_options && !self.copy && (0..self.candidates.len()).any(|i| self.checked.get(i).copied().unwrap_or(false) && self.is_browsed(i))
     }
     fn keywords(&self) -> Vec<String> {
         self.keywords.split(',').map(str::trim).filter(|k| !k.is_empty()).map(str::to_string).collect()
@@ -639,7 +653,7 @@ pub fn poll_scan(app: &mut LccApp, ctx: &egui::Context) {
         }
         // what the library doesn't know yet joins the Local view
         let queue: Vec<String> =
-            out.candidates.iter().filter(|c| c.duplicate != Some("path".into()) && c.error.is_none()).map(|c| c.path.clone()).collect();
+            out.candidates.iter().filter(|c| c.duplicate != Some("path".into()) && !c.local && c.error.is_none()).map(|c| c.path.clone()).collect();
         if !queue.is_empty() {
             let undo0 = app.session.undo.len();
             let total = queue.len();
@@ -1088,7 +1102,9 @@ fn show_existing(app: &mut LccApp, ctx: &egui::Context, existing: &[u64]) -> boo
 pub(crate) fn dup_counts(d: &ImportDialog) -> (usize, usize, usize) {
     let trashed = d.trashed.iter().filter(|t| **t).count();
     let in_source = d.candidates.iter().filter(|c| c.duplicate.as_deref() == Some("content") && c.existing.is_none()).count();
-    let dups = d.candidates.iter().filter(|c| c.duplicate.is_some()).count().saturating_sub(trashed).saturating_sub(in_source);
+    // (a browsed photo isn't offered while copying: it counts as already there)
+    let browsed = if d.copy { (0..d.candidates.len()).filter(|i| d.is_browsed(*i)).count() } else { 0 };
+    let dups = (d.candidates.iter().filter(|c| c.duplicate.is_some()).count() + browsed).saturating_sub(trashed).saturating_sub(in_source);
     (dups, in_source, trashed)
 }
 
@@ -1357,6 +1373,14 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
             d.set_skip_duplicates(skip);
         }
     });
+    if d.options_skip_browsed() {
+        let t = Tokens::get(ui.ctx());
+        ui.label(
+            egui::RichText::new(crate::i18n::tr("Keywords and presets apply to new files only, not to photos already in Local"))
+                .color(t.text_dim)
+                .small(),
+        );
+    }
     if d.trashed.iter().any(|t| *t) {
         field(ui, "In Recently Deleted", |ui| {
             let cur = match d.on_deleted.as_str() {
@@ -1600,6 +1624,7 @@ pub(crate) fn candidate_cell(app: &mut LccApp, ui: &mut egui::Ui, d: &mut Import
         (Some(_), _) if in_trash && on => Some(if d.on_deleted == "fresh" { "Will be replaced" } else { "Will be restored" }),
         (Some(_), _) if in_trash => Some("In Recently Deleted"),
         (Some(r), _) if r == "path" => Some("In library"),
+        (None, None) if d.copy && d.is_browsed(i) => Some("In library"),
         (Some(_), _) if on => Some("Will be copied"),
         (Some(_), _) => Some("Duplicate"),
         (None, Some(_)) => Some("Unreadable"),
@@ -1860,6 +1885,57 @@ mod tests {
         assert!(d.checked[3] && d.importable(3) && !d.importable(5), "{:?}", d.checked);
         d.set_skip_duplicates(true);
         assert!(!d.checked[3] && !d.importable(3));
+    }
+
+    /// A file whose photo is only browsed (Local) comes from the scan as an ordinary candidate that
+    /// still names its record: offered when adding in place; copying or moving would not copy it
+    /// (the engine adds it where it is), so there it counts as already in the library.
+    #[test]
+    fn a_browsed_photo_is_importable_only_when_adding_in_place() {
+        let mut d = dialog();
+        d.candidates[5].local = true;
+        assert!(d.is_browsed(5) && d.importable(5));
+        assert_eq!(dup_counts(&d), (0, 1, 0), "adding in place: not skipped");
+        d.copy = true;
+        assert!(!d.importable(5), "copying leaves it where it is");
+        assert!(!d.selected_paths().contains(&"img5.jpg".to_string()));
+        assert_eq!(dup_counts(&d), (1, 1, 0));
+        assert!(!d.is_browsed(3), "a duplicate isn't browsed");
+        // its library twin is in Recently Deleted: still offered in place ("Import as new" brings it in), never copied
+        d.copy = false;
+        d.candidates[4].local = true;
+        d.candidates[4].duplicate = Some("content".into());
+        d.set_trashed(vec![false, false, false, false, true, false]);
+        assert!(d.importable(4));
+        d.copy = true;
+        assert!(!d.importable(4), "copying would add it where it is");
+    }
+
+    /// A file type's toggle is on only for files that can be imported now.
+    #[test]
+    fn a_file_type_toggle_ignores_browsed_photos_that_copying_cannot_import() {
+        let mut c = ImportCandidate { path: "a.png".into(), local: true, ..Default::default() };
+        c.format = "PNG".into();
+        let mut d = ImportDialog::new(vec![c]);
+        d.copy = true;
+        assert!(!d.type_checked("PNG"));
+        d.copy = false;
+        assert!(d.type_checked("PNG"));
+    }
+
+    /// The review warns that keywords and presets skip a browsed photo only when it matters.
+    #[test]
+    fn keywords_and_presets_are_flagged_only_when_a_browsed_photo_would_skip_them() {
+        let c = ImportCandidate { path: "a.png".into(), local: true, ..Default::default() };
+        let mut d = ImportDialog::new(vec![c]);
+        assert!(!d.options_skip_browsed(), "nothing set, nothing to skip");
+        d.keywords = "beach".into();
+        assert!(d.options_skip_browsed());
+        d.checked[0] = false;
+        assert!(!d.options_skip_browsed(), "unchecked: not imported anyway");
+        d.checked[0] = true;
+        d.copy = true;
+        assert!(!d.options_skip_browsed(), "copying doesn't offer it");
     }
 
     /// Identical copies inside the source folder are not "already in the library" (a fresh library

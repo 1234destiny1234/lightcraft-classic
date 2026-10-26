@@ -2218,5 +2218,6 @@
   "Why?": "為什麼？",
   "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "AI 降噪需要模型，但尚未安裝。在此之前，可用「細節」下的「明亮度」和「顏色」減少雜訊。",
   "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "此版本不附帶 AI 降噪模型，目前也無法在這裡下載。",
-  "No AI Denoise model is installed": "未安裝 AI 降噪模型"
+  "No AI Denoise model is installed": "未安裝 AI 降噪模型",
+  "Keywords and presets apply to new files only, not to photos already in Local": "關鍵字和預設集僅套用於新檔案，不適用於已在「本機」中的照片"
 }

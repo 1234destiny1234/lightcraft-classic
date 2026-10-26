@@ -2769,5 +2769,6 @@
   "Reading metadata from files": "მეტამონაცემების წაკითხვა ფაილებიდან",
   "Save Metadata to Files": "მეტამონაცემების ფაილებში შენახვა",
   "Read Metadata from Files": "მეტამონაცემების წაკითხვა ფაილებიდან",
-  "Save or Read Folder Metadata in the Background": "საქაღალდის მეტამონაცემების შენახვა ან წაკითხვა ფონურად"
+  "Save or Read Folder Metadata in the Background": "საქაღალდის მეტამონაცემების შენახვა ან წაკითხვა ფონურად",
+  "Keywords and presets apply to new files only, not to photos already in Local": "საკვანძო სიტყვები და პრესეტები მხოლოდ ახალ ფაილებზე მოქმედებს და არა იმ ფოტოებზე, რომლებიც უკვე ლოკალშია"
 }

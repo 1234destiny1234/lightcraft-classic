@@ -2412,5 +2412,6 @@
   "Why?": "Почему?",
   "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "Для ИИ-шумоподавления нужна модель, а она не установлена. Пока шум уменьшают Яркость и Цвет в разделе Детали.",
   "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "В этой версии нет модели ИИ-шумоподавления, и скачать её отсюда пока нельзя.",
-  "No AI Denoise model is installed": "Модель ИИ-шумоподавления не установлена"
+  "No AI Denoise model is installed": "Модель ИИ-шумоподавления не установлена",
+  "Keywords and presets apply to new files only, not to photos already in Local": "Ключевые слова и пресеты применяются только к новым файлам, а не к фото, которые уже есть в «Локальных»"
 }

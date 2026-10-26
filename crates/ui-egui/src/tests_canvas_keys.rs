@@ -1,5 +1,6 @@
-//! The canvas tools by keyboard: crop handles, spot removals, gradient handles and mask pins are
-//! reached with Tab or focus, moved with the arrow keys (Shift: further), one undo step a press.
+//! The canvas tools by keyboard: crop handles, spot removals, red-eye corrections, gradient handles
+//! and mask pins are reached with Tab or focus, moved with the arrow keys (Shift: further), one undo
+//! step a press.
 
 use std::time::Duration;
 
@@ -66,7 +67,8 @@ fn crop_corner_moves_with_the_arrows_and_shift_moves_further() {
     assert!(r1.x1 < r0.x1 - 0.001 && (r1.x0 - r0.x0).abs() < 1e-9, "{r0:?} -> {r1:?}");
     key(&mut h, "up", true);
     let r2 = develop(&h).crop.geometry.rect;
-    assert!(r2.y1 < r1.y1 - 0.03, "Shift is a big step: {r1:?} -> {r2:?}");
+    // (the corner keeps the crop's aspect, so a big step moves an edge by less than BIG_STEP)
+    assert!(r2.y1 < r1.y1 - 0.02, "Shift is a big step: {r1:?} -> {r2:?}");
     // the arrows moved the handle, not to another photo
     assert_eq!(h.app.session.active(), photo);
     // one undo step a press
@@ -151,4 +153,52 @@ fn gradient_handles_and_pins_move_by_keyboard() {
     focus(&mut h, &format!("mask:{rid}:0:1"));
     key(&mut h, "right", true);
     assert!(rx(&h) > rx0, "{rx0} -> {}", rx(&h));
+}
+
+#[test]
+fn red_eye_corrections_are_added_moved_resized_and_removed_by_keyboard() {
+    let mut h = detail("panel.redeye");
+    let photo = h.app.session.active();
+    let photos = h.app.session.visible_cloned().len();
+    assert!(develop(&h).red_eye.is_empty());
+    focus(&mut h, "eye:new");
+    key(&mut h, "left", true);
+    key(&mut h, "enter", false);
+    let eyes = develop(&h).red_eye;
+    assert_eq!(eyes.len(), 1, "Return adds a correction");
+    let e = eyes[0];
+    assert!((e.center.x - 0.45).abs() < 1e-6 && (e.center.y - 0.5).abs() < 1e-6 && !e.pet, "{e:?}");
+    // the arrows move the correction, one undo step a press
+    focus(&mut h, "eye:0");
+    key(&mut h, "down", false);
+    let c = develop(&h).red_eye[0].center;
+    assert!((c.y - e.center.y - canvas_keys::STEP).abs() < 1e-6 && (c.x - e.center.x).abs() < 1e-9, "{e:?} -> {c:?}");
+    // a plain arrow moves the handle, not the focus to the edge handle below it
+    assert_eq!(h.view.ctx.memory(|m| m.focused()), Some(canvas_keys::id("eye:0")));
+    key(&mut h, "right", true);
+    assert!((develop(&h).red_eye[0].center.x - c.x - canvas_keys::BIG_STEP).abs() < 1e-6, "Shift moves further");
+    exec(&mut h, "edit.undo", json!({}));
+    assert!((develop(&h).red_eye[0].center.x - c.x).abs() < 1e-9);
+    // its right edge widens it, its bottom edge makes it taller; the centre stays
+    focus(&mut h, "eye:0:width");
+    key(&mut h, "right", false);
+    let w = develop(&h).red_eye[0];
+    assert!((w.rx - e.rx - canvas_keys::STEP).abs() < 1e-6 && (w.ry - e.ry).abs() < 1e-9 && w.center == c, "{e:?} -> {w:?}");
+    focus(&mut h, "eye:0:height");
+    key(&mut h, "up", false);
+    let t = develop(&h).red_eye[0];
+    assert!((t.ry - e.ry + canvas_keys::STEP).abs() < 1e-6 && (t.rx - w.rx).abs() < 1e-9, "{w:?} -> {t:?}");
+    // in Pet Eye mode Return adds a pet eye, and selects it
+    h.app.ui.eye_pet = true;
+    focus(&mut h, "eye:new");
+    key(&mut h, "enter", false);
+    assert!(develop(&h).red_eye.get(1).is_some_and(|e| e.pet), "{:?}", develop(&h).red_eye);
+    assert_eq!(h.app.ui.eye, 1);
+    // Delete removes the focused correction, not the photo
+    focus(&mut h, "eye:0");
+    key(&mut h, "delete", false);
+    let left = develop(&h).red_eye;
+    assert!(left.len() == 1 && left[0].pet, "the red eye went, the pet eye stayed: {left:?}");
+    assert_eq!(h.app.session.active(), photo);
+    assert_eq!(h.app.session.visible_cloned().len(), photos);
 }

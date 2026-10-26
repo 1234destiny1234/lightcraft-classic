@@ -415,7 +415,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     let preview = app.session.execute("stack.auto", &json!({"gap": *gap, "preview": true})).unwrap_or_default();
                     let scope = if app.session.selection.ids.len() > 1 { "the selected photos" } else { "the photos in view" };
                     crate::dialog_frame::note(ui,
-                        egui::RichText::new(crate::i18n::tr_format!("Creates {} stacks from {} of {scope}", preview["stacks"], preview["photos"], scope = crate::i18n::tr(scope))).color(t.text_dim),
+                        egui::RichText::new({
+                            let (stacks, photos) = (preview["stacks"].as_u64().unwrap_or(0), preview["photos"].as_u64().unwrap_or(0));
+                            crate::i18n::tr_format!("Creates {stacks} stack{} from {photos} of {scope}", if stacks == 1 { "" } else { "s" }, stacks = stacks, photos = photos, scope = crate::i18n::tr(scope))
+                        }).color(t.text_dim),
                     );
                 }
                 Dialog::Cull { reject_below, pick_best, burst_gap, similarity } => {
@@ -1404,6 +1407,23 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Dialog::SamModel { .. } => "Download",
                     Dialog::RenamePerson { from, to, .. } if person_rename_plan(&app.session.catalog, from, to).needs_merge => "Merge",
                     _ if informational => "Close",
+                    // the confirm button names its action (upstream #2075)
+                    Dialog::Export { .. } => {
+                        let n = app.session.selection.ids.len().max(1);
+                        add_label = crate::i18n::tr_format!("{verb} {n} Photo{}", if n == 1 { "" } else { "s" }, verb = crate::i18n::tr("Export"), n = n);
+                        add_label.as_str()
+                    }
+                    Dialog::NewAlbum { .. } | Dialog::NewSmartAlbum { .. } | Dialog::SmartRules { id: None, .. } | Dialog::CreatePreset { .. } => "Create",
+                    Dialog::SmartRules { .. } | Dialog::LabelNames { .. } => "Save",
+                    Dialog::RenameKeyword { from, to } if app.session.catalog.has_keyword(to) && !lcc_catalog::keywords::same(from, to) => "Merge Keywords",
+                    Dialog::RenameAlbum { .. } | Dialog::Rename { .. } | Dialog::RenameKeyword { .. } | Dialog::RenamePerson { .. } => "Rename",
+                    Dialog::MergeKeywords { .. } => "Merge Keywords",
+                    Dialog::AutoStack { .. } => "Create Stacks",
+                    Dialog::CaptureTime { .. } => "Change Time",
+                    Dialog::Cull { .. } => "Cull",
+                    Dialog::CopySettings { .. } => "Copy",
+                    Dialog::PasteSettings { .. } => "Paste",
+                    Dialog::TextPrompt { command, .. } => prompt_verb(command),
                     _ => "OK",
                 };
                 // installing waits for the licence to be accepted
@@ -2127,6 +2147,19 @@ fn sheet_w(screen: egui::Rect, insets: crate::modern::Insets) -> f32 {
 }
 
 /// Open a one-field dialog that runs `command` with `params` + `{key: typed value}`.
+/// What a one-field prompt's confirm button says, by the command it runs. A command that isn't
+/// listed (one opened by automation) has no verb to name and keeps "OK".
+fn prompt_verb(command: &str) -> &'static str {
+    match command {
+        "album.rename" | "folder.rename" | "version.rename" | "preset.rename" | "mask.renameEffect" => "Rename",
+        "folder.create" | "mask.setEffectGroup" | "app.newLibrary" => "Create",
+        "preset.move" => "Move",
+        "keyword.saveSet" | "filter.savePreset" | "curve.savePreset" | "metadata.savePreset" => "Save",
+        "photo.tagFromTracklog" => "Add Locations",
+        _ => "OK",
+    }
+}
+
 pub fn prompt(app: &mut LccApp, title: &str, hint: &str, value: &str, command: &str, params: serde_json::Value, key: &str) {
     app.ui.dialog =
         Some(Dialog::TextPrompt { title: title.into(), hint: hint.into(), value: value.into(), command: command.into(), params, key: key.into() });
