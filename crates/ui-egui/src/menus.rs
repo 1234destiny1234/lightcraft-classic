@@ -300,6 +300,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("file.exportExportPresets", "Export User Presets…", None, ""),
     ("file.importKeywords", "Import Keywords…", None, "File>More Imports"),
     ("file.exportKeywords", "Export Keywords…", None, "File>More Exports"),
+    // the active photo's colour for other editors (`camera.exportDcp`, `develop.exportLut`)
+    ("file.exportCameraProfile", "Export Camera Profile (.dcp)…", None, "File>More Exports"),
+    ("file.exportLookLut", "Export Look as LUT (.cube)…", None, "File>More Exports"),
     // Edit panel ▸ Curve ▸ Point Curve dropdown
     ("file.importCurvePresets", "Import Point Curve Presets…", None, ""),
     ("file.exportCurvePresets", "Export Point Curve Presets…", None, ""),
@@ -2588,6 +2591,48 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             }
             return Some(r);
         }
+        "file.exportCameraProfile" | "file.exportLookLut" => {
+            let dcp = id == "file.exportCameraProfile";
+            let Some(active) = app.session.active() else { return Some(Err("no photo".into())) };
+            let stem = app
+                .session
+                .catalog
+                .photo(active)
+                .and_then(|ph| std::path::Path::new(&ph.file_name).file_stem().map(|s| s.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| "photo".into());
+            let (ext, command): (&'static str, &str) = if dcp { ("dcp", "camera.exportDcp") } else { ("cube", "develop.exportLut") };
+            let path = match p.get("path").and_then(Value::as_str) {
+                Some(x) => Some(x.to_string()),
+                None => {
+                    let name = format!("{stem}.{ext}");
+                    let req = if dcp {
+                        PickRequest::save(
+                            crate::i18n::tr("Export Camera Profile (.dcp)…"),
+                            crate::i18n::tr("DNG Camera Profile"),
+                            &["dcp"],
+                            name.clone(),
+                        )
+                    } else {
+                        PickRequest::save(crate::i18n::tr("Export Look as LUT (.cube)…"), crate::i18n::tr("Cube LUT"), &["cube"], name.clone())
+                    };
+                    match crate::pick::ask(app, id, p, "path", req, |s| s.save_preset_file.as_mut().map(|f| f(&name).into_iter().collect())) {
+                        Picked::Now(v) => v.into_iter().next(),
+                        Picked::Later => return Some(Ok(Value::Null)),
+                        Picked::Unavailable => return Some(Err("no file dialog on this platform".into())),
+                    }
+                }
+            };
+            let Some(path) = path else { return Some(Ok(Value::Null)) };
+            let r = app.session.execute(command, &json!({"path": path, "ids": [active.0]})).map_err(|e| e.to_string());
+            match &r {
+                Ok(v) if dcp => {
+                    app.toast(&ctx, crate::i18n::tr_format!("Exported the camera profile for {}", v["model"].as_str().unwrap_or_default()))
+                }
+                Ok(_) => app.toast(&ctx, crate::i18n::tr("Exported the look as a LUT")),
+                Err(e) => app.toast_error(&ctx, e.clone()),
+            }
+            return Some(r);
+        }
         "file.exportPresets" => {
             let group = p.get("group").and_then(Value::as_str).map(str::to_string);
             let path = match p.get("path").and_then(Value::as_str) {
@@ -2752,6 +2797,13 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
         "app.showInFolders" => show_in_folders_enabled(app, None),
         "app.openSamModelFolder" => app.session.segmenter.dir.is_some() && app.services.open_with.is_some(),
         "file.exportPresets" => app.session.presets.iter().any(|p| !p.builtin),
+        // a raw on disk has a camera colour to export; any photo has a look
+        "file.exportCameraProfile" => app
+            .session
+            .active()
+            .and_then(|id| app.session.catalog.photo(id))
+            .is_some_and(|p| p.develops_raw() && matches!(p.source, lcc_engine::catalog::Source::File { .. })),
+        "file.exportLookLut" => app.session.active().is_some(),
         "file.exportMaskEffects" => !app.session.mask_effects.is_empty(),
         "file.exportMetadataPresets" => !app.session.metadata_presets.is_empty(),
         "file.exportExportPresets" => !app.session.export_presets.is_empty(),
