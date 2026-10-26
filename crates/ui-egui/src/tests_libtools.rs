@@ -254,7 +254,9 @@ fn cropped_ignores_an_uncropped_edit() {
 /// the Library filter searches).
 #[test]
 fn plugin_fields_edit_every_selected_photo() {
-    let manifest = r#"{"id":"test.uifields","name":"Jobs","metadataFields":[{"key":"job","label":"Job","type":"text"}]}"#;
+    // install into memory, never into the real user's settings folder
+    lcc_engine::cmd::plugins::use_in_memory_manager();
+    let manifest = r#"{"id":"test.uifields","name":"Jobs","version":"1.0.0","metadataFields":[{"key":"job","label":"Job","type":"text"}]}"#;
     let reply = r#"{"ok":{}}"#;
     let esc = |s: &str| s.replace('"', "\\\"");
     let src = format!(

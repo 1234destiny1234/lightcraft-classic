@@ -18,7 +18,7 @@ use lcc_engine::activity::{Cancel, TaskGuard};
 use serde_json::{Value, json};
 
 use crate::LccApp;
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_format};
 
 /// An install waiting for the user's approval: the file, its inspection and the ticked grant.
 #[derive(Clone)]
@@ -469,6 +469,13 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         ui.visuals().error_fg_color,
                         format!("{}: {}", f["file"].as_str().unwrap_or(""), f["error"].as_str().unwrap_or("")),
                     );
+                    // a module that didn't load can still be removed
+                    if let Some(id) = f["id"].as_str() {
+                        use crate::button::Button;
+                        if Button::new("Remove").widget(format!("button:pluginRemoveFailed:{id}")).show(ui).clicked() {
+                            actions.push(("plugin.uninstall", json!({"id": id})));
+                        }
+                    }
                 }
                 if !s.message.is_empty() {
                     ui.colored_label(ui.visuals().warn_fg_color, &s.message);
@@ -526,6 +533,11 @@ fn approval_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static s
     let m = pending.info["manifest"].clone();
     let installed = pending.info["installed"].clone();
     let had = if installed.is_object() { installed["granted"].clone() } else { Value::Null };
+    // what stops the install (plugin.install refuses it too): features this version lacks, a bad version
+    let missing: Vec<String> = pending.info["missing"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
+    let version_error = pending.info["versionError"].as_str().map(str::to_string);
+    let blocked = !missing.is_empty() || version_error.is_some();
+    let downgrade = pending.info["downgrade"].as_bool() == Some(true);
     let mut keep = true;
     let window_id = key().with("approve");
     let shown = egui::Window::new(tr("Install Plug-in"))
@@ -540,10 +552,26 @@ fn approval_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static s
             layout.body(ui, |ui| {
                 ui.strong(format!("{} {}", m["name"].as_str().unwrap_or(""), m["version"].as_str().unwrap_or("")));
                 ui.weak(format!("{} · {}", m["id"].as_str().unwrap_or(""), m["author"].as_str().unwrap_or("")));
-                if installed.is_object() {
-                    ui.label(format!("{} {}", tr("Updates the installed version"), installed["version"].as_str().unwrap_or("")));
+                let (new, old) = (m["version"].as_str().unwrap_or(""), installed["version"].as_str().unwrap_or(""));
+                if downgrade {
+                    ui.label(tr_format!("Version {new} is older than the installed version {installed}", new = new, installed = old));
+                } else if installed.is_object() {
+                    ui.label(format!("{} {old}", tr("Updates the installed version")));
                 }
                 ui.separator();
+                if blocked {
+                    if !missing.is_empty() {
+                        ui.label(tr("It needs features this version of the app doesn't have:"));
+                        for f in &missing {
+                            ui.label(format!("• {f}"));
+                        }
+                        ui.label(tr("Install a newer version of the app to use it."));
+                    }
+                    if let Some(e) = &version_error {
+                        ui.label(format!("{} {e}", tr("It can't be installed:")));
+                    }
+                    return;
+                }
                 let req = &m["permissions"];
                 let rows = permission_rows(req);
                 if rows.is_empty() {
@@ -564,8 +592,9 @@ fn approval_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static s
                 ui.separator();
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     use crate::button::{Button, Kind};
-                    if Button::new("Install").kind(Kind::Primary).widget("button:pluginInstall").show(ui).clicked() {
-                        actions.push(("plugin.install", json!({"path": pending.path, "grant": pending.grant})));
+                    let label = if downgrade { "Install Older Version" } else { "Install" };
+                    if !blocked && Button::new(label).kind(Kind::Primary).widget("button:pluginInstall").show(ui).clicked() {
+                        actions.push(("plugin.install", json!({"path": pending.path, "grant": pending.grant, "allowDowngrade": downgrade})));
                         keep = false;
                     }
                     if Button::new("Cancel").widget("button:pluginInstallCancel").show(ui).clicked() {

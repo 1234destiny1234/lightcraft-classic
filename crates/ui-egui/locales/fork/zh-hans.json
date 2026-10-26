@@ -1418,5 +1418,9 @@
   "Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition": "按 SDR 显示器和 SDR 导出的效果显示照片，以便调整其 SDR 版本",
   "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.": "这些设置照片在 SDR 显示器和 SDR 导出中的外观。打开“SDR 显示预览”即可看到效果。",
   "Graphics interface": "图形接口",
-  "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.": "下次启动时生效。如果启用 GPU 后应用启动缓慢，请尝试 Vulkan：在某些电脑上它准备 GPU 的速度快得多。"
+  "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.": "下次启动时生效。如果启用 GPU 后应用启动缓慢，请尝试 Vulkan：在某些电脑上它准备 GPU 的速度快得多。",
+  "It needs features this version of the app doesn't have:": "它需要此版本应用没有的功能：",
+  "Install a newer version of the app to use it.": "请安装较新版本的应用以使用它。",
+  "It can't be installed:": "无法安装：",
+  "Install Older Version": "安装旧版本"
 }

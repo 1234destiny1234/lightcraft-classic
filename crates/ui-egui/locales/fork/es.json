@@ -1499,5 +1499,9 @@
   "Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition": "Muestra la foto como la muestran las pantallas SDR y las exportaciones SDR, para ajustar su versión SDR",
   "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.": "Estos controles definen cómo se ve la foto en pantallas SDR y en exportaciones SDR. Active Previsualizar para pantalla SDR para verlos.",
   "Graphics interface": "Interfaz gráfica",
-  "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.": "Se aplica en el próximo inicio. Si la app tarda en iniciarse con la GPU activada, prueba Vulkan: en algunos equipos prepara la GPU mucho más rápido."
+  "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.": "Se aplica en el próximo inicio. Si la app tarda en iniciarse con la GPU activada, prueba Vulkan: en algunos equipos prepara la GPU mucho más rápido.",
+  "It needs features this version of the app doesn't have:": "Necesita funciones que esta versión de la aplicación no tiene:",
+  "Install a newer version of the app to use it.": "Instala una versión más reciente de la aplicación para usarlo.",
+  "It can't be installed:": "No se puede instalar:",
+  "Install Older Version": "Instalar versión anterior"
 }

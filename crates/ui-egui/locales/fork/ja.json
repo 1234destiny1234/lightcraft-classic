@@ -1496,5 +1496,9 @@
   "Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition": "SDR ディスプレイや SDR 書き出しでの見え方で写真を表示し、SDR 版を調整します",
   "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.": "これらは SDR ディスプレイと SDR 書き出しでの写真の見え方を設定します。確認するには「SDR ディスプレイ用にプレビュー」をオンにしてください。",
   "Graphics interface": "グラフィックスインターフェース",
-  "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.": "次回起動時に適用されます。GPU をオンにすると起動が遅い場合は Vulkan をお試しください。一部のコンピューターでは GPU の準備がはるかに速くなります。"
+  "Applies at next launch. If the app is slow to start with the GPU on, try Vulkan: it prepares the GPU much faster on some computers.": "次回起動時に適用されます。GPU をオンにすると起動が遅い場合は Vulkan をお試しください。一部のコンピューターでは GPU の準備がはるかに速くなります。",
+  "It needs features this version of the app doesn't have:": "このバージョンのアプリにない機能が必要です:",
+  "Install a newer version of the app to use it.": "使用するには、新しいバージョンのアプリをインストールしてください。",
+  "It can't be installed:": "インストールできません:",
+  "Install Older Version": "古いバージョンをインストール"
 }
