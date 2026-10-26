@@ -138,10 +138,10 @@ pub fn wanted() -> bool {
     !disabled() && Platform::current().has_hdr_path()
 }
 
-/// The headroom the Wayland compositor reports for its best output (`wayland_hdr`), read once
-/// at start-up ([`read_compositor_headroom`]). `None`: not Wayland, no colour management, or
-/// every output is SDR right now.
-static COMPOSITOR_HEADROOM: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
+/// The headroom the Wayland compositor reports for its best output (`wayland_hdr`) and that
+/// output's reference white (cd/m²), read once at start-up ([`read_compositor_headroom`]). `None`:
+/// not Wayland, no colour management, or every output is SDR right now.
+static COMPOSITOR_LEVELS: std::sync::OnceLock<Option<(f32, f32)>> = std::sync::OnceLock::new();
 
 /// HDR metadata for the window's swapchain (`lcc_hdrmeta`), kept in step with the levels.
 static METADATA: std::sync::Mutex<Option<lcc_hdrmeta::HdrMetadata>> = std::sync::Mutex::new(None);
@@ -149,7 +149,19 @@ static METADATA: std::sync::Mutex<Option<lcc_hdrmeta::HdrMetadata>> = std::sync:
 /// Ask the Wayland compositor once for its outputs' headroom (before the window opens; also
 /// decides native Wayland over XWayland). Elsewhere, or with HDR switched off: `None`.
 pub fn read_compositor_headroom() -> Option<f32> {
-    *COMPOSITOR_HEADROOM.get_or_init(|| {
+    read_compositor_levels().map(|(headroom, _)| headroom)
+}
+
+/// The SDR white (cd/m²) of the output [`read_compositor_headroom`] reports: what the compositor
+/// shows SDR content at. An extended-linear surface's 1.0 is 80 cd/m² there as in scRGB (KWin
+/// checked: drawn at 1.0, the window was as dark as 80 cd/m² beside a 180 cd/m² desktop), so the
+/// window is drawn at `white / 80` like on Windows.
+pub fn read_compositor_white() -> Option<f32> {
+    read_compositor_levels().map(|(_, white)| white)
+}
+
+fn read_compositor_levels() -> Option<(f32, f32)> {
+    *COMPOSITOR_LEVELS.get_or_init(|| {
         if disabled() || std::env::var_os("WAYLAND_DISPLAY").is_none() {
             return None;
         }
@@ -158,7 +170,8 @@ pub fn read_compositor_headroom() -> Option<f32> {
             match crate::wayland_hdr::read() {
                 Ok(outputs) => {
                     log::info!("display: Wayland outputs {outputs:?}");
-                    crate::wayland_hdr::best_headroom(&outputs)
+                    let best = crate::wayland_hdr::best_output(&outputs)?;
+                    Some((crate::wayland_hdr::headroom_of(&best)?, best.reference as f32))
                 }
                 Err(e) => {
                     log::info!("display: no Wayland output luminances ({e})");
@@ -191,7 +204,7 @@ pub fn configure(options: &mut eframe::egui_wgpu::WgpuConfiguration) {
             }
         }
     }));
-    set_metadata_for(levels(Platform::current(), None, env_f32("HDR_HEADROOM").or(read_compositor_headroom()), env_f32("HDR_PAPER_WHITE")));
+    set_metadata_for(levels(Platform::current(), None, env_f32("HDR_HEADROOM").or(read_compositor_headroom()), paper_white()));
 }
 
 /// Keep the swapchain metadata in step with `l` (taken at the next surface configure).
@@ -218,9 +231,16 @@ pub struct Levels {
     pub scale: f32,
 }
 
+/// SDR white (cd/m²) for [`levels`] where the display itself doesn't say: the user's
+/// `<PREFIX>_HDR_PAPER_WHITE`, else the Wayland compositor's reference white.
+fn paper_white() -> Option<f32> {
+    env_f32("HDR_PAPER_WHITE").or_else(read_compositor_white)
+}
+
 /// [`Levels`] for `platform` from the display's `info` (`None`: not queried), with the user's
 /// overrides `<PREFIX>_HDR_HEADROOM` (× SDR white) and `<PREFIX>_HDR_PAPER_WHITE` (cd/m²) for
-/// platforms that don't report them (Wayland).
+/// platforms that don't report them (on Wayland, the compositor's reference white stands in for
+/// the latter: [`paper_white`]).
 pub fn levels(platform: Platform, info: Option<&DisplayHdrInfo>, headroom_override: Option<f32>, paper_white_override: Option<f32>) -> Levels {
     let positive = |v: &f32| v.is_finite() && *v > 0.0;
     let headroom = headroom_override.or_else(|| info.and_then(DisplayHdrInfo::tone_map_headroom)).filter(positive);
@@ -249,7 +269,7 @@ pub fn report(state: Option<&RenderState>) -> DisplayOutput {
     log::info!("display: surface offers [{}]", offered.join(", "));
     let info = state.display_hdr_info.read().clone();
     log::info!("display: HDR facts {info:?}");
-    let l = levels(Platform::current(), info.as_ref(), env_f32("HDR_HEADROOM").or_else(read_compositor_headroom), env_f32("HDR_PAPER_WHITE"));
+    let l = levels(Platform::current(), info.as_ref(), env_f32("HDR_HEADROOM").or_else(read_compositor_headroom), paper_white());
     let target = (state.target_color_space == ColorSpace::ExtendedSrgbLinear || state.target_format != TextureFormat::Rgba16Float)
         .then_some(state.target_format);
     let out = choose(target, Platform::current(), l.headroom, disabled());
@@ -297,7 +317,7 @@ impl WindowHdr {
             state: state.clone(),
             extended: state.target_format == TextureFormat::Rgba16Float && state.target_color_space == ColorSpace::ExtendedSrgbLinear,
             headroom_override: env_f32("HDR_HEADROOM").or_else(read_compositor_headroom),
-            paper_white_override: env_f32("HDR_PAPER_WHITE"),
+            paper_white_override: paper_white(),
             levels: None,
             upload_headroom: None,
             textures: std::collections::HashMap::new(),
