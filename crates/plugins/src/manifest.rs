@@ -33,6 +33,8 @@ pub const MAX_TEXT_BYTES: usize = 64 * 1024;
 /// permission group or host call added from now on gets a name here; what the host had before
 /// `requires` existed is the baseline and has none.
 pub const HOST_FEATURES: &[&str] = &[
+    // `programs` in the permissions, `program.list` / `program.start` and the `program.end` hook
+    "programs",
     // `settings` in the manifest, `settings.get` / `settings.set`, dialogs that remember their
     // values (`remember`), and the `command.prepare` / `settings.prepare` hooks
     "settings",
@@ -227,7 +229,7 @@ fn short(s: &str) -> String {
     s.chars().take(64).collect()
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
