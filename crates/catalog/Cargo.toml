@@ -30,9 +30,10 @@ siphasher = { workspace = true }
 redb = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-same-file = { workspace = true }
+winapi-util = { workspace = true }
 
 [dev-dependencies]
 lcc-fuzzkit = { workspace = true }
 lcc-geom = { workspace = true }
+lcc-testkit = { workspace = true }
 proptest = { workspace = true }
