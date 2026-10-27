@@ -87,8 +87,16 @@ fn median(v: &mut [f32]) -> f32 {
     if v.is_empty() {
         return 0.0;
     }
-    v.sort_by(f32::total_cmp);
     let n = v.len();
+    // The noise model puts thousands of samples in each brightness bin. Only its middle
+    // value(s) are needed: partition once instead of ordering the whole bin. Keep sorting the
+    // tiny neighbourhoods, for which partitioning has no advantage.
+    if n > 16 {
+        let (lower, middle, _) = v.select_nth_unstable_by(n / 2, f32::total_cmp);
+        let upper = *middle;
+        return if n % 2 == 1 { upper } else { 0.5 * (lower.iter().copied().max_by(f32::total_cmp).unwrap_or(upper) + upper) };
+    }
+    v.sort_by(f32::total_cmp);
     if n % 2 == 1 { v[n / 2] } else { 0.5 * (v[n / 2 - 1] + v[n / 2]) }
 }
 
@@ -340,6 +348,37 @@ fn lit_around(v: &View<'_>, x: usize, y: usize, black: f32, noise: Noise, buf: &
 #[cfg(test)]
 mod tests {
     use crate::*;
+
+    #[test]
+    fn noise_bin_partition_matches_the_sorted_median() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        for n in (0..=257).chain([1024, 4095, 4096, 65536]) {
+            let mut values: Vec<f32> = (0..n)
+                .map(|_| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    // Repeated counts and both signs, as well as bins with unique values.
+                    (seed % 4096) as f32 - 2048.0
+                })
+                .collect();
+            for special in [0.0, -0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+                if let Some(first) = values.first_mut() {
+                    *first = special;
+                }
+                let mut sorted = values.clone();
+                sorted.sort_by(f32::total_cmp);
+                let expected = if n == 0 {
+                    0.0
+                } else if n % 2 == 1 {
+                    sorted[n / 2]
+                } else {
+                    0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
+                };
+                assert_eq!(super::median(&mut values.clone()).to_bits(), expected.to_bits(), "{n} samples, {special}");
+            }
+        }
+    }
 
     /// A `w × h` RGGB mosaic, black 512, white 16383, flat grey 2000 counts above black with
     /// deterministic noise of about σ ≈ 30 counts.

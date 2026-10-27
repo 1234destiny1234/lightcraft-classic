@@ -1717,5 +1717,7 @@
   "It needs features this version of the app doesn't have:": "Ему нужны функции, которых нет в этой версии приложения:",
   "Install a newer version of the app to use it.": "Установите более новую версию приложения, чтобы использовать его.",
   "It can't be installed:": "Его нельзя установить:",
-  "Install Older Version": "Установить более старую версию"
+  "Install Older Version": "Установить более старую версию",
+  "Plug-in Settings": "Настройки плагина",
+  "this plug-in has no settings": "у этого плагина нет настроек"
 }
