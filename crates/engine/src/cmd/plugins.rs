@@ -1676,6 +1676,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A prepare step only reads, so it starts no program: opening a command's dialog or the
+    /// plug-in's settings never runs one.
+    #[test]
+    fn prepare_steps_start_no_program() {
+        let _turn = turn();
+        let mut s = Session::with_demo();
+        let desktop = std::sync::Arc::new(crate::desktop::Recorder::default());
+        s.desktop = desktop.clone();
+        let decl = json!({"programs": [{"id": "conv", "name": "Converter", "linuxExe": "conv", "windowsExe": "conv.exe", "macBundleIds": ["org.example.conv"]}]});
+        manager()
+            .get_or_insert_with(Manager::in_memory)
+            .install_bytes_by_user(
+                &program_module_with(
+                    r#""commands":[{"id":"go","label":"Go","prepare":true}],"settings":[{"key":"n","label":"N","type":"number","min":0,"max":10,"default":1,"prepare":true}]"#,
+                ),
+                Some(serde_json::from_value(decl).unwrap()),
+                false,
+            )
+            .unwrap();
+        let id = s.visible_cloned()[0].0;
+        let prepared = s.execute("plugin.prepare", &json!({"id": "test.prog", "command": "go", "ids": [id]}));
+        let settings = s.execute("plugin.settings", &json!({"id": "test.prog"}));
+        let started = desktop.requests();
+        // a program started by mistake exits, so its run ends and its folder goes
+        desktop.finish_programs();
+        for r in &started {
+            if let crate::desktop::Request::StartProgram { tmp, .. } = r {
+                eventually("a mistaken run's folder to go", || !tmp.exists());
+            }
+        }
+        manager().get_or_insert_with(Manager::in_memory).uninstall("test.prog").unwrap();
+        assert!(started.is_empty(), "nothing started: {started:?}\nprepare: {prepared:?}\nsettings: {settings:?}");
+        for (what, reply) in [("the dialog's prepare step", &prepared), ("the settings' prepare step", &settings)] {
+            let error = reply.as_ref().ok().and_then(|r| r["error"].as_str()).unwrap_or_default();
+            assert!(error.contains("can only read"), "{what} is refused as read-only: {reply:?}");
+        }
+    }
+
     /// The hook commands run on the session's thread start nothing either.
     #[test]
     fn export_hooks_and_destinations_start_no_program() {

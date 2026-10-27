@@ -53,9 +53,9 @@ These need the host feature **`settings`**: a plug-in that uses any of them says
     runs.
 
   A prepare step **can only read**, whatever the plug-in is granted: there, `metadata.setStandard`,
-  `ns.set`, `settings.set`, `fs.writeText`, `fs.writeBytes`, `fs.remove` and any `http.request`
-  other than `GET` or `HEAD` fail with "a prepare step can only read". The command itself may write
-  as usual.
+  `ns.set`, `settings.set`, `fs.writeText`, `fs.writeBytes`, `fs.remove`, `program.start` and any
+  `http.request` other than `GET` or `HEAD` fail with "a prepare step can only read". The command
+  itself may write as usual.
 
   A `choice` field with no `options` (`"options": []`) gets its options only from the prepare
   step; it is allowed only in a command with `prepare`. A settings field with `"prepare": true`
@@ -152,7 +152,8 @@ module again keeps them.
 
   Only a plug-in command (`plugin.run`, a menu item) starts programs: export hooks, export
   destinations, metadata providers and `program.end` can list programs but get an error from
-  `program.start` ("start the program from a command"). Publish services have neither (no
+  `program.start` ("start the program from a command"), and so do a command's and the settings'
+  prepare steps ("a prepare step can only read"). Publish services have neither (no
   catalog, no programs). A command's lookups (at most 3 seconds per lookup) and the check that the
   program didn't fail at once (300 ms) run on the thread that runs the command, in the app the UI
   thread, so a start can hold the window that long.
