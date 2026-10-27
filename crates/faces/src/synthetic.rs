@@ -108,6 +108,17 @@ fn node_bytes(op: &str, inputs: &[&str], output: &str, attrs: &[(&str, Attribute
     n
 }
 
+/// A one-dimensional INT64 initializer (a Reshape's target shape).
+fn int_tensor_bytes(name: &str, values: &[i64]) -> Vec<u8> {
+    let mut t = Vec::new();
+    varint_field(1, values.len() as u64, &mut t);
+    varint_field(2, 7, &mut t); // INT64
+    len_field(8, name.as_bytes(), &mut t);
+    let raw: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+    len_field(9, &raw, &mut t);
+    t
+}
+
 fn float_tensor_bytes(name: &str, dims: &[u64], values: &[f32]) -> Vec<u8> {
     let mut t = Vec::new();
     for d in dims {
@@ -213,7 +224,9 @@ pub(crate) fn norm_overflow_model() -> Vec<u8> {
     model
 }
 
-/// A small YuNet-shaped stand-in that reports no faces, independent of the real downloaded model.
+/// A small YuNet-shaped stand-in that reports no faces, independent of the real downloaded model. Like YuNet it is
+/// fully convolutional (a zero 1 x 1 convolution per stride, then `[1, cells, components]`), so it runs at any input
+/// size that is a multiple of 32.
 pub fn tiny_detector_model() -> Vec<u8> {
     let mut graph = Vec::new();
     len_field(11, &value_info_bytes("input", 1, &[Ok(1), Ok(3), Ok(64), Ok(64)]), &mut graph);
@@ -221,10 +234,14 @@ pub fn tiny_detector_model() -> Vec<u8> {
         let cells = (64 / stride) * (64 / stride);
         for (kind, components) in [("cls", 1u64), ("obj", 1), ("bbox", 4), ("kps", 10)] {
             let name = format!("{kind}_{stride}");
-            let weight = format!("weight_{name}");
-            let values = vec![0.0; (cells * components) as usize];
-            len_field(5, &float_tensor_bytes(&weight, &[1, cells, components], &values), &mut graph);
-            len_field(1, &node_bytes("Identity", &[&weight], &name, &[]), &mut graph);
+            let (weight, shape, conv, nhwc) = (format!("weight_{name}"), format!("shape_{name}"), format!("conv_{name}"), format!("nhwc_{name}"));
+            len_field(5, &float_tensor_bytes(&weight, &[components, 3, 1, 1], &vec![0.0; (components * 3) as usize]), &mut graph);
+            len_field(5, &int_tensor_bytes(&shape, &[1, -1, components as i64]), &mut graph);
+            let s = stride as i64;
+            let attrs = [("kernel_shape", Attribute::Ints(&[1, 1])), ("strides", Attribute::Ints(&[s, s]))];
+            len_field(1, &node_bytes("Conv", &["input", &weight], &conv, &attrs), &mut graph);
+            len_field(1, &node_bytes("Transpose", &[&conv], &nhwc, &[("perm", Attribute::Ints(&[0, 2, 3, 1]))]), &mut graph);
+            len_field(1, &node_bytes("Reshape", &[&nhwc, &shape], &name, &[]), &mut graph);
             len_field(12, &value_info_bytes(&name, 1, &[Ok(1), Ok(cells), Ok(components)]), &mut graph);
         }
     }

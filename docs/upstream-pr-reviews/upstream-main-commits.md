@@ -3,7 +3,7 @@
 Non-merge commits on upstream `main` that the fork lacked, judged one by one (policy: no merges, cherry-pick what
 helps; `docs/upstream-merge.md`).
 
-**Reviewed up to:** upstream/main `c7961df10bbce71667b9026a99ba9fca3673ec27` (2026-10-26), against Chromaforge main `be53dd149` (previous pass: `522beb0c3` against `a52c9de11`) (first pass: `31ec62cd0`, 2026-10-25).
+**Reviewed up to:** upstream/main `c9860ea7a3fa367451acd9d8cf23538c345192c6` (2026-10-27): nothing new taken (r4): the unlisted commits after `c7961df10` are upstream file-layout refactors (they only move files, and would conflict with every fork file they touch), and the docking follow-ups stay deferred as below. Before that: `c7961df10` against Chromaforge main `be53dd149` (previous pass: `522beb0c3` against `a52c9de11`) (first pass: `31ec62cd0`, 2026-10-25).
 
 Taken commits are cherry-picked with `-x`; crate and app-struct names were rewritten to the fork's, upstream's file
 `format` tag for print templates went into `crates/engine/src/legacy.rs` (as for slideshow templates), and doc rows

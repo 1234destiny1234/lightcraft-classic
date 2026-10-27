@@ -8,7 +8,7 @@ use lcc_codecs::{ChromaSubsampling, EncodeImage, EncodeMeta, JxlColour, JxlOptio
 pub use lcc_codecs::{JxlEffort, TiffCompression};
 use lcc_meta::{DateTime, Gps, Metadata};
 pub use lcc_pipeline::{DeepImage, DeepSamples, OutputDepth, OutputSpace};
-use lcc_raster::Rgba8;
+use lcc_raster::{Plane, Rgba8};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +66,12 @@ impl ExportFormat {
     /// Formats that render pixels (everything but `Original` and `Dng`).
     pub fn is_rendered(self) -> bool {
         !matches!(self, Self::Original | Self::Dng)
+    }
+
+    /// Formats whose exports keep a transparent source's alpha (straight in PNG and WebP,
+    /// associated in TIFF); the others composite it onto white (issue #2976).
+    pub fn keeps_alpha(self) -> bool {
+        matches!(self, Self::Png | Self::Tiff | Self::Webp)
     }
 }
 
@@ -404,9 +410,23 @@ fn blend_watermark(img: &mut Rgba8, wm: &Watermark, floor_scale: f32) {
     let width = img.width;
     watermark_coverage(img.width, img.height, wm, crate::fonts::CRAFT_FONTS, floor_scale, |x, y, k, col| {
         let p = &mut img.data[y * width + x];
-        for c in 0..3 {
-            p[c] = (p[c] as f32 + (col[c] as f32 - p[c] as f32) * k).round() as u8;
+        if p[3] == 255 {
+            for c in 0..3 {
+                p[c] = (p[c] as f32 + (col[c] as f32 - p[c] as f32) * k).round() as u8;
+            }
+            return;
         }
+        // over a transparent pixel (an export that keeps transparency): the mark composites over
+        // it and raises its alpha, so it shows where the photo is transparent
+        let a = p[3] as f32 / 255.0;
+        let out = k + a * (1.0 - k);
+        if out <= 0.0 {
+            return;
+        }
+        for c in 0..3 {
+            p[c] = ((col[c] as f32 * k + p[c] as f32 * a * (1.0 - k)) / out).round().clamp(0.0, 255.0) as u8;
+        }
+        p[3] = (out * 255.0).round().clamp(0.0, 255.0) as u8;
     });
 }
 
@@ -430,20 +450,48 @@ pub fn draw_watermark_in(img: &mut Rgba8, wm: &Watermark, x0: usize, y0: usize, 
 /// Draw `wm` onto a high-bit-depth image (`wm.color` is in the image's space, 8-bit encoded; float
 /// images are linear and blend in linear light).
 pub fn draw_watermark_deep(img: &mut DeepImage, wm: &Watermark) {
+    draw_watermark_deep_over(img, None, wm);
+}
+
+/// [`draw_watermark_deep`] onto an image with straight alpha `alpha` (its size): the mark
+/// composites over transparent pixels and raises their alpha, as [`draw_watermark`] does.
+fn draw_watermark_deep_over(img: &mut DeepImage, mut alpha: Option<&mut Plane>, wm: &Watermark) {
     let (width, trc) = (img.width, img.space.trc());
+    // over a transparent pixel `i`: the weights of the mark and of the pixel, its alpha raised
+    // (`None`: an opaque pixel, blended as without alpha)
+    let mut over = move |i: usize, k: f32| -> Option<(f32, f32)> {
+        let a = alpha.as_deref_mut().and_then(|a| a.data.get_mut(i))?;
+        let before = if a.is_finite() { a.clamp(0.0, 1.0) } else { 1.0 };
+        if before >= 1.0 {
+            return None;
+        }
+        let out = k + before * (1.0 - k);
+        *a = out;
+        Some(if out <= 0.0 { (0.0, 1.0) } else { (k / out, before * (1.0 - k) / out) })
+    };
     match &mut img.samples {
         DeepSamples::U16(v) => watermark_coverage(img.width, img.height, wm, crate::fonts::CRAFT_FONTS, 1.0, |x, y, k, col| {
+            let w = over(y * width + x, k);
             let i = (y * width + x) * 3;
             for c in 0..3 {
                 let p = v[i + c] as f32;
-                v[i + c] = (p + (col[c] as f32 * 257.0 - p) * k).round().clamp(0.0, 65535.0) as u16;
+                let t = col[c] as f32 * 257.0;
+                let blended = match w {
+                    Some((wk, wp)) => p * wp + t * wk,
+                    None => p + (t - p) * k,
+                };
+                v[i + c] = blended.round().clamp(0.0, 65535.0) as u16;
             }
         }),
         DeepSamples::F32(v) => watermark_coverage(img.width, img.height, wm, crate::fonts::CRAFT_FONTS, 1.0, |x, y, k, col| {
+            let w = over(y * width + x, k);
             let i = (y * width + x) * 3;
             for c in 0..3 {
                 let target = trc.decode(col[c] as f32 / 255.0);
-                v[i + c] += (target - v[i + c]) * k;
+                v[i + c] = match w {
+                    Some((wk, wp)) => v[i + c] * wp + target * wk,
+                    None => v[i + c] + (target - v[i + c]) * k,
+                };
             }
         }),
     }
@@ -1531,7 +1579,7 @@ pub fn encode_with_metadata(img: &Rgba8, o: &ExportOptions, meta: Option<&Metada
             return encode_jpeg_with_limit(o, |q| encode::encode_jpeg(&e, q, sub, &meta));
         }
         ExportFormat::Png => encode::encode_png(&e, &meta),
-        ExportFormat::Tiff => encode::encode_tiff(&e, o.tiff_compression, &meta),
+        ExportFormat::Tiff => encode::encode_tiff_associated(&e, o.tiff_compression, &meta),
         ExportFormat::Psd => encode::encode_psd(&e, &meta),
         ExportFormat::Webp => encode::encode_webp_lossless(&e, &meta),
         ExportFormat::Avif => encode::encode_avif(&e, o.quality, 8, &meta),
@@ -1577,11 +1625,16 @@ fn finish_8bit(img: &Rgba8, o: &ExportOptions) -> Rgba8 {
 
 /// Output sharpening and the watermark on a high-bit-depth render.
 fn finish_deep(img: &DeepImage, o: &ExportOptions) -> DeepImage {
+    finish_deep_over(img, None, o)
+}
+
+/// [`finish_deep`] of an image with straight alpha `alpha`, which the watermark raises.
+fn finish_deep_over(img: &DeepImage, alpha: Option<&mut Plane>, o: &ExportOptions) -> DeepImage {
     let mut img = img.clone();
     output_sharpen_deep(&mut img, o.sharpen, o.sharpen_amount);
     if let Some(wm) = &o.watermark {
         let wm = Watermark { color: srgb8_in(img.space, wm.color), target: Some(img.space), ..wm.clone() };
-        draw_watermark_deep(&mut img, &wm);
+        draw_watermark_deep_over(&mut img, alpha, &wm);
     }
     img
 }
@@ -1640,17 +1693,50 @@ pub fn srgb8_in(space: OutputSpace, c: [u8; 3]) -> [u8; 3] {
 
 /// Encode a render according to `o`: its high-bit-depth samples when it has them (16-bit PNG/TIFF,
 /// 10-bit AVIF, 32-bit float linear TIFF), else its 8-bit image.
+///
+/// A render with alpha ([`lcc_pipeline::Rendered::alpha`]) keeps it in the formats that
+/// can ([`ExportFormat::keeps_alpha`]) when it is not opaque everywhere (issue #2976).
 pub fn encode_rendered(r: &lcc_pipeline::Rendered, o: &ExportOptions, meta: Option<&Metadata>) -> Result<Vec<u8>, String> {
+    let alpha = r.alpha.as_ref().filter(|_| o.format.keeps_alpha());
     match &r.deep {
-        Some(d) if o.effective_depth() != OutputDepth::U8 => encode_deep(d, o, meta),
-        _ => encode_with_metadata(&r.image, o, meta),
+        Some(d) if o.effective_depth() != OutputDepth::U8 => encode_deep_with_alpha(d, alpha, o, meta),
+        _ => match alpha {
+            Some(a) => encode_with_metadata(&with_alpha(&r.image, a)?, o, meta),
+            None => encode_with_metadata(&r.image, o, meta),
+        },
     }
+}
+
+/// `img` with straight alpha `a` (its size) in its fourth channel.
+fn with_alpha(img: &Rgba8, a: &Plane) -> Result<Rgba8, String> {
+    if (a.width, a.height) != (img.width, img.height) || a.data.len() != img.data.len() {
+        return Err("export: the transparency does not match the rendered image".into());
+    }
+    let mut out = img.clone();
+    for (p, &av) in out.data.iter_mut().zip(&a.data) {
+        p[3] = if av.is_finite() { (av.clamp(0.0, 1.0) * 255.0).round() as u8 } else { 255 };
+    }
+    Ok(out)
 }
 
 /// Encode a high-bit-depth image (see [`encode_rendered`]).
 pub fn encode_deep(img: &DeepImage, o: &ExportOptions, meta: Option<&Metadata>) -> Result<Vec<u8>, String> {
+    encode_deep_with_alpha(img, None, o, meta)
+}
+
+/// [`encode_deep`] keeping straight alpha `alpha` (the image's size) in PNG and TIFF when it is
+/// not opaque everywhere (associated in TIFF).
+fn encode_deep_with_alpha(img: &DeepImage, alpha: Option<&Plane>, o: &ExportOptions, meta: Option<&Metadata>) -> Result<Vec<u8>, String> {
     let meta_src = meta;
-    let img = finish_deep(img, o);
+    let mut alpha = match alpha {
+        Some(a) if (a.width, a.height) != (img.width, img.height) => return Err("export: the transparency does not match the rendered image".into()),
+        a => a.cloned(),
+    };
+    let img = finish_deep_over(img, alpha.as_mut(), o);
+    let alpha = alpha.filter(|a| match img.samples {
+        DeepSamples::U16(_) => a.data.iter().any(|&v| (v.clamp(0.0, 1.0) * 65535.0).round() < 65535.0),
+        DeepSamples::F32(_) => a.data.iter().any(|&v| v < 1.0),
+    });
     let profile = match img.samples {
         DeepSamples::F32(_) => icc::write_matrix_trc(&img.space.rgb_space(), &lcc_codecs::Trc::Linear),
         DeepSamples::U16(_) => icc::write_named(named_space(img.space)),
@@ -1659,14 +1745,32 @@ pub fn encode_deep(img: &DeepImage, o: &ExportOptions, meta: Option<&Metadata>) 
     let xmp = meta.map(|m| lcc_meta::write_xmp(m, None));
     let meta = EncodeMeta { icc: Some(&profile), exif: exif.as_deref(), xmp: xmp.as_deref(), ppi: Some(o.ppi) };
     let (w, h) = (img.width as u32, img.height as u32);
-    let e = match &img.samples {
-        DeepSamples::U16(v) => EncodeImage::new(w, h, 3, Samples::U16(v)),
-        DeepSamples::F32(v) => EncodeImage::new(w, h, 3, Samples::F32(v)),
+    // RGB plus the alpha as a fourth sample
+    fn rgba<T: Copy>(v: &[T], a: &Plane, alpha: impl Fn(f32) -> T) -> Vec<T> {
+        v.as_chunks::<3>()
+            .0
+            .iter()
+            .zip(&a.data)
+            .flat_map(|(p, &av)| [p[0], p[1], p[2], alpha(if av.is_finite() { av.clamp(0.0, 1.0) } else { 1.0 })])
+            .collect()
+    }
+    let (rgba16, rgba32);
+    let e = match (&img.samples, alpha.as_ref().filter(|_| matches!(o.format, ExportFormat::Png | ExportFormat::Tiff))) {
+        (DeepSamples::U16(v), Some(a)) => {
+            rgba16 = rgba(v, a, |av| (av * 65535.0).round() as u16);
+            EncodeImage::new(w, h, 4, Samples::U16(&rgba16))
+        }
+        (DeepSamples::F32(v), Some(a)) => {
+            rgba32 = rgba(v, a, |av| av);
+            EncodeImage::new(w, h, 4, Samples::F32(&rgba32))
+        }
+        (DeepSamples::U16(v), None) => EncodeImage::new(w, h, 3, Samples::U16(v)),
+        (DeepSamples::F32(v), None) => EncodeImage::new(w, h, 3, Samples::F32(v)),
     };
     let r = match (o.format, &img.samples) {
         (ExportFormat::Png, DeepSamples::F32(v)) if img.space == OutputSpace::Rec2020 => lcc_codecs::encode_png_pq(w, h, v, &meta),
         (ExportFormat::Png, _) => encode::encode_png(&e, &meta),
-        (ExportFormat::Tiff, _) => encode::encode_tiff(&e, o.tiff_compression, &meta),
+        (ExportFormat::Tiff, _) => encode::encode_tiff_associated(&e, o.tiff_compression, &meta),
         (ExportFormat::Psd, _) => encode::encode_psd(&e, &meta),
         (ExportFormat::RenderedDng, DeepSamples::F32(v)) => {
             let m = meta_src.cloned().unwrap_or_default();
@@ -1918,7 +2022,9 @@ fn prepare_guarded(
         let label = p.file_name.clone();
         let meta = export_metadata(p, &session.catalog, o);
         let gain_map = o.hdr_output() && o.format == ExportFormat::Jpeg;
-        let job = session.export_job(id, w, h, o.effective_space(), o.effective_depth())?;
+        // (HDR files are written without alpha: their transparent areas stay on white)
+        let alpha = o.format.keeps_alpha() && !o.hdr_output();
+        let job = session.export_job_with_alpha(id, w, h, o.effective_space(), o.effective_depth(), alpha)?;
         let weight = render_weight(full_px, long, job.level, w.saturating_mul(h));
         if let Some(why) = too_big_for_memory((w, h), native_px, weight, crate::memory::total_ram()) {
             return Err(format!("{label}: {why}"));
@@ -2680,6 +2786,29 @@ mod tests {
             assert!(decoded.has_alpha, "{format:?} must retain real alpha");
             assert_eq!(decoded.to_srgb8().data, img.data, "{format:?} samples");
         }
+    }
+
+    /// Issue #2976: on a transparent area of an export that keeps alpha, the watermark composites
+    /// over it and raises the alpha, so it shows; opaque pixels blend as before.
+    #[test]
+    fn watermark_shows_over_transparency() {
+        let wm = Watermark { text: "LC".into(), size: 0.3, opacity: 1.0, shadow: false, color: [255, 255, 255], ..Default::default() };
+        let mut clear = Rgba8::from_fn(200, 100, |_, _| [0, 0, 0, 0]);
+        draw_watermark(&mut clear, &wm);
+        let marked: Vec<&[u8; 4]> = clear.data.iter().filter(|p| p[3] > 0).collect();
+        assert!(!marked.is_empty(), "the mark raises the alpha");
+        assert!(marked.iter().all(|p| p[0] == 255 && p[1] == 255 && p[2] == 255), "in its own colour, not faded towards black");
+        assert!(marked.iter().any(|p| p[3] == 255));
+        let mut opaque = Rgba8::from_fn(200, 100, |_, _| [0, 0, 0, 255]);
+        draw_watermark(&mut opaque, &wm);
+        assert!(opaque.data.iter().all(|p| p[3] == 255));
+        let lit = |i: &Rgba8| i.data.iter().filter(|p| p[0] > 128).count();
+        assert!(lit(&opaque) > 0);
+        // straight-alpha deep images: the plane is raised the same way
+        let mut deep = DeepImage { width: 200, height: 100, space: OutputSpace::Srgb, samples: DeepSamples::U16(vec![0; 200 * 100 * 3]) };
+        let mut alpha = Plane::new(200, 100);
+        draw_watermark_deep_over(&mut deep, Some(&mut alpha), &wm);
+        assert!(alpha.data.iter().any(|&a| a > 0.99) && alpha.data.contains(&0.0));
     }
 
     #[test]

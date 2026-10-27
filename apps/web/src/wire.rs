@@ -125,6 +125,7 @@ impl WireJob {
             window: self.window.map(|[x, y, w, h]| lcc_engine::pipeline::PixelWindow { x, y, w, h }),
             display: None,
             downscale: lcc_engine::pipeline::Downscale::Smooth,
+            alpha: false,
         }
     }
 

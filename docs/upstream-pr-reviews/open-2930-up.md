@@ -97,3 +97,56 @@ Closed upstream without merging.
 | 2999 | Clean room crw format decode | SKIP | closed; Chromaforge already decodes CRW | |
 | 1589 | Shrink the app chrome to PhotoCraft control scale | SKIP | shrinks the chrome to another app's control scale; closed upstream pending its scale decision (#2962), and the fork keeps the Lightroom-parity scale | — |
 | 1848 | gpu: renders queue for device memory; out of memory never retires the GPU (#1764) | LEARN | GPU out-of-memory should queue renders and fall back to the CPU instead of retiring the GPU (#1764); closed unmerged; the fork has its own `crates/gpumem` budget, revisit if OOM retirements are reported; already in Chromaforge as `crates/gpu/src/budget.rs` (commit 6c4864f6a) | in main (6c4864f6a) |
+
+## Review r4 (2026-10-27): open PRs not yet listed, up to 3119
+
+| PR | Title | Decision | Reason | Fork PR |
+|---|---|---|---|---|
+| 3038 | macOS: CFBundleLocalizations | ADOPT | AppKit's own dialogs follow the app's languages | this bundle |
+| 3041 | Detail startup view for launch files | LEARN | the fork's startup path differs; port only if it shows the same bug | — |
+| 3042 | Windows: gvfs unused variable | SKIP | already in Chromaforge | — |
+| 3043 | Dependabot bumps (quick-xml, jixel, candle 0.11) | SKIP | Chromaforge pins its own versions; candle / jixel bumps are a regression risk | — |
+| 3045 | Windows: folder trees hide hidden folders | ADOPT | small isolated fix; non-Windows unchanged | this bundle |
+| 3047 | Web: craftStorage | SKIP | needs craft-libs' `craft-web-host` | — |
+| 3054 | Reject invalid XMP GPS subdivisions | ADOPT | `crates/meta` validation only; its UI / locale parts left out | this bundle |
+| 3055 | PERF-CULL: wedding culling | LEARN | large multi-crate perf work; mine piecewise later | — |
+| 3073 | Lens DB auto-download on first run | LEARN | Chromaforge has its own `lens_db` commands; upstream's adds network on first run and a catalog format bump | — |
+| 3074 | Integration: 23 approved PRs | SKIP | a bundle of other PRs, reviewed one by one | — |
+| 3076 | `--connect` resends a command that crossed the idle-close notice (#3069) | ADOPT | control client / MCP retry bug fix | this bundle |
+| 3077 | Culling: loupe uses built previews | SKIP | stacked on #3055 | — |
+| 3078 | Text box: an outside press ends the edit with the menu open | LEARN | the fork's `TextField` diverged; recheck there | — |
+| 3079 | `cargo xtask test` under ci's caps (#3058) | SKIP | upstream test infrastructure | — |
+| 3080 | Culling: camera JPEG first | SKIP | stacked on #3077 | — |
+| 3083 | testkit deadline helpers and watchdog (#3062) | LEARN | bounded test waits; upstream's harness | — |
+| 3084 | Settings: a tab click keeps typed text | SKIP | Settings redesigned in Chromaforge | — |
+| 3085 | CI: simplify clippy-flagged conditions | SKIP | Chromaforge's clippy doesn't flag these lines | — |
+| 3086 | Plain cargo test on 4 threads (#3059) | SKIP | test infrastructure | — |
+| 3087 | wgpu compatibility fork for OCLP Macs (#1939) | SKIP | forked wgpu dependency | — |
+| 3088 | Settings test restores the memory budget (#3065) | SKIP | upstream test harness | — |
+| 3089 | An album shown is not also a filter | LEARN | check the fork's filter model first | — |
+| 3090 | Export-dialog test waits with the background bound | SKIP | upstream test flake | — |
+| 3091 | SAM 3 model can be removed in Settings | LEARN | engine remove command worth having; Settings UI is Chromaforge's | — |
+| 3092 | YuNet looks at photos up to 1024 px in their own shape | ADOPT | finds small faces; isolated to `crates/faces` | this bundle |
+| 3093 | Undo of a keyword delete / folder removal restores filters | LEARN | depends on upstream's #2758 filter work | — |
+| 3095 | Settings tab opened by a command keeps text | SKIP | Settings redesigned in Chromaforge | — |
+| 3096 | Tests stop asserting wall-clock time (#3064) | SKIP | test infrastructure | — |
+| 3097 | CR3 white level saturation (#2053) | ADOPT | CR3 highlights clipped at the real sensor ceiling | this bundle |
+| 3098 | CLI refused-connection tests use a free port (#3070) | ADOPT | 18437 clashes with agents' control ports | this bundle |
+| 3099 | xtask bounds each test binary (#3060) | SKIP | draft test infrastructure | — |
+| 3100 | ui-egui test caches sized (#3066) | SKIP | draft; its own PR doubts the value | — |
+| 3102 | AGENTS.md test rules (#3061) | SKIP | upstream docs | — |
+| 3104 | Windows installation policy | SKIP | upstream packaging (draft) | — |
+| 3105 | JPEG size limit reports its quality (#3033) | LEARN | engine report worth having; the export dialog is Chromaforge's | — |
+| 3106 | Sidebar multi-select | SKIP | stacked on #1153 / #2707 | — |
+| 3107 | Sidebar multi-select actions | SKIP | stacked on #3106 | — |
+| 3108 | Cut / Copy / Paste albums and keywords | SKIP | stacked on #3107 | — |
+| 3109 | SAM 3 masking, model preload, a6400 lens | SKIP | mixed PR; conflicts with Chromaforge's segment work | — |
+| 3110 | ai-bench: WIDER FACE | SKIP | benchmark tooling | — |
+| 3111 | Enforce coding standards via clippy | SKIP | workspace lint policy change | — |
+| 3112 | ai-bench: LFW | SKIP | benchmark tooling | — |
+| 3113 | ui-egui test apps render on two workers (#3067) | LEARN | test memory; check the production render pool is unchanged | — |
+| 3115 | Batch keyword delete / move by level | SKIP | stacked on #2757 | — |
+| 3116 | Transparent sources keep alpha in PNG, TIFF and WebP (#2976) | ADOPT | export correctness | this bundle |
+| 3117 | GPU device creation gives up after a time limit (#3068) | ADOPT | hang fix | this bundle |
+| 3118 | Memory sizing honours cgroup limits (#3072) | ADOPT | containers, Flatpak, systemd scopes | this bundle |
+| 3119 | A cut-short folder move resumes at the next open | SKIP | stacked on #2914 / #1925 | — |

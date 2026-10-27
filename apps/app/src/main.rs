@@ -155,7 +155,9 @@ fn window_files(in_memory: bool) -> window_gpu::Files {
 }
 
 /// Written while the GPU compute device is created, removed once that returned
-/// (`lcc_gpu::backend::set_init_marker`). Not with `<PREFIX>_NO_PREFS` (tests, scripts).
+/// (`lcc_gpu::backend::set_init_marker`); still there after a quit while a creation that
+/// passed its time limit was stuck in the driver (#3068). Not with `<PREFIX>_NO_PREFS` (tests,
+/// scripts).
 fn gpu_marker_path() -> Option<std::path::PathBuf> {
     if lcc_brand::env_is_set("NO_PREFS") {
         return None;

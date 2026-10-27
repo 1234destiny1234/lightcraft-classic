@@ -905,7 +905,7 @@ pub fn render(
             return None;
         }
         // (the texture's texels went out above; no float samples come back)
-        return Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage });
+        return Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage, alpha: None });
     }
     if deep {
         if samples.len() != 3 * n {
@@ -914,14 +914,14 @@ pub fn render(
         }
         // as on the CPU (`finish_deep`): the whole frame in the output space, no overlays
         let deep = lcc_pipeline::DeepImage { width: w, height: h, space: req.space, samples: lcc_pipeline::DeepSamples::F32(samples) };
-        return Some(Rendered { image, histogram, deep: Some(deep), warnings: Vec::new(), coverage });
+        return Some(Rendered { image, histogram, deep: Some(deep), warnings: Vec::new(), coverage, alpha: None });
     }
     lcc_pipeline::visualize::apply(&mut image, req.overlay, &plan, overlay_mask.as_ref(), all_overlay_alphas.as_deref());
     // spots grew the window the render worked on: cut it back to the request
     if let Some(k) = plan.keep {
         image = image.crop(k.x, k.y, k.w, k.h);
     }
-    Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage })
+    Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage, alpha: None })
 }
 
 /// Words of the `hist_k` kernel's output: five 256-bin channels, the total, the vectorscope grid and

@@ -2956,6 +2956,7 @@ mod extended_linear_tests {
                 window: None,
                 display: None,
                 downscale: Default::default(),
+                alpha: false,
             },
             key: 0,
             cache: None,

@@ -494,3 +494,43 @@ fn upright_auto_says_why_whenever_it_leaves_the_photo_alone() {
     // Level with no lines at all says there are too few, not that they disagree
     assert_eq!(shortfall(Upright::Level, &Analysis::default()), Some(Reject::TooFew.message()));
 }
+
+/// Issue #2976: an alpha plane resamples exactly as the pixels do (here: a grey copy of the same
+/// plane), for plain, cropped / straightened / flipped / resized and warped frames; areas the warp
+/// brings in from outside the source are transparent.
+#[test]
+fn alpha_follows_the_pixels_through_every_frame() {
+    use crate::geometry::Frame;
+    use lcc_geom::Orientation;
+    use lcc_geom::Rect;
+    use lcc_raster::Plane;
+    let (w, h) = (240, 160);
+    let plane = Plane::from_fn(w, h, |x, y| grid_value(Point::new(x as f64 + 0.5, y as f64 + 0.5), 24.0));
+    let grey = Rgb32f::from_fn(w, h, |x, y| [plane.get(x, y); 3]);
+    let mut cropped = DevelopSettings { orientation: Orientation::Rotate90, ..Default::default() };
+    cropped.crop.geometry.rect = Rect::new(0.1, 0.2, 0.9, 0.7);
+    cropped.crop.geometry.angle = 3.0;
+    cropped.crop.flip_h = true;
+    let mut lens = DevelopSettings::default();
+    lens.optics.distortion = 40.0;
+    lens.geometry.vertical = -30.0;
+    for (name, s, out) in [("plain", DevelopSettings::default(), (w, h)), ("cropped", cropped, (90, 70)), ("warped", lens, (180, 120))] {
+        let f = Frame::new(w, h, &s, true);
+        let (ow, oh) = out;
+        let a = f.sample_alpha(&plane, ow, oh);
+        let c = f.sample(&grey, ow, oh);
+        assert_eq!((a.width, a.height), (ow, oh), "{name}");
+        let mut outside = 0;
+        for (i, (&av, px)) in a.data.iter().zip(&c.data).enumerate() {
+            if px[1] == crate::geometry::BLANK[1] && px[0] == crate::geometry::BLANK[0] {
+                assert_eq!(av, 0.0, "{name}: outside the source at {i}");
+                outside += 1;
+                continue;
+            }
+            assert!((av - px[1].clamp(0.0, 1.0)).abs() < 1e-4, "{name} at {i}: alpha {av} vs pixel {}", px[1]);
+        }
+        if name == "warped" {
+            assert!(outside > 0, "the warp brings in area from outside the source");
+        }
+    }
+}
