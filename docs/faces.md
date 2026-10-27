@@ -233,7 +233,12 @@ a ResNet-100 (so it is not the accuracy choice its size suggests). InsightFace's
 unnamed face boxes, in one undo step. A new run replaces earlier detections; boxes that came from XMP, or that you drew or
 named, are never touched (and a face that already has one is not boxed a second time), and no sidecar is written. It looks at the photo upright and uncropped with default settings,
 so your edits and crops do not matter. `apply: false` only reports. It finds faces of about 10 pixels and up in a
-640-pixel version of the photo (so very small faces in a large group photo can be missed; looking at tiles is planned).
+1024-pixel version of the photo, kept in its own shape (YuNet is fully convolutional, so it needn't squeeze the photo
+into its file's 640 x 640 square; a photo smaller than 1024 px is looked at as it is). That is how OpenCV runs it for
+its published WIDER FACE figures, whose photos are 1024 px wide. On the 3,226 photos of WIDER FACE's validation set,
+scored with the official protocol, the average precision (AP) easy / medium / hard is 88.9 / 87.2 / 76.6 against the
+published 88.4 / 86.6 / 75.0; the former 640 x 640 square gave 87.8 / 83.7 / 59.8 and missed the back rows of group
+photos. It costs about 1.5 to 2 times the time on the CPU. Faces still smaller than about 10 pixels at that size can be missed.
 The detector's output matches OpenCV's own YuNet on a 45-photo public-domain test set (97 of 99 faces found by both,
 mean box overlap 0.97), including marble busts and paintings, with no false boxes on the landscape and architecture
 photos in the set.
@@ -283,7 +288,8 @@ Turning recognition on starts a scan of the whole library, once, in the backgrou
   when light (2 threads).
 - **Memory** limits the number of photos at once as much as the processor does: a photo in progress holds about 180 MB
   (peak memory grew by that much per extra worker), so at most half of the memory budget (a quarter of the RAM, at most
-  1.5 GiB, unless `<PREFIX>_MEMORY_MB` says otherwise) is given to them: about four photos at once on a default setup,
+  1.5 GiB, unless `<PREFIX>_MEMORY_MB` says otherwise; a container's or cgroup's memory limit counts as the RAM when
+  smaller) is given to them: about four photos at once on a default setup,
   whatever the core count. Eight at once was not much faster and needed about twice the memory (a 2.0 GB peak against
   1.1 GB). `<PREFIX>_FACE_THREADS` replaces these limits with a number of your own. A couple more photos wait behind
   the running ones, so a worker that finishes has its next photo at once.

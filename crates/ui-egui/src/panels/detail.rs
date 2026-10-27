@@ -545,6 +545,57 @@ pub(crate) struct WindowView {
 
 /// Priority of on-screen tiles (just below the whole-frame render) and of the ring around them.
 const TILE_PRIORITY: u32 = 99;
+
+/// The long edge of the loupe's render at rest: no less than the preview source level, so the
+/// source is copied 1:1 (no resample in the pipeline, whose prefilter and bilinear pass soften
+/// detail near the output's limit) and shrunk once, by the Lanczos display fit. A user's explicit
+/// Preview size below the preview level still caps it.
+fn rest_edge(settings: &crate::state::AppSettings, main_edge: usize, native_long: usize, texture_side: usize) -> usize {
+    let limit = if settings.preview_limit == 0 { usize::MAX } else { settings.preview_limit as usize };
+    let floor = lcc_engine::SourceLevel::Preview.max_edge().min(limit).min(native_long);
+    main_edge.max(floor).min(texture_side.max(crate::state::MIN_TEXTURE_SIDE))
+}
+
+/// The render box of long edge `edge` for a frame of `aspect`. The short side is rounded, not
+/// truncated: a truncated box (2560 x 1706 for a 2560 x 1707 source) made the render a slightly
+/// anisotropic resample of its source, a 2-tap blur along one axis only. A box that matches the
+/// source to rounding is rendered at exactly its size.
+fn render_box(edge: usize, aspect: f32) -> (usize, usize) {
+    let short = |e: usize, a: f32| ((e as f32 / a).round() as usize).max(1);
+    if aspect >= 1.0 { (edge, short(edge, aspect)) } else { (short(edge, 1.0 / aspect), edge) }
+}
+
+/// Photo `id`'s loupe render at rest: `size` (from [`rest_edge`] and [`render_box`]), shrunk to
+/// exactly the `fit` it is drawn at with a Lanczos filter (on the GPU when it renders there), so
+/// the window draws it texel for texel instead of shrinking it with 2-tap sampling. The loupe and
+/// the prefetch of a neighbour build it alike, so the step to that photo finds it ready.
+fn rest_job(
+    app: &mut LccApp,
+    id: PhotoId,
+    size: (usize, usize),
+    fit: [usize; 2],
+    overlay: lcc_pipeline::Overlay,
+    crop_tool: bool,
+) -> Option<lcc_engine::media::RenderJob> {
+    let job = app.session.loupe_job(id, size.0.max(8), size.1.max(8), !crop_tool)?.with_display_fit(fit[0], fit[1]);
+    let job = job.with_overlay(overlay).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
+    Some(job.with_hidden_grading(app.ui.grading_hidden_for(id)))
+}
+
+/// Share of a frame the loupe waits for a slider drag's update to finish so it is drawn in that
+/// frame (`Renderer::wait_for_draft`): a draft, and a full-quality update (high quality adjustment
+/// previews), which takes longer but leaves the rest of the frame as cheap.
+const DRAFT_WAIT_SHARE: f32 = 0.4;
+const FULL_WAIT_SHARE: f32 = 0.6;
+
+/// How long a frame of `frame` seconds (egui's predicted frame time) waits for a slider drag's
+/// update: a draft's share, or a full-quality update's.
+pub(crate) fn wait_budget(frame: f32, drafting: bool) -> std::time::Duration {
+    let frame = frame.clamp(1.0 / 240.0, 1.0 / 30.0);
+    let share = if drafting { DRAFT_WAIT_SHARE } else { FULL_WAIT_SHARE };
+    // (a frame time that is not a number waits for nothing)
+    std::time::Duration::try_from_secs_f32(frame * share).unwrap_or_default()
+}
 const TILE_RING_PRIORITY: u32 = 70;
 
 /// What of a `full` frame drawn in `rect` (points) is inside `visible`, in frame pixels.
@@ -617,7 +668,8 @@ pub(crate) fn request_window(
         };
         // (an HDR window drawn in its place, or on its way, needs no 8-bit draft as well)
         if matches!(hdr_window(app, c, v, full), HdrPane::Sdr) {
-            let geom = crate::render::WindowGeom { photo: c.id, full, window, look: c.look };
+            let full_quality = job.request.quality == lcc_pipeline::Quality::Full;
+            let geom = crate::render::WindowGeom { photo: c.id, full, window, look: c.look, full_quality };
             app.renderer.request_window(v.pane, job, geom, TILE_PRIORITY);
         }
         wanted.push(Slot::Window(v.pane));
@@ -643,8 +695,36 @@ pub(crate) fn request_window(
     let window = lcc_engine::pipeline::PixelWindow { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     // an HDR edit shown in HDR: its HDR window (or the whole frame's HDR until it comes) is what
     // shows, so no 8-bit tiles are rendered beside it (they would only hold it up)
-    if !matches!(hdr_window(app, c, v, full), HdrPane::Sdr) {
+    let sdr = matches!(hdr_window(app, c, v, full), HdrPane::Sdr);
+    if !sdr {
         budget = 0;
+    }
+    // After an edit here (a slider let go, a preset): the part on screen once more as one window
+    // at full quality, in the pane's own slot, whose stage cache the drag kept warm, in place of a
+    // render for each tile on screen, each from the original with no stage cache (a release took
+    // 0.2-4.9 s). A high quality drag's last update is that window already. The ring of tiles
+    // around it is still prepared for a pan, and a pan past the window tiles as before.
+    let vis = visible_px(full, v.target, v.visible);
+    let mut window_stands_in = false;
+    if sdr && let Some((_, g)) = app.renderer.window_texture(v.pane).filter(|(_, g)| g.photo == c.id && g.full == full) {
+        let covers = |w: lcc_engine::pipeline::PixelWindow| {
+            w.x as f32 <= vis.0.max(0.0)
+                && w.y as f32 <= vis.1.max(0.0)
+                && (w.x + w.w) as f32 >= vis.2.min(full.0 as f32)
+                && (w.y + w.h) as f32 >= vis.3.min(full.1 as f32)
+        };
+        if g.look == c.look && g.full_quality && covers(g.window) {
+            window_stands_in = true;
+        } else if (g.look != c.look || !g.full_quality)
+            && let Some(window) = crate::region::window_for(full.0, full.1, vis, crate::region::max_span(c.texture_side))
+            && let Some(job) = job_for(app, window)
+        {
+            let geom = crate::render::WindowGeom { photo: c.id, full, window, look: c.look, full_quality: true };
+            app.renderer.request_window(v.pane, job, geom, TILE_PRIORITY + 1);
+            // (the tiles on screen wait for it; if it fails, they render)
+            window_stands_in = app.renderer.failure_of(Slot::Window(v.pane), c.id).is_none();
+        }
+        wanted.push(Slot::Window(v.pane));
     }
     let placeholder = c
         .full_preview
@@ -664,7 +744,7 @@ pub(crate) fn request_window(
             continue;
         }
         let slot = Slot::Tile { pane: v.pane, col: tile.col, row: tile.row };
-        if budget == 0 {
+        if budget == 0 || (on_screen && window_stands_in) {
             continue;
         }
         let window = crate::region::tile_render_window(full, rect);
@@ -935,22 +1015,11 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // copied 1:1 (no resample in the pipeline, whose prefilter and bilinear pass soften detail near
     // the output's limit) and shrunk once, by the Lanczos display fit below.
     // (zoomed in under a window render, the whole frame is hidden: it stays canvas-sized)
-    let want = if drafting || plan.window_edge.is_some() {
-        plan.main_edge
-    } else {
-        // (a user's explicit Preview size below the preview level still caps it)
-        let limit = if app.ui.settings.preview_limit == 0 { usize::MAX } else { app.ui.settings.preview_limit as usize };
-        let floor = lcc_engine::SourceLevel::Preview.max_edge().min(limit).min(native_long);
-        plan.main_edge.max(floor).min(texture_side.max(crate::state::MIN_TEXTURE_SIDE))
-    };
-    // The short side is rounded, not truncated: a truncated box (2560 x 1706 for a 2560 x 1707
-    // source) made the render a slightly anisotropic resample of its source, a 2-tap blur along
-    // one axis only. A box that matches the source to rounding is rendered at exactly its size.
-    let short = |e: usize, a: f32| ((e as f32 / a).round() as usize).max(1);
-    let (rw, rh) = if aspect >= 1.0 { (want, short(want, aspect)) } else { (short(want, 1.0 / aspect), want) };
+    let want =
+        if drafting || plan.window_edge.is_some() { plan.main_edge } else { rest_edge(&app.ui.settings, plan.main_edge, native_long, texture_side) };
+    let (rw, rh) = render_box(want, aspect);
     // hover and before renders are stand-ins: the preview size is plenty and keeps them cheap
-    let se = app.ui.settings.stand_in_edge(want, texture_side);
-    let (sw, sh) = if aspect >= 1.0 { (se, short(se, aspect)) } else { (short(se, 1.0 / aspect), se) };
+    let (sw, sh) = render_box(app.ui.settings.stand_in_edge(want, texture_side), aspect);
     // an HDR display: an HDR edit's whole frame also as linear float with its highlights above
     // SDR white, including interactive drafts. Overlays and soft proof remain 8-bit views.
     let hdr_key = (overlay == lcc_pipeline::Overlay::None && !app.ui.soft_proof)
@@ -961,24 +1030,27 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // (a drag that shows its HDR frames needs no 8-bit drafts as well: the final render follows
     // the release)
     let hdr_drafts = interacting && hdr_texture(app, crate::render::HDR_LOUPE, id, hdr_key).is_some();
-    if !hdr_drafts && let Some(job) = app.session.loupe_job(id, rw.max(8), rh.max(8), !crop_tool) {
-        let job = if drafting { job.draft() } else { job };
-        // at rest the render is shrunk to exactly the size it is drawn at with a Lanczos filter on
-        // the worker, so the window draws it texel for texel instead of shrinking it with 2-tap
-        // sampling (the render is up to a 64 px step larger, or the preview level)
-        let job = if drafting { job } else { job.with_display_fit(fit_px[0], fit_px[1]) };
-        let job = job.with_overlay(overlay).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
-        let job = job.with_hidden_grading(app.ui.grading_hidden_for(id));
+    let main_job = if drafting {
+        app.session.loupe_job(id, rw.max(8), rh.max(8), !crop_tool).map(|job| {
+            let job = job.draft().with_overlay(overlay).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
+            job.with_hidden_grading(app.ui.grading_hidden_for(id))
+        })
+    } else {
+        // (a high quality drag's updates leave their drawn-size image in the view cache: reading the
+        // full render back as well costs each update more than the fit saved; at rest it is kept)
+        rest_job(app, id, (rw, rh), fit_px, overlay, crop_tool).map(|job| if interacting { job.with_drawn_view_cache() } else { job })
+    };
+    if !hdr_drafts && let Some(job) = main_job {
         app.renderer.request(Slot::Main, job, 100);
         // a drag's draft that renders in a few ms (GPU) is drawn in this frame, not the next (zoomed
         // in, what changes on screen is the window's draft)
         // (a high quality update the GPU renders as fast is drawn at once too; a slow one returns
-        // at once: `wait_for_draft` waits only when the last render fits in the budget)
+        // at once: `wait_for_draft` waits only when the last render fits in the budget). A full-
+        // quality update (its fit done on the GPU, ~5 ms) gets more of the frame than a draft:
+        // the frame around it is cheap, and missing the frame cost every such update one more.
         #[cfg(not(target_arch = "wasm32"))]
         if interacting && plan.window_edge.is_none() {
-            let frame = ui.input(|i| i.predicted_dt).clamp(1.0 / 240.0, 1.0 / 30.0);
-            // (a frame time that is not a number waits for nothing)
-            let budget = std::time::Duration::try_from_secs_f32(frame * 0.4).unwrap_or_default();
+            let budget = wait_budget(ui.input(|i| i.predicted_dt), drafting);
             app.renderer.wait_for_draft(ui.ctx(), &mut app.session, budget);
         }
     }
@@ -1006,14 +1078,53 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 let Some(np) = app.session.catalog.photo(nid).cloned() else { continue };
                 let nf = Frame::with_lens(np.width.max(1) as usize, np.height.max(1) as usize, &np.develop, !crop_tool, np.embedded_lens.as_deref());
                 let na = nf.aspect() as f32;
-                let nr = fit_rect(main_area, na, app.ui.zoom, output_px(&nf), ppp, app.ui.pan);
-                let nw =
-                    app.ui.settings.prefetch_edge(nr.width().max(nr.height()) * ppp, output_px(&nf).into_iter().max().unwrap_or(1), texture_side);
-                let (w, h) = if na >= 1.0 { (nw, (nw as f32 / na) as usize) } else { ((nw as f32 * na) as usize, nw) };
-                if let Some(job) = app.session.loupe_job(nid, w.max(8), h.max(8), !crop_tool) {
+                let nnative = output_px(&nf);
+                let nlong = nnative[0].max(nnative[1]);
+                let nr = fit_rect(main_area, na, app.ui.zoom, nnative, ppp, app.ui.pan);
+                let nplan = crate::region::plan(
+                    &app.ui.settings,
+                    crate::region::ViewSizes { drawn_long: nr.width().max(nr.height()) * ppp, native_long: nlong, draft: None, ..sizes },
+                );
+                // at the whole-frame view: the very render the loupe asks for once that photo is
+                // shown, which it adopts at the step (`Renderer::prefetch`); zoomed in, its source
+                let job = if nplan.window_edge.is_none() {
+                    let fit = [drawn_px(nr.width()), drawn_px(nr.height())];
+                    let size = render_box(rest_edge(&app.ui.settings, nplan.main_edge, nlong, texture_side), na);
+                    rest_job(app, nid, size, fit, lcc_pipeline::Overlay::None, crop_tool)
+                } else {
+                    let (w, h) = render_box(app.ui.settings.prefetch_edge(nr.width().max(nr.height()) * ppp, nlong, texture_side), na);
+                    app.session.loupe_job(nid, w.max(8), h.max(8), !crop_tool)
+                };
+                if let Some(job) = job {
                     app.renderer.prefetch(Slot::Prefetch(n as u8), job, PREFETCH_PRIORITY);
                 }
             }
+        }
+    }
+    // After a short look at the whole photo, its full-resolution source, decoded in the background
+    // below the neighbours when nothing else is waiting, so a zoom to 1:1 (to check focus) starts
+    // from it instead of decoding first (0.2-2.7 s). The engine keeps one such source.
+    let whole = !interacting && plan.window_edge.is_none() && app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id);
+    if !whole {
+        app.whole_since = None;
+    } else {
+        let since = match app.whole_since {
+            Some((p, t)) if p == id => t,
+            _ => {
+                app.whole_since = Some((id, now));
+                now
+            }
+        };
+        if now - since >= WARM_FULL_AFTER_S
+            && native_long > lcc_engine::SourceLevel::Preview.max_edge()
+            && !app.session.media.has_source(id, lcc_engine::SourceLevel::Full)
+            && app.renderer.queued() == 0
+            && let Some(job) =
+                app.session.region_job(id, native[0], native[1], lcc_engine::pipeline::PixelWindow { x: 0, y: 0, w: 1, h: 1 }, !crop_tool)
+        {
+            app.renderer.prefetch(Slot::Prefetch(2), job, PREFETCH_PRIORITY - 1);
+        } else if now - since < WARM_FULL_AFTER_S {
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64((WARM_FULL_AFTER_S - (now - since)).max(0.05)));
         }
     }
     // until the loupe has this photo: show its cached render / embedded preview / a thumbnail
@@ -1878,6 +1989,10 @@ fn navigator(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect, img: Rect, id: P
 /// Neighbour prefetch: below on-screen thumbnails, above background thumbnail refreshes.
 const PREFETCH_PRIORITY: u32 = 4;
 
+/// How long (s) the whole photo is shown before its full-resolution source is decoded in the
+/// background (a photographer stepping through photos doesn't decode each).
+pub(crate) const WARM_FULL_AFTER_S: f64 = 1.5;
+
 /// How long a render may be on its way, with nothing new on screen, before the loupe says
 /// "Rendering…" (s): as long as the activity stack waits before it shows a task.
 const RENDERING_AFTER_SECS: f64 = 0.5;
@@ -2041,7 +2156,9 @@ pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::Re
         app.renderer.set_surface_extended_linear(o.extended());
     }
     let job = if edited && editing(app, job.photo) && adjust_drafts(app) { job.draft() } else { job };
-    let job = hdr_view_job(job, headroom);
+    let mut job = hdr_view_job(job, headroom);
+    // (on the GPU its texture's texels are made there, for the headroom the output uploads with)
+    job.hdr_texels = app.services.hdr_output.as_ref().and_then(|o| o.texel_headroom());
     app.renderer.prepare_hdr_view(view, &job);
     let key = job.key;
     if app.renderer.hdr_view.get(&view).is_some_and(|v| v.key != key) && app.renderer.reuse_hdr(view, key) {
@@ -2072,14 +2189,24 @@ pub(crate) fn upload_hdr_views(app: &mut LccApp) {
     }
     let results = std::mem::take(&mut app.renderer.hdr_view_result);
     let Some(out) = app.services.hdr_output.as_mut() else { return };
-    for (view, crate::render::HdrResult { photo, key, deep, window, texels }) in results {
-        let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { continue };
+    for (view, crate::render::HdrResult { photo, key, size, deep, window, texels }) in results {
         let slot = app.renderer.hdr_upload_slot(view, window);
-        // (texels the worker made, when they are for the headroom the output uploads with)
-        let ready = texels.and_then(|(t, h)| out.upload_texels(slot, deep.width, deep.height, &t, h));
-        match ready.unwrap_or_else(|| out.upload(slot, deep.width, deep.height, rgb)) {
+        // (texels the worker or the GPU made, when they are for the headroom the output uploads
+        // with; else the floats)
+        let ready = texels.and_then(|(t, h)| out.upload_texels(slot, size[0], size[1], &t, h));
+        let uploaded = match (ready, deep.as_ref().map(|d| &d.samples)) {
+            (Some(r), _) => r,
+            (None, Some(lcc_pipeline::DeepSamples::F32(rgb))) => out.upload(slot, size[0], size[1], rgb),
+            // (the GPU's texels, for a headroom the output no longer uploads with: the view keeps
+            // the frame it has until its next render)
+            _ => {
+                log::debug!("HDR view {view}: texels for another headroom and no floats; kept the frame before");
+                continue;
+            }
+        };
+        match uploaded {
             Ok(tex) => {
-                app.renderer.adopt_hdr(view, crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height], window, slot });
+                app.renderer.adopt_hdr(view, crate::render::HdrView { photo, key, tex, size, window, slot });
             }
             Err(e) => log::warn!("HDR view texture: {e}"),
         }
@@ -4680,6 +4807,7 @@ mod tests {
     fn hdr_view_job_key_includes_headroom() {
         // A headroom change must produce a different render key so the texture is re-uploaded (P2-4).
         let base = lcc_engine::media::RenderJob {
+            drawn_view_cache: false,
             cache_generation: 0,
             request_id: 1,
             source_key: None,
@@ -4697,6 +4825,7 @@ mod tests {
             origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
             info: Default::default(),
             display_fit: None,
+            hdr_texels: None,
             settings: Default::default(),
             request: lcc_pipeline::RenderRequest {
                 max_w: 100,
@@ -4710,6 +4839,7 @@ mod tests {
                 window: None,
                 display: None,
                 downscale: Default::default(),
+                alpha: false,
             },
             key: 0,
             cache: None,

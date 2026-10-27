@@ -1256,5 +1256,7 @@
   "not installed": "не встановлено",
   "checking…": "перевірка…",
   "installed:": "встановлено:",
-  "Waiting for a plug-in's program": "Очікування програми плагіна"
+  "Waiting for a plug-in's program": "Очікування програми плагіна",
+  "Plug-in Settings": "Налаштування плагіна",
+  "this plug-in has no settings": "цей плагін не має налаштувань"
 }

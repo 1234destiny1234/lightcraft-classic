@@ -243,6 +243,8 @@ pub fn decode(bytes: &[u8]) -> Result<(Rgb32f, Option<CameraTone>, Option<Source
         local_tone: f.local_tone.map(Arc::new),
         native_long: None,
         // (the fork's own facts: the process's filters, and no colorimetric matrices on record)
+        // (a smart preview keeps no transparency: an offline original exports onto white)
+        alpha: None,
         ..Default::default()
     });
     Ok((img, tone, info))

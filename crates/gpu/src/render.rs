@@ -166,6 +166,13 @@ impl<'a> Cx<'a> {
         self.gpu.finish_and_read(enc, b, len)
     }
 
+    /// [`Self::read`] of consecutive parts of `b`, each into its own vector (one readback).
+    pub fn read_parts<T: bytemuck::Pod>(&mut self, b: &Buf, lens: &[usize]) -> Vec<Vec<T>> {
+        self.pending = 0;
+        let enc = self.enc.take().unwrap_or_else(|| self.gpu.encoder());
+        self.gpu.finish_and_read_parts(enc, b, lens)
+    }
+
     /// Submit what is recorded so far without waiting. Renders submit stage by stage and every
     /// [`FLUSH_INVOCATIONS`]: long submissions are what GPU watchdogs reset (Windows TDR, the
     /// i915 hang check; issue #78's iGPU spent seconds on an export recorded as one submission),
@@ -606,6 +613,8 @@ pub fn render(
     req: &RenderRequest,
     stages: Option<&GpuStages>,
     fault: Option<crate::Fault>,
+    fit: Option<crate::Fit<'_>>,
+    texels: Option<(f32, &mut Vec<u16>)>,
 ) -> Option<Rendered> {
     let mut t = profiling().then(std::time::Instant::now);
     // Each stage is submitted on its own; under `{ENV_PREFIX}_PROFILE` also waited for, so the
@@ -800,10 +809,64 @@ pub fn render(
         (x0, y0, k.w.min(w - x0), k.h.min(h - y0))
     });
     let hist = histogram_on_gpu(&mut cx, &out, w, window, coverage.as_deref());
+    // The display fit (`lcc_raster::resample::fit_rgba8`) here instead of on the CPU: only the
+    // fitted image comes back. The histogram is the full frame's, as without it. Not for what the
+    // CPU still changes after the readback (overlays, a grown window cut back) or HDR renders.
+    let (fit, mut full) = fit.map_or((None, None), |f| (Some(f.size), f.full));
+    let fitted = fit
+        .filter(|_| !deep && req.overlay == lcc_pipeline::Overlay::None && plan.keep.is_none())
+        .map(|(fw, fh)| lcc_raster::resample::fit_size(w, h, fw.max(1), fh.max(1)))
+        .filter(|&(dw, dh)| dw < w || dh < h);
+    // (with the full-size image after the fitted one and the histogram, for a caller that keeps it:
+    // the view preview stays at the level it was rendered at; only what is drawn is fitted. One
+    // readback for all three.)
+    let (out, w, h, n, full_size) = match fitted {
+        Some((dw, dh)) => {
+            let dn = dw * dh;
+            let rgb = cx.gpu.buffer(3 * n);
+            cx.run("unpack_rgb8", &[n as u32], &[Some(&out), Some(&rgb)], groups1(n));
+            let small = resize(&mut cx, &rgb, (w, h), (dw, dh), 3, Filter::Lanczos3);
+            let keep = full.is_some();
+            let packed = cx.zeroed(dn + HIST_WORDS + if keep { out.len } else { 0 });
+            cx.run("pack_rgb8", &[dn as u32], &[Some(&small), Some(&packed)], groups1(dn));
+            if keep {
+                cx.copy_into(&out, &packed, dn + HIST_WORDS);
+            }
+            (packed, dw, dh, dn, keep.then_some((w, h)))
+        }
+        None => (out, w, h, n, None),
+    };
     cx.copy_into(&hist, &out, n);
-    let mut data: Vec<[u8; 4]> = cx.read(&out, n + HIST_WORDS + if deep { 3 * n } else { 0 });
-    let samples: Vec<f32> =
-        if deep { data.split_off((n + HIST_WORDS).min(data.len())).into_iter().map(f32::from_le_bytes).collect() } else { Vec::new() };
+    // An HDR view's texture asked for: its floats become `Rgba16Float` texels for that headroom
+    // here (`hdr_texels.wgsl`), and only those come back (8 bytes a pixel instead of 12), with no
+    // unpacking or encoding on the CPU
+    let texels = texels.filter(|_| deep);
+    let extra = match (&texels, deep) {
+        (Some((headroom, _)), true) => {
+            let tex = cx.zeroed(2 * n);
+            cx.run("hdr_texels", &[n as u32, (n + HIST_WORDS) as u32, headroom.to_bits()], &[Some(&out), Some(&tex)], groups1(n));
+            cx.copy_into(&tex, &out, n + HIST_WORDS);
+            2 * n
+        }
+        (None, true) => 3 * n,
+        _ => 0,
+    };
+    let mut data: Vec<[u8; 4]> = match (full_size, full.as_mut()) {
+        // (the full-size image straight into its own vector: no copy of it on the CPU)
+        (Some((fw, fh)), Some(slot)) => {
+            let mut parts = cx.read_parts(&out, &[n + HIST_WORDS + extra, fw * fh]);
+            **slot = parts.pop().map(|data| Rgba8 { width: fw, height: fh, data });
+            parts.pop().unwrap_or_default()
+        }
+        _ => cx.read(&out, n + HIST_WORDS + extra),
+    };
+    let tail = if deep { data.split_off((n + HIST_WORDS).min(data.len())) } else { Vec::new() };
+    let texel_words = if texels.is_some() { tail.len() } else { 0 };
+    let samples: Vec<f32> = if texels.is_none() { tail.iter().map(|b| f32::from_le_bytes(*b)).collect() } else { Vec::new() };
+    if let Some((_, out_texels)) = texels {
+        out_texels.clear();
+        out_texels.extend(tail.iter().flat_map(|b| [u16::from_le_bytes([b[0], b[1]]), u16::from_le_bytes([b[2], b[3]])]));
+    }
     let hist_words: Vec<u32> = data.split_off(n.min(data.len())).into_iter().map(u32::from_le_bytes).collect();
     let image = Rgba8 { width: w, height: h, data };
     lap("finish + readback", &mut t, &mut cx);
@@ -836,6 +899,14 @@ pub fn render(
             lcc_pipeline::masks::evaluate_one(m, &plan.frame, w, h, &img, &l, s.light.exposure as f32, plan.mattes.as_deref())
         }
     });
+    if deep && texel_words > 0 {
+        if texel_words != 2 * n {
+            fail(FailKind::Fatal, format!("the GPU returned an incomplete HDR texture ({texel_words} of {} words)", 2 * n));
+            return None;
+        }
+        // (the texture's texels went out above; no float samples come back)
+        return Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage, alpha: None });
+    }
     if deep {
         if samples.len() != 3 * n {
             fail(FailKind::Fatal, format!("the GPU returned an incomplete HDR image ({} of {} samples)", samples.len(), 3 * n));
@@ -843,14 +914,14 @@ pub fn render(
         }
         // as on the CPU (`finish_deep`): the whole frame in the output space, no overlays
         let deep = lcc_pipeline::DeepImage { width: w, height: h, space: req.space, samples: lcc_pipeline::DeepSamples::F32(samples) };
-        return Some(Rendered { image, histogram, deep: Some(deep), warnings: Vec::new(), coverage });
+        return Some(Rendered { image, histogram, deep: Some(deep), warnings: Vec::new(), coverage, alpha: None });
     }
     lcc_pipeline::visualize::apply(&mut image, req.overlay, &plan, overlay_mask.as_ref(), all_overlay_alphas.as_deref());
     // spots grew the window the render worked on: cut it back to the request
     if let Some(k) = plan.keep {
         image = image.crop(k.x, k.y, k.w, k.h);
     }
-    Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage })
+    Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage, alpha: None })
 }
 
 /// Words of the `hist_k` kernel's output: five 256-bin channels, the total, the vectorscope grid and

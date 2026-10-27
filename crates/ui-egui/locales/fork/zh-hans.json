@@ -1427,5 +1427,7 @@
   "not installed": "未安装",
   "checking…": "检查中…",
   "installed:": "已安装：",
-  "Waiting for a plug-in's program": "正在等待插件的程序"
+  "Waiting for a plug-in's program": "正在等待插件的程序",
+  "Plug-in Settings": "增效工具设置",
+  "this plug-in has no settings": "此增效工具没有设置"
 }

@@ -970,6 +970,57 @@ fn snapshot_starts_without_a_gpu() {
     }
 }
 
+/// A loopback port nothing listens on, for tests that need `--connect` to be refused (#3070).
+/// A fixed port is not safe: agents give their apps' control servers ports in 18000–19999 (and
+/// 7980 is the default), so a test could reach someone's running app and drive it. The OS hands
+/// out a free port for `:0`; the listener is dropped so connecting to it is refused. Another
+/// process could bind the port between the drop and the connect. That window is a few
+/// milliseconds, and `:0` draws from the OS's ephemeral range (from 32768 on Linux, 49152 on
+/// macOS and Windows), where nobody puts a control server (7980, 18000–19999): the standard
+/// trade-off for a test that needs a refused connection.
+fn unused_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+}
+
+/// Issue #2976: a transparent PNG exported as PNG kept its pixels but lost its alpha (flattened
+/// onto white); JPEG still composites onto white.
+#[test]
+fn transparent_png_export_keeps_its_alpha() {
+    let input = tmp("alpha-in.png");
+    // 300 × 200, transparent, with an opaque 150 × 100 rectangle in the middle
+    let img =
+        lcc_raster::Rgba8::from_fn(300, 200, |x, y| if (75..225).contains(&x) && (50..150).contains(&y) { [200, 40, 30, 255] } else { [0, 0, 0, 0] });
+    let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap();
+    std::fs::write(&input, png).unwrap();
+    let (png_out, jpg_out) = (tmp("alpha-out.png"), tmp("alpha-out.jpg"));
+    for out in [&png_out, &jpg_out] {
+        let _ = std::fs::remove_file(out);
+        let (ok, lines, err) = run_cli(&["--import", input.to_str().unwrap(), "app.export", &format!("path={}", out.display())], None);
+        assert!(ok && lines.iter().all(|l| l["ok"] == true), "{err} {lines:?}");
+    }
+
+    let d = lcc_codecs::decode(&std::fs::read(&png_out).unwrap(), Default::default()).unwrap();
+    assert!(d.has_alpha, "the PNG keeps an alpha channel");
+    assert_eq!((d.width, d.height), (300, 200));
+    let px = d.to_srgb8();
+    for (x, y) in [(2, 2), (297, 2), (2, 197), (297, 197), (40, 100)] {
+        assert_eq!(px.get(x, y)[3], 0, "transparent at ({x}, {y})");
+    }
+    let centre = px.get(150, 100);
+    assert_eq!(centre[3], 255, "opaque in the rectangle");
+    assert!(centre[0].abs_diff(200) <= 2 && centre[1].abs_diff(40) <= 2 && centre[2].abs_diff(30) <= 2, "{centre:?}");
+    // the rectangle's edge stays where it was, without a white fringe
+    assert_eq!(px.get(74, 100)[3], 0);
+    let edge = px.get(75, 100);
+    assert_eq!(edge[3], 255);
+    assert!(edge[1] < 60, "no white fringe: {edge:?}");
+
+    let j = lcc_codecs::decode(&std::fs::read(&jpg_out).unwrap(), Default::default()).unwrap();
+    assert!(!j.has_alpha);
+    let corner = j.to_srgb8().get(2, 2);
+    assert!(corner.iter().take(3).all(|&c| c >= 250), "JPEG composites onto white: {corner:?}");
+}
+
 fn run_cli(args: &[&str], stdin: Option<&str>) -> (bool, Vec<Value>, String) {
     let mut child = Command::new(BIN).arg("run").args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     if let Some(text) = stdin {
@@ -1117,9 +1168,10 @@ fn a_library_open_in_another_process_is_refused() {
 /// ADDR actually names — following the old fixed "7980" left the retry connecting elsewhere.
 #[test]
 fn connect_failure_hint_names_the_attempted_port() {
-    let (ok, _lines, err) = run_cli(&["--connect", "127.0.0.1:18437", "ui.inspect"], None);
+    let port = unused_port();
+    let (ok, _lines, err) = run_cli(&["--connect", &format!("127.0.0.1:{port}"), "ui.inspect"], None);
     assert!(!ok);
-    assert!(err.contains("--control 18437"), "the hint must name the port it tried: {err}");
+    assert!(err.contains(&format!("--control {port}")), "the hint must name the port it tried: {err}");
     assert!(!err.contains("--control 7980"), "{err}");
 }
 
@@ -1129,20 +1181,22 @@ fn connect_failure_hint_names_the_attempted_port() {
 /// works; non-numeric, non-`ADDR`-shaped tokens (e.g. a real command id) keep falling through.
 #[test]
 fn connect_bare_port_is_treated_as_loopback_port() {
+    let port = unused_port();
+    let hint = format!("--control {port}");
     // Bare port: the failure hint names that port.
-    let (ok, _lines, err) = run_cli(&["--connect", "18437", "ui.inspect"], None);
+    let (ok, _lines, err) = run_cli(&["--connect", &port.to_string(), "ui.inspect"], None);
     assert!(!ok);
-    assert!(err.contains("--control 18437"), "bare port must reach the hint: {err}");
+    assert!(err.contains(&hint), "bare port must reach the hint: {err}");
     assert!(!err.contains("--control 7980"), "{err}");
     // `<host>:<port>` still works (issue #167 case).
-    let (ok, _lines, err) = run_cli(&["--connect", "127.0.0.1:18437", "ui.inspect"], None);
+    let (ok, _lines, err) = run_cli(&["--connect", &format!("127.0.0.1:{port}"), "ui.inspect"], None);
     assert!(!ok);
-    assert!(err.contains("--control 18437"), "{err}");
+    assert!(err.contains(&hint), "{err}");
     // `--connect=<bare-port>` already worked (the `a.starts_with("--connect=")` arm); spot-check
     // the hint matches its port too.
-    let (ok, _lines, err) = run_cli(&["--connect=18437", "ui.inspect"], None);
+    let (ok, _lines, err) = run_cli(&[&format!("--connect={port}"), "ui.inspect"], None);
     assert!(!ok);
-    assert!(err.contains("--control 18437"), "{err}");
+    assert!(err.contains(&hint), "{err}");
 }
 
 /// The CLI logs warnings on stderr (#168): with `RUST_LOG=warn` an unknown GPU backend name is

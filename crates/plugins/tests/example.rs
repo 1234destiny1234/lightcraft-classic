@@ -384,3 +384,77 @@ fn program_tools_example_starts_its_program_and_reads_what_it_made() {
     again.dir.remove();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The keyword-picker example's catalog: a keyword tree, and the metadata writes it is asked for.
+struct Keywords {
+    writes: Vec<Value>,
+}
+
+impl HostApi for Keywords {
+    fn catalog(&mut self, method: &str, _: &Value) -> Result<Value, String> {
+        match method {
+            "keyword.list" => Ok(json!([
+                {"name": "Places", "path": "Places", "count": 0, "children": [
+                    {"name": "Oslo", "path": "Places|Oslo", "count": 4, "children": []},
+                    {"name": "Bergen", "path": "Places|Bergen", "count": 9, "children": []}]},
+                {"name": "sunset", "path": "sunset", "count": 20, "children": []}
+            ])),
+            other => Err(format!("{other}: not in this test")),
+        }
+    }
+
+    fn set_metadata(&mut self, params: &Value) -> Result<Value, String> {
+        self.writes.push(params.clone());
+        Ok(json!({}))
+    }
+}
+
+/// The keyword-picker example: its settings decide which keywords its prepare step offers, the
+/// dialog remembers the keyword (not *Remove it instead*), one keyword runs at once, none explains.
+#[test]
+fn keyword_picker_example_settings_remember_and_prepare() {
+    use lcc_plugins::Prepared;
+    let Some(wasm) = build_sdk_example("keyword-picker") else { return };
+    let dir = temp("keyword-picker");
+    let mut m = Manager::open(&dir).unwrap();
+    let grant = Permissions { catalog: true, metadata_write: true, ..Default::default() };
+    m.install_bytes(&wasm, Some(grant), false).unwrap();
+    let id = "org.example.keyword-picker";
+    let mut host = Keywords { writes: vec![] };
+    let sel = ["1".to_string(), "2".to_string()];
+    let options = |p: Prepared| match p {
+        Prepared::Dialog { fields, error: None } => serde_json::to_value(&fields[0]).unwrap()["options"].clone(),
+        other => panic!("a dialog: {other:?}"),
+    };
+
+    assert!(matches!(m.prepare_command(id, "apply", &[], &mut host).unwrap(), Prepared::Message(t) if t.contains("Select")), "no selection");
+    assert_eq!(
+        options(m.prepare_command(id, "apply", &sel, &mut host).unwrap()),
+        json!(["sunset", "Places|Bergen", "Places|Oslo"]),
+        "most used first"
+    );
+    m.set_settings(id, &json!({"minCount": 3, "order": "A to Z"}), &mut host).unwrap();
+    let Prepared::Dialog { fields, .. } = m.prepare_command(id, "apply", &sel, &mut host).unwrap() else { panic!("a dialog") };
+    assert_eq!(serde_json::to_value(&fields[0]).unwrap()["options"], json!(["Places|Bergen", "Places|Oslo", "sunset"]), "as the settings say");
+
+    // run from the dialog: written, and the keyword (not `remove`) remembered
+    let r = m.run_command(id, "apply", &json!({"keyword": "Places|Oslo", "remove": true}), &sel, &mut host).unwrap();
+    assert!(r["message"].as_str().unwrap().contains("Removed"), "{r}");
+    assert_eq!(host.writes.pop().unwrap(), json!({"ids": ["1", "2"], "removeKeywords": ["Places|Oslo"]}));
+    assert_eq!(Value::Object(m.command_values(id, "apply", &fields)), json!({"keyword": "Places|Oslo", "remove": false}));
+    assert!(m.run_command(id, "apply", &json!({"keyword": "Places|Oslo|Old"}), &sel, &mut host).is_err(), "not offered");
+
+    // one keyword qualifies: it runs at once; none: the plug-in says why
+    m.set_settings(id, &json!({"minCount": 10}), &mut host).unwrap();
+    assert_eq!(m.prepare_command(id, "apply", &sel, &mut host).unwrap(), Prepared::Run(json!({"keyword": "sunset", "remove": false})));
+    m.run_command(id, "apply", &Value::Null, &sel, &mut host).unwrap();
+    assert_eq!(host.writes.pop().unwrap(), json!({"ids": ["1", "2"], "addKeywords": ["sunset"]}));
+    m.set_settings(id, &json!({"minCount": 100}), &mut host).unwrap();
+    let r = m.run_command(id, "apply", &Value::Null, &sel, &mut host).unwrap();
+    assert_eq!(r["ran"], false, "{r}");
+    assert!(host.writes.is_empty());
+    drop(m);
+
+    let mut m = Manager::open(&dir).unwrap();
+    assert_eq!(m.settings(id, &mut lcc_plugins::NoHost).unwrap().values["minCount"], json!(100.0), "kept after a restart");
+}

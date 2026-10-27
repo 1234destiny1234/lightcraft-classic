@@ -1508,5 +1508,7 @@
   "not installed": "no instalado",
   "checking…": "comprobando…",
   "installed:": "instalado:",
-  "Waiting for a plug-in's program": "Esperando al programa de un plug-in"
+  "Waiting for a plug-in's program": "Esperando al programa de un plug-in",
+  "Plug-in Settings": "Ajustes del plugin",
+  "this plug-in has no settings": "este plugin no tiene ajustes"
 }

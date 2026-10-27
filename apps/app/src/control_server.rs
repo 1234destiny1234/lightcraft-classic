@@ -63,7 +63,7 @@ struct TimedReader<'a> {
 impl Read for TimedReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let (wait, why) = if self.authed.get() {
-            (self.idle, "control connection idle too long; closing the connection")
+            (self.idle, IDLE_CLOSE_ERROR)
         } else {
             (self.auth_by.saturating_duration_since(Instant::now()), "no `auth` request in time; closing the connection")
         };
@@ -269,13 +269,41 @@ fn close_gracefully(stream: &TcpStream) {
     }
 }
 
+/// The error of the notice sent when an idle connection is closed. Clients match the reply's
+/// `"closed": "idle"` marker; `crates/mcp/src/backend.rs` also matches this text, for apps from
+/// before the marker, so keep the two in step.
+const IDLE_CLOSE_ERROR: &str = "control connection idle too long; closing the connection";
+
+/// Why the server closes a connection; its error reply says so.
+#[derive(Debug, PartialEq)]
+enum Closing {
+    /// Nothing complete arrived within the idle timeout. Nothing more is read, so a request that
+    /// crosses the notice is never run: the reply carries `"closed": "idle"` to tell clients it is
+    /// safe to send that request again on a new connection.
+    Idle,
+    /// Junk, an overlong line or a failed read.
+    Error(String),
+}
+
+impl Closing {
+    fn reply(&self) -> Value {
+        match self {
+            Self::Idle => json!({"ok": false, "error": IDLE_CLOSE_ERROR, "closed": "idle"}),
+            Self::Error(e) => json!({"ok": false, "error": e}),
+        }
+    }
+}
+
 /// Read one `\n`-terminated line of at most `max` bytes into `buf` (newline stripped).
 /// `Ok(false)` at end of stream; `Err` when the line is too long or the read fails.
-fn read_bounded_line(reader: &mut impl BufRead, buf: &mut Vec<u8>, max: usize) -> Result<bool, String> {
+fn read_bounded_line(reader: &mut impl BufRead, buf: &mut Vec<u8>, max: usize) -> Result<bool, Closing> {
     buf.clear();
     // `take` bounds the bytes buffered for one line: a peer can't make us allocate more than `max`.
     let limit = u64::try_from(max).unwrap_or(u64::MAX).saturating_add(1);
-    let n = reader.take(limit).read_until(b'\n', buf).map_err(|e| e.to_string())?;
+    let n = reader.take(limit).read_until(b'\n', buf).map_err(|e| match e.kind() {
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut if e.to_string() == IDLE_CLOSE_ERROR => Closing::Idle,
+        _ => Closing::Error(e.to_string()),
+    })?;
     if n == 0 {
         return Ok(false);
     }
@@ -287,7 +315,7 @@ fn read_bounded_line(reader: &mut impl BufRead, buf: &mut Vec<u8>, max: usize) -
         return Ok(true);
     }
     if buf.len() > max {
-        return Err(format!("request line longer than {max} bytes; closing the connection"));
+        return Err(Closing::Error(format!("request line longer than {max} bytes; closing the connection")));
     }
     // Last line without a newline, then end of stream.
     Ok(true)
@@ -309,12 +337,12 @@ fn serve_lines<R: Read, W: Write>(
     let mut buf = Vec::new();
     let mut authenticated = false;
     loop {
-        let reject = match read_bounded_line(&mut reader, &mut buf, MAX_LINE) {
+        let closing = match read_bounded_line(&mut reader, &mut buf, MAX_LINE) {
             Ok(false) => return,
-            Err(e) => e,
+            Err(closing) => closing,
             Ok(true) => match parse_line(&buf) {
                 Line::Blank => continue,
-                Line::Reject(e) => e,
+                Line::Reject(e) => Closing::Error(e),
                 Line::Request { id, method, params } if !authenticated => {
                     let (mut r, mut ok) = control_auth::check_auth_request(&method, &params, token);
                     if ok && !admit() {
@@ -342,7 +370,7 @@ fn serve_lines<R: Read, W: Write>(
                 }
             },
         };
-        let _ = writeln!(out, "{}", json!({"ok": false, "error": reject})).and_then(|()| out.flush());
+        let _ = writeln!(out, "{}", closing.reply()).and_then(|()| out.flush());
         return;
     }
 }
@@ -480,7 +508,10 @@ mod tests {
         writeln!(c, "{}", control_auth::auth_request(json!(1), TOKEN)).unwrap();
         let mut text = String::new();
         c.read_to_string(&mut text).unwrap();
-        assert!(text.contains("idle too long"), "{text}");
+        let reply: Value = serde_json::from_str(text.lines().nth(1).unwrap_or_default()).unwrap();
+        assert_eq!(reply["error"], IDLE_CLOSE_ERROR);
+        assert_eq!(reply["closed"], "idle", "clients may resend a request that crossed this notice");
+        assert!(reply.get("id").is_none());
         let t0 = Instant::now();
         while slots.authed.load(Ordering::SeqCst) != 0 && t0.elapsed() < Duration::from_secs(5) {
             std::thread::sleep(Duration::from_millis(10));
@@ -603,6 +634,7 @@ mod tests {
         assert_eq!(r.len(), 1);
         assert_eq!(r[0]["ok"], false);
         assert!(r[0]["error"].as_str().unwrap().contains("closing the connection"));
+        assert!(r[0].get("closed").is_none(), "only an idle close invites a resend: {}", r[0]);
     }
 
     #[test]

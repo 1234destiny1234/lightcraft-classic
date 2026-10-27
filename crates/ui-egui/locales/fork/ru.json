@@ -1722,5 +1722,7 @@
   "not installed": "не установлена",
   "checking…": "проверка…",
   "installed:": "установлена:",
-  "Waiting for a plug-in's program": "Ожидание программы плагина"
+  "Waiting for a plug-in's program": "Ожидание программы плагина",
+  "Plug-in Settings": "Настройки плагина",
+  "this plug-in has no settings": "у этого плагина нет настроек"
 }

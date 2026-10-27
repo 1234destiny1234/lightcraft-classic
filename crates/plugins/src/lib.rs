@@ -13,9 +13,10 @@
 //!
 //! What a plug-in can contribute (declared in its [`Manifest`]): menu commands with an optional
 //! declarative dialog, export post-process hooks, metadata/keyword providers and publish services
-//! (through the [`publish::PublishProvider`] trait boundary), and programs installed on the
-//! computer that it starts ([`programs`]: only the user grants one). The [`Manager`] keeps the installed
-//! plug-ins, their grants (given on install, revocable), enabled state and logs.
+//! (through the [`publish::PublishProvider`] trait boundary), settings kept for the whole app
+//! ([`SettingsStore`]), and programs installed on the computer that it starts ([`programs`]: only
+//! the user grants one). The [`Manager`] keeps the installed plug-ins, their grants (given on
+//! install, revocable), enabled state, settings and logs.
 //!
 //! Every failure (malformed module, trap, exhausted budget, denied capability, bad output) is an
 //! [`Error`]; nothing a module does can panic or hang the host.
@@ -34,14 +35,16 @@ pub mod programs;
 pub mod publish;
 mod runtime;
 mod safe_io;
+pub mod settings;
 mod store;
 
 pub use context::{HostApi, NoHost};
-pub use manager::{Failed, Installed, Manager, PendingCall};
+pub use manager::{Failed, Installed, Manager, PendingCall, Prepared, SettingsView};
 pub use manifest::{CommandDecl, DestinationDecl, Field, FieldKind, HOST_FEATURES, Hooks, Manifest, MetadataField, PublishDecl};
 pub use permissions::{FsRoot, Permissions};
 pub use programs::{EndStatus, Exit, Found, ProgramDecl, Reservation, RunDir, Running, StartRequest};
 pub use runtime::{ABI_VERSION, Limits, Outcome, Plugin};
+pub use settings::SettingsStore;
 pub use store::NamespaceStore;
 
 /// A plug-in error. Every way a module can misbehave ends here, never in a panic.

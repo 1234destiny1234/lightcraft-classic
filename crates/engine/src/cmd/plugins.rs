@@ -329,18 +329,72 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn commands(_: &mut Session, _: &Value) -> Result<Value> {
     with_manager(|m| {
+        let m: &Manager = m;
         let v: Vec<Value> = m
             .list()
             .filter(|p| p.enabled)
             .flat_map(|p| {
                 let pm = p.plugin.manifest();
-                pm.commands.iter().map(
-                    move |c| json!({"plugin": pm.id, "pluginName": pm.name, "command": c.id, "label": c.label, "menu": c.menu, "dialog": c.dialog}),
-                )
+                pm.commands.iter().map(move |c| {
+                    let values = m.command_values(&pm.id, &c.id, &c.dialog);
+                    json!({"plugin": pm.id, "pluginName": pm.name, "command": c.id, "label": c.label, "menu": c.menu, "dialog": c.dialog,
+                        "prepare": c.prepare, "values": values})
+                })
             })
             .collect();
         Ok(Value::Array(v))
     })
+}
+
+/// Fields as JSON, each with its `value` from `values`.
+fn fields_with_values(fields: &[lcc_plugins::Field], values: &serde_json::Map<String, Value>) -> Vec<Value> {
+    fields
+        .iter()
+        .map(|f| {
+            let mut v = serde_json::to_value(f).unwrap_or(Value::Null);
+            v["value"] = values.get(&f.key).cloned().unwrap_or(Value::Null);
+            v
+        })
+        .collect()
+}
+
+fn prepare(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "plugin.prepare";
+    let id = id_param(p, C)?;
+    let command = str_param(p, "command").ok_or_else(|| bad(C, "missing `command`"))?;
+    let selection: Vec<String> = s.targets(p)?.iter().map(|i| i.0.to_string()).collect();
+    let lib = s.plugin_library.clone();
+    let mut host = SessionHost(s);
+    with_library(&lib, |m| {
+        Ok(match m.prepare_command(id, command, &selection, &mut host).map_err(|e| plugin_err(C, e))? {
+            lcc_plugins::Prepared::Dialog { fields, error } => {
+                let values = m.command_values(id, command, &fields);
+                json!({"dialog": fields_with_values(&fields, &values), "error": error})
+            }
+            lcc_plugins::Prepared::Run(args) => json!({"run": args}),
+            lcc_plugins::Prepared::Message(message) => json!({"message": message}),
+        })
+    })
+}
+
+fn settings(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "plugin.settings";
+    let id = id_param(p, C)?;
+    let lib = s.plugin_library.clone();
+    let mut host = SessionHost(s);
+    with_library(&lib, |m| {
+        let lcc_plugins::SettingsView { fields, values, error } = m.settings(id, &mut host).map_err(|e| plugin_err(C, e))?;
+        Ok(json!({"id": id, "fields": fields_with_values(&fields, &values), "values": values, "error": error}))
+    })
+}
+
+fn set_settings(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "plugin.setSettings";
+    let id = id_param(p, C)?;
+    let values = p.get("values").ok_or_else(|| bad(C, "missing `values: {key: value}`"))?;
+    let lib = s.plugin_library.clone();
+    let mut host = SessionHost(s);
+    with_library(&lib, |m| m.set_settings(id, values, &mut host).map(|v| json!({"id": id, "values": v})).map_err(|e| plugin_err(C, e)))
 }
 
 fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
@@ -487,7 +541,8 @@ pub fn export_hooks(library: &str, files: &[Value], destination: Option<&Value>)
     }
     let dest = destination
         .map(|d| (d["plugin"].as_str().unwrap_or_default(), d["destination"].as_str().unwrap_or_default(), d.get("args").unwrap_or(&Value::Null)));
-    let calls = manager_for(library).as_ref().map(|m| m.export_calls(&files, dest)).unwrap_or_default();
+    // the destination's arguments are remembered for its dialog
+    let calls = manager_for(library).as_mut().map(|m| m.export_calls(&files, dest)).unwrap_or_default();
     (!calls.is_empty()).then_some(ExportHooks { library: library.to_string(), calls })
 }
 
@@ -663,7 +718,10 @@ fn destinations(_: &mut Session, _: &Value) -> Result<Value> {
         Ok(Value::Array(
             m.export_destinations()
                 .into_iter()
-                .map(|(plugin, d)| json!({"plugin": plugin, "pluginName": names.get(&plugin), "destination": d.id, "name": d.name, "dialog": d.dialog}))
+                .map(|(plugin, d)| {
+                    let values = m.destination_values(&plugin, &d.id);
+                    json!({"plugin": plugin, "pluginName": names.get(&plugin), "destination": d.id, "name": d.name, "dialog": d.dialog, "values": values})
+                })
                 .collect(),
         ))
     })
@@ -860,11 +918,14 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "plugin.enable", "Enable Plug-in", [], None, "{id, enabled?: bool = true}", always, enable),
         cmd!(query "plugin.grant", "Set Plug-in Permissions", [], None, "{id, grant} — replaces the grant (revokes what it leaves out, programs included; never more than requested). Granted `programs` may be repeated (kept) or left out (revoked), never added or widened: only the user allows those, in the Plugin Manager (an error, nothing changes) → granted", always, set_grant),
         cmd!(query "plugin.log", "Plug-in Log", [], None, "{id} → [lines]", always, log),
-        cmd!(query "plugin.commands", "Plug-in Commands", [], None, "{} → [{plugin, pluginName, command, label, menu, dialog}] of enabled plug-ins", always, commands),
-        cmd!(query "plugin.run", "Run Plug-in Command", [], None, "{plugin, command, args?: dialog values, ids?} — runs a plug-in menu command on ids / the selection → its result", always, run),
+        cmd!(query "plugin.commands", "Plug-in Commands", [], None, "{} → [{plugin, pluginName, command, label, menu, dialog, prepare, values: what the dialog opens with (the last-run values of fields that remember, else defaults)}] of enabled plug-ins", always, commands),
+        cmd!(query "plugin.prepare", "Prepare Plug-in Command", [], None, "{plugin, command, ids?} — asks a command with `prepare` how to run on ids / the selection (others: their dialog as declared) → {dialog: [field + value], error: why the plug-in's own options are missing | null} | {run: args} | {message}; runs nothing", always, prepare),
+        cmd!(query "plugin.run", "Run Plug-in Command", [], None, "{plugin, command, args?: dialog values, ids?} — runs a plug-in menu command on ids / the selection → its result; args given are remembered for its dialog. A command with `prepare` is asked first: a message → {message, ran: false} and nothing runs; its own args are used when `args` is missing; args are checked against its dialog as prepared", always, run),
+        cmd!(query "plugin.settings", "Plug-in Settings", [], None, "{id} → {id, fields: [field + value], values: {key: value}, error: why the plug-in's own options are missing | null}; kept for the whole app, defaults for what was never set", always, settings),
+        cmd!(query "plugin.setSettings", "Set Plug-in Settings", [], None, "{id, values: {key: value (null: the default)}} — each value checked against its field (numbers clamped); an unknown key or a value that doesn't fit changes nothing → {id, values}", always, set_settings),
         cmd!(query "plugin.suggestMetadata", "Suggest Metadata (Plug-ins)", [], None, "{ids?} — asks metadata providers about the photos → [{plugin, ok: {suggestions}} | {plugin, error}]; writes nothing", always, suggest),
         cmd!(query "plugin.postExport", "Run Export Hooks", [], None, "{files: [{path, photo?}]} — runs plug-in export post-process hooks on exported files → [{plugin, ok|error}]", always, post_export),
-        cmd!(query "plugin.exportDestinations", "Plug-in Export Destinations", [], None, "{} → [{plugin, pluginName, destination, name, dialog}] of enabled plug-ins; pass one as app.export {pluginDestination: {plugin, destination, args}}", always, destinations),
+        cmd!(query "plugin.exportDestinations", "Plug-in Export Destinations", [], None, "{} → [{plugin, pluginName, destination, name, dialog, values: what its dialog opens with}] of enabled plug-ins; pass one as app.export {pluginDestination: {plugin, destination, args}} (args are remembered)", always, destinations),
         cmd!(query "plugin.exportTo", "Send to Plug-in Destination", [], None, "{plugin, destination, files: [{path, photo?}], args?: dialog values} — hands exported files to a plug-in export destination → its result", always, export_to),
         cmd!(query "plugin.metadataFields", "Plug-in Metadata Fields", [], None, "{ids?: photos | id?: photo (default the active one)} → {photo, count, plugins: [{plugin, pluginName, fields: [{key, label, type, readOnly, value, mixed?}]} | {plugin, error}]}; with several photos a field whose values differ is `mixed` (value null)", always, metadata_fields),
         cmd!(query "plugin.setField", "Set Plug-in Metadata Field", [], None, "{plugin, field, value (null clears), ids?: photos | id?: photo (default the active one)} — read-only fields and values the field doesn't take are refused → {photo, count, field, value}; the catalog's copy (rules `plugin:<plugin>/<field>`, Any Searchable Text, XMP) follows", always, set_field),
@@ -1296,6 +1357,77 @@ mod tests {
         crate::filter_plugins::registry().remove("test.guard.filter");
         assert!(r.unwrap_err().to_string().contains("pixel filter"));
         assert!(kept, "the filter's row is untouched");
+    }
+
+    /// A plug-in with `manifest` that answers every call with `reply`, written to a file.
+    fn replying_module_file(name: &str, manifest: &Value, reply: &str) -> PathBuf {
+        let manifest = manifest.to_string();
+        let esc = |s: &str| s.replace('"', "\\\"");
+        let src = format!(
+            r#"(module (memory (export "memory") 2)
+  (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
+  (func (export "lcc_abi_version") (result i32) (i32.const 1))
+  (func (export "lcc_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "lcc_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "lcc_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
+            m = esc(&manifest),
+            r = esc(reply),
+            ml = manifest.len(),
+            rl = reply.len()
+        );
+        let dir = std::env::temp_dir().join(format!("lcc-engine-plugin-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{name}.wasm"));
+        std::fs::write(&path, wat::parse_str(&src).unwrap()).unwrap();
+        path
+    }
+
+    /// Agents read and change a plug-in's settings with `plugin.settings` / `plugin.setSettings`,
+    /// checked like the plug-in's own calls; `plugin.prepare` and `plugin.commands` give what a
+    /// command's dialog opens with, and a prepare step's message stops the run.
+    #[test]
+    fn settings_and_prepare_through_engine_commands() {
+        let _turn = turn();
+        let mut s = Session::with_demo();
+        let manifest = json!({"id": "test.engset", "name": "S", "version": "1.0.0", "requires": ["settings"],
+            "settings": [{"key": "n", "label": "N", "type": "number", "min": 0, "max": 10, "default": 3},
+                {"key": "mode", "label": "Mode", "type": "choice", "options": ["fast", "best"]}],
+            "commands": [{"id": "go", "label": "Go", "dialog": [{"key": "who", "label": "Who", "type": "text", "default": "me"}]},
+                {"id": "ask", "label": "Ask", "prepare": true, "dialog": [{"key": "v", "label": "V", "type": "choice", "options": []}]}]});
+        let path = replying_module_file("engset", &manifest, r#"{"ok":{"message":"Nothing to do here."}}"#);
+        s.execute("plugin.install", &json!({"path": path})).unwrap();
+
+        let got = s.execute("plugin.settings", &json!({"id": "test.engset"})).unwrap();
+        assert_eq!(got["values"], json!({"n": 3.0, "mode": "fast"}));
+        assert_eq!(got["fields"][1]["value"], "fast");
+        let set = s.execute("plugin.setSettings", &json!({"id": "test.engset", "values": {"n": 12, "mode": "best"}})).unwrap();
+        assert_eq!(set["values"], json!({"n": 10.0, "mode": "best"}));
+        for bad in [json!({"mode": "slow"}), json!({"other": 1}), json!({"n": 1, "mode": 2})] {
+            assert!(s.execute("plugin.setSettings", &json!({"id": "test.engset", "values": bad})).is_err(), "{bad}");
+        }
+        assert!(s.execute("plugin.setSettings", &json!({"id": "test.engset"})).is_err(), "values required");
+        assert_eq!(s.execute("plugin.settings", &json!({"id": "test.engset"})).unwrap()["values"], json!({"n": 10.0, "mode": "best"}));
+
+        // a dialog opens with what it last ran with
+        let start = |s: &mut Session| {
+            let c = s.execute("plugin.commands", &json!({})).unwrap();
+            c.as_array().unwrap().iter().find(|c| c["plugin"] == "test.engset" && c["command"] == "go").unwrap()["values"].clone()
+        };
+        assert_eq!(start(&mut s), json!({"who": "me"}));
+        s.execute("plugin.run", &json!({"plugin": "test.engset", "command": "go", "args": {"who": "you"}})).unwrap();
+        assert_eq!(start(&mut s), json!({"who": "you"}));
+        let p = s.execute("plugin.prepare", &json!({"plugin": "test.engset", "command": "go"})).unwrap();
+        assert_eq!(p["dialog"][0]["value"], "you");
+        // a prepare step that explains: nothing runs
+        let p = s.execute("plugin.prepare", &json!({"plugin": "test.engset", "command": "ask"})).unwrap();
+        assert_eq!(p, json!({"message": "Nothing to do here."}));
+        let r = s.execute("plugin.run", &json!({"plugin": "test.engset", "command": "ask", "args": {"v": "x"}})).unwrap();
+        assert_eq!(r, json!({"message": "Nothing to do here.", "ran": false}));
+        s.execute("plugin.uninstall", &json!({"id": "test.engset"})).unwrap();
+        assert!(s.execute("plugin.settings", &json!({"id": "test.engset"})).is_err());
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 
     #[test]

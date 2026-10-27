@@ -227,9 +227,56 @@ pub enum TiffCompression {
 /// Encode TIFF: 8/16-bit integer or 32-bit float, gray/RGB with optional (unassociated) alpha.
 /// ICC and XMP are embedded; EXIF is not (write it through the TIFF writer in `lcc-tiff`).
 pub fn encode_tiff(img: &EncodeImage, compression: TiffCompression, meta: &EncodeMeta) -> Result<Vec<u8>> {
+    img.validate()?;
+    write_tiff(img, compression, meta, 2)
+}
+
+/// [`encode_tiff`] with associated (premultiplied) alpha, `ExtraSamples` = 1: the colour of `img`
+/// (straight alpha) is multiplied by its alpha in the encoded values, as image editors store a
+/// transparent TIFF. An image without alpha is written as by [`encode_tiff`].
+pub fn encode_tiff_associated(img: &EncodeImage, compression: TiffCompression, meta: &EncodeMeta) -> Result<Vec<u8>> {
+    img.validate()?;
+    if !img.has_alpha() {
+        return write_tiff(img, compression, meta, 2);
+    }
+    let ch = img.channels as usize;
+    let n = (img.width as usize).saturating_mul(img.height as usize).saturating_mul(ch);
+    fn premultiply<T: Copy>(s: &[T], n: usize, ch: usize, mul: impl Fn(T, T) -> T) -> Vec<T> {
+        let mut out = s.get(..n).unwrap_or(s).to_vec();
+        for px in out.chunks_exact_mut(ch) {
+            if let Some((&mut a, colour)) = px.split_last_mut() {
+                for c in colour {
+                    *c = mul(*c, a);
+                }
+            }
+        }
+        out
+    }
+    let u8s;
+    let u16s;
+    let f32s;
+    let samples = match img.samples {
+        Samples::U8(s) => {
+            u8s = premultiply(s, n, ch, |c, a| ((c as u32 * a as u32 + 127) / 255) as u8);
+            Samples::U8(&u8s)
+        }
+        Samples::U16(s) => {
+            u16s = premultiply(s, n, ch, |c, a| ((c as u64 * a as u64 + 32767) / 65535) as u16);
+            Samples::U16(&u16s)
+        }
+        Samples::F32(s) => {
+            f32s = premultiply(s, n, ch, |c, a| c * if a.is_finite() { a.clamp(0.0, 1.0) } else { 1.0 });
+            Samples::F32(&f32s)
+        }
+    };
+    write_tiff(&EncodeImage { samples, ..*img }, compression, meta, 1)
+}
+
+/// The TIFF writer of [`encode_tiff`]: `extra_samples` is the `ExtraSamples` value of an alpha
+/// channel (1 associated, 2 unassociated). `img` is validated.
+fn write_tiff(img: &EncodeImage, compression: TiffCompression, meta: &EncodeMeta, extra_samples: u16) -> Result<Vec<u8>> {
     use tiff::encoder::{Compression, DeflateLevel, TiffEncoder, colortype};
     use tiff::tags::Predictor;
-    img.validate()?;
     let e = |e: tiff::TiffError| Error::Encode(e.to_string());
     let mut cur = std::io::Cursor::new(Vec::new());
     let comp = match compression {
@@ -260,7 +307,7 @@ pub fn encode_tiff(img: &EncodeImage, compression: TiffCompression, meta: &Encod
                 im.encoder().write_tag(tiff::tags::Tag::from_u16_exhaustive(700), xmp.as_bytes()).map_err(e)?;
             }
             if $alpha {
-                im.encoder().write_tag(tiff::tags::Tag::ExtraSamples, &[2u16][..]).map_err(e)?;
+                im.encoder().write_tag(tiff::tags::Tag::ExtraSamples, &[extra_samples][..]).map_err(e)?;
             }
             im.write_data($data).map_err(e)?;
         }};

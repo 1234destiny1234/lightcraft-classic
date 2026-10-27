@@ -1504,5 +1504,7 @@
   "not installed": "未安裝",
   "checking…": "檢查中…",
   "installed:": "已安裝：",
-  "Waiting for a plug-in's program": "正在等待外掛程式的程式"
+  "Waiting for a plug-in's program": "正在等待外掛程式的程式",
+  "Plug-in Settings": "增效模組設定",
+  "this plug-in has no settings": "此增效模組沒有設定"
 }

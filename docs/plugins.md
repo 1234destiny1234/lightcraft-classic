@@ -8,7 +8,8 @@ plug-ins are not supported.
 
 | Contribution | Manifest | Request it receives |
 |---|---|---|
-| Menu commands, optionally with a dialog | `commands: [{id, label, menu, dialog}]` | `{"hook":"command","command","args","selection"}` |
+| Menu commands, optionally with a dialog | `commands: [{id, label, menu, dialog, prepare?}]` | `{"hook":"command","command","args","selection"}`; with `prepare: true`, first `{"hook":"command.prepare","command","selection"}` (see [Settings, remembered values and prepare steps](#settings-remembered-values-and-prepare-steps)) |
+| Settings (the plug-in's page in the Plug-in Manager) | `settings: [{key, label, type, …, prepare?}]` | none, or `{"hook":"settings.prepare"}` when a field has `prepare: true`; the plug-in reads them with `settings.get` |
 | Export post-processing | `hooks.export: true` | `{"hook":"export","files":[{path, photo}]}`; the exported files are lent to the call for reading and writing |
 | Metadata and keyword suggestions | `hooks.metadata: true` | `{"hook":"metadata","photos":[photo.inspect JSON]}` → `{"suggestions":[{photo, fields?, keywords?}]}` |
 | A publish service (kind `plugin:<id>` in `publish.addService`) | `publish: {id, name}` | `{"hook":"publish.upload","service","item":{path, photo, title, caption, keywords, remoteId?}}` → `{remoteId, url?}`; `{"hook":"publish.delete","service","remoteId"}` |
@@ -21,7 +22,55 @@ control channel and MCP all use this command. `plugin.commands` lists the comman
 ends can build menus and dialogs. Dialog fields are `{key, label, type}`, where `type` is one of
 `text` (`default`), `number` (`min`, `max`, `default`), `bool` (`default`) or `choice`
 (`options`, `default`). The host checks the values against the fields and clamps numbers before
-the plug-in sees them.
+the plug-in sees them. A dialog opens with the values it last ran with (see below).
+
+## Settings, remembered values and prepare steps
+
+These need the host feature **`settings`**: a plug-in that uses any of them says
+`"requires": ["settings"]` (see [Compatibility](#compatibility-requires-and-version)).
+
+- **Settings** (`settings: [{key, label, type, …}]`, at most 32, the same field types as dialogs)
+  are the plug-in's own options, kept for the whole app (not per library). The Plug-in Manager
+  shows a *Settings…* button on the plug-in's row, which opens its page: a Settings tab with the
+  fields, *Save* and *Cancel*. The plug-in reads them with `settings.get` (every key; the default
+  for one never set or no longer fitting its field) and may change one with
+  `settings.set {key, value}` (checked against its field; `null` goes back to the default).
+  Engine commands: `plugin.settings {id}` and `plugin.setSettings {id, values}`. Saving is
+  all-or-nothing: an unknown key or a value that doesn't fit changes nothing.
+- **Remembered dialog values.** A command's or an export destination's dialog opens with the
+  values it last ran with (`values` in `plugin.commands` and `plugin.exportDestinations`). A field
+  with `"remember": false` always opens with its default (a "delete instead" switch, say). The
+  values are remembered whenever the command is run with arguments, from the UI or not, and stored
+  with the settings.
+- **Prepare steps.** A command with `"prepare": true` is asked first, with
+  `{"hook":"command.prepare","command","selection"}`, how to run on this selection. It answers
+  with exactly one of:
+  - `{"dialog": {<key>: {options?, default?}}}`: open the dialog with these options and defaults
+    (only the keys given change);
+  - `{"run": {<key>: value}}`: run at once with these arguments, no dialog (checked like dialog
+    values);
+  - `{"message": "…"}`: nothing to do; the text (at most 4096 characters) is shown and nothing
+    runs.
+
+  A prepare step **can only read**, whatever the plug-in is granted: there, `metadata.setStandard`,
+  `ns.set`, `settings.set`, `fs.writeText`, `fs.writeBytes`, `fs.remove` and any `http.request`
+  other than `GET` or `HEAD` fail with "a prepare step can only read". The command itself may write
+  as usual.
+
+  A `choice` field with no `options` (`"options": []`) gets its options only from the prepare
+  step; it is allowed only in a command with `prepare`. A settings field with `"prepare": true`
+  is prepared the same way when the page opens: `{"hook":"settings.prepare"}` → `{"fields":
+  {<key>: {options?, default?}}}`. A prepare step that fails (an error, a trap, a time-out, an
+  answer that doesn't fit) is logged and the dialog opens as declared, with the reason shown; when
+  a field's options can only come from it, the command doesn't run. At run time the command's
+  arguments are checked against the prepared fields again. Engine command:
+  `plugin.prepare {plugin, command, ids?}` → `{dialog: [field + value], error}` | `{run}` |
+  `{message}`; it runs nothing. `plugin.run` asks the prepare step too: on a `message` answer it
+  returns `{message, ran: false}` and runs nothing; on a `run` answer without `args` it runs with
+  the plug-in's arguments; when the prepare step failed, it refuses to run without `args`;
+  otherwise `args` are checked against the fields as prepared (as declared after a `run` answer).
+  The UI asks the prepare step once to decide what to show, and `plugin.run` asks it again, so a
+  prepare step should be cheap and give the same answer for the same selection.
 
 ## Permissions
 
@@ -140,7 +189,7 @@ hook that's never called, a host call that fails as an unknown method).
 
 - **The host's list** is `lcc_plugins::HOST_FEATURES`, and `plugin.list` returns it as
   `host: {abi, features}`. Everything the host had when `requires` arrived is the baseline and
-  has no name; the list started empty. Names so far: `programs` ([Programs](#programs)). Every manifest field, permission group or host call added
+  has no name. Names so far: `programs` ([Programs](#programs)), `settings` ([below](#settings-remembered-values-and-prepare-steps)). Every manifest field, permission group or host call added
   from then on gets a name there in the change that adds it, and its documentation here says
   which name to require.
 - **Names** are `[A-Za-z0-9._-]{1,64}`, at most 64, none repeated; anything else is a manifest
@@ -202,6 +251,7 @@ The guest SDK is `sdk/plugin` (`lcc-plugin-sdk`). Six examples, each a complete 
 | `sdk/examples/export-tools` | **export hooks**: a post-process hook that reads each exported file (binary, `host::read_bytes`) and records its CRC-32; an **export destination** "WebDAV Upload" that `PUT`s the files to a server (`host::http_bytes`, basic auth, a dry-run switch) |
 | `sdk/examples/publish-folder` | a **publish service** "Local Gallery": copies each rendered photo into a gallery folder (one writable `fs` root), keeps an `index.json`, replaces on re-publish and deletes on removal |
 | `sdk/examples/program-tools` | **programs**: *Send to Converter* writes the selected photos' ids into the run's folder and starts a granted program on that list (`host::program_start`); its **`program.end`** hook reads the program's `result.txt` and records each photo's result, or logs the exit code when the program failed |
+| `sdk/examples/keyword-picker` | **settings, remembered values and a prepare step** (`requires: ["settings"]`): *Apply Keyword…* adds (or, with a switch that is never remembered, removes) one keyword on the selected photos, picked from the keywords in use. Its prepare step offers the keywords used on at least *n* photos (a setting), most used first or A to Z (another), runs at once when only one qualifies and explains when none does |
 | `sdk/examples/custom-fields` | **custom metadata fields** Client / Job / Usage (editable in the Metadata panel) and Delivered (read-only), a *Set Job Fields…* command for the selection, an export hook that marks exported photos delivered, and a metadata provider that suggests the client as a keyword |
 
 ```sh
@@ -275,7 +325,8 @@ The manifest fields:
 | `requires` | `[names]`: the host features the plug-in uses beyond the baseline (see [Compatibility](#compatibility-requires-and-version)) |
 | `name`, `description`, `author` | shown in the Plug-in Manager |
 | `permissions` | what the plug-in asks for (see [Permissions](#permissions)); ask for as little as possible |
-| `commands` | `[{id, label, menu?, dialog?}]`, File ▸ Plug-ins ▸ `name` ▸ `menu` ▸ `label` |
+| `commands` | `[{id, label, menu?, dialog?, prepare?}]`, File ▸ Plug-ins ▸ `name` ▸ `menu` ▸ `label`; dialog fields may say `remember: false` |
+| `settings` | `[{key, label, type, …, prepare?}]`, at most 32; needs `requires: ["settings"]` |
 | `hooks` | `{export?: true, metadata?: true}` |
 | `publish` | `{id, name}`: one publish service |
 | `exportDestinations` | `[{id, name, dialog?}]`, at most 16 |
@@ -286,6 +337,8 @@ The manifest fields:
 | `req.hook()` | Fields (`req.get(…)`, helpers) | Reply |
 |---|---|---|
 | `command` | `req.command()`, `req.arg(key)`, `req.selection()` (photo ids as strings) | anything; `message` is shown |
+| `command.prepare` | `req.command()`, `req.selection()` | exactly one of `{dialog: {<key>: {options?, default?}}}`, `{run: args}`, `{message}`; host calls may only read |
+| `settings.prepare` | | `{fields: {<key>: {options?, default?}}}`, for fields with `prepare: true`; host calls may only read |
 | `export` | `req.files()` → `(path, photo)` of the written files | anything |
 | `export.destination` | `req.destination()`, `req.arg(key)`, `req.files()` | anything; `message` is shown |
 | `metadata` | `photos`: `photo.inspect` JSON | `{suggestions: [{photo, fields?, keywords?}]}` |
@@ -305,6 +358,7 @@ The manifest fields:
 | `host::http(method, url, headers, body)`, `host::http_bytes(…)` | `http.request` → `{status, contentType, location, body}` | the URL's host in `network` |
 | `host::program_list()` | `program.list` | nothing |
 | `host::program_start(program, args, files, bundle_id)` | `program.start` → `{run, tmpDir}` | the program in `programs` (granted by the user) |
+| `host::settings()`, `host::setting(key)`, `host::set_setting(key, value)` | `settings.get`, `settings.set {key, value}` | nothing (own settings) |
 | `host::log(line)` | `host.log` | nothing; Plug-in Manager ▸ Log |
 | `lcc_plugin_sdk::base64::{encode, decode}` | | |
 
@@ -340,7 +394,8 @@ The manifest fields:
 
 `plugin.list`, `plugin.inspectFile {path}`, `plugin.install {path, grant?, allowDowngrade?}`,
 `plugin.uninstall {id}`, `plugin.enable {id, enabled}`, `plugin.grant {id, grant}`,
-`plugin.log {id}`, `plugin.commands`, `plugin.run {plugin, command, args?, ids?}`,
+`plugin.log {id}`, `plugin.commands`, `plugin.prepare {plugin, command, ids?}`,
+`plugin.run {plugin, command, args?, ids?}`, `plugin.settings {id}`, `plugin.setSettings {id, values}`,
 `plugin.suggestMetadata {ids?}`, `plugin.postExport {files}`, `plugin.publishServices`,
 `plugin.exportDestinations`, `plugin.exportTo {plugin, destination, files, args?}`,
 `plugin.metadataFields {id?}`, `plugin.setField {plugin, field, value, id?}`.
@@ -364,7 +419,11 @@ Plug-ins are installed per user in `<settings_dir>/plugins`, or in `<PREFIX>_PLU
 is set. That folder holds `<id>.wasm`, `plugins.json` (enabled state and grants) and
 `data/<id>.json` (the plug-in's namespace: `{"format": 2, "libraries": {<library id>: {<photo id>:
 {…}}}}`; a file written before namespaces were kept per library is claimed whole by the first
-library opened from a folder, so no value is lost). A module copied into the folder by hand loads
+library opened from a folder, so no value is lost), and `settings/<id>.json` (its settings and
+remembered dialog values: `{"format": 1, "settings": {…}, "dialogs": {"command/<id>" |
+"destination/<id>": {…}}}`; a damaged file reads as empty, says so in the plug-in's log, and is
+kept as `<id>.json.bad` when the next save replaces it; an update drops the keys the new version no
+longer declares, and removing the plug-in deletes the file). A module copied into the folder by hand loads
 disabled and with no permissions granted.
 
 ## Pixel filters (PhotoCraft ABI)
