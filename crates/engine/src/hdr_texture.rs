@@ -86,4 +86,38 @@ mod tests {
             assert_eq!(encode_rgba16f(&rgb, 257, 129, headroom).unwrap(), expected);
         }
     }
+
+    /// The HDR texture the GPU makes from its render (`lcc_gpu::try_render_hdr_texels`) is the one
+    /// this encoder makes from that render's floats, to the last bits of a half float (`pow` and
+    /// the half rounding are the GPU's own), with the same 8-bit image and histogram
+    #[test]
+    fn the_gpus_hdr_texels_match_the_cpu_encoder() {
+        if !lcc_gpu::available() {
+            lcc_testkit::skip!(Gpu, "no GPU adapter");
+            return;
+        }
+        let src = std::sync::Arc::new(lcc_scenes::demo_library()[1].render(640, 427));
+        let info = lcc_pipeline::SourceInfo::default();
+        let mut s = lcc_develop::DevelopSettings::default();
+        s.hdr.enabled = true;
+        s.light.exposure = 1.5;
+        s.light.highlights = -20.0;
+        let req = lcc_pipeline::RenderRequest { depth: lcc_pipeline::OutputDepth::F32Hdr, ..lcc_pipeline::RenderRequest::fit(640, 640) };
+        let floats = lcc_gpu::try_render(&src, &info, &s, &req, None).expect("gpu render");
+        let deep = floats.deep.as_ref().expect("float samples");
+        let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { panic!("float samples") };
+        for headroom in [1.0, 3.4, 8.0] {
+            let (r, texels) = lcc_gpu::try_render_hdr_texels(&src, &info, &s, &req, None, headroom).expect("gpu texels");
+            assert!(r.deep.is_none(), "no floats come back");
+            assert_eq!((r.image.width, r.image.height), (deep.width, deep.height));
+            assert_eq!(r.image.data, floats.image.data, "the same 8-bit image");
+            assert_eq!(r.histogram.luma, floats.histogram.luma);
+            let want = encode_rgba16f(rgb, deep.width, deep.height, headroom).unwrap();
+            assert_eq!(texels.len(), want.len());
+            let half = |b: u16| half::f16::from_bits(b).to_f32();
+            let worst = texels.iter().zip(&want).map(|(a, b)| (half(*a) - half(*b)).abs() / half(*b).abs().max(1e-3)).fold(0.0f32, f32::max);
+            assert!(worst < 2e-3, "headroom {headroom}: relative difference {worst}");
+            assert!(texels.iter().any(|t| half(*t) > 1.0) || headroom <= 1.0, "highlights above SDR white");
+        }
+    }
 }

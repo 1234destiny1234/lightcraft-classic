@@ -411,8 +411,8 @@ through the same entry point. An agent can cull a shoot, develop it, mask a sky 
 
 - **Pure Rust, no C.** Our own RAW decoders (DNG, Canon CR2/CR3, Sony ARW, Nikon NEF, Fujifilm RAF incl. X-Trans,
   Panasonic RW2 / Leica RWL, Pentax PEF, Olympus ORF), our own colour science, our own pipeline. JPEG, PNG, TIFF, WebP,
-  PSD composites and JPEG XL open today; HEIC/HEIF photos too with `--features heif` (HEVC is a build-time choice,
-  as in PhotoCraft).
+  PSD composites, JPEG XL and HEIC/HEIF (iPhone photos) open today (HEVC stays a build-time choice: the `heif`
+  feature is on by default and can be turned off).
 - **Scene-referred & wide-gamut.** Linear Rec.2020 float internally, Bradford-adapted white balance, gamut mapping
   instead of clipping, a filmic shoulder for raw and pixel-exact pass-through for JPEGs you haven't touched.
 - **Resolution-independent edits.** Radii and brush sizes are relative to the image, so a 400 px preview, your
@@ -510,6 +510,10 @@ Humans and agents follow the same rules, so read [AGENTS.md](AGENTS.md) first. T
 - **Never crash.** Non-test code returns errors instead of panicking: no `unwrap()`, `expect()`, `panic!` or
   `unsafe`, checked indexing on anything derived from input, and a regression test with every crash fix. Details in
   [AGENTS.md](AGENTS.md#never-crash-outranks-feature-work).
+
+To take something on, claim its issue with a comment and open a pull request with `Fixes #123` in the description;
+[CONTRIBUTING.md](CONTRIBUTING.md) has the whole workflow. Questions, ideas or a bug you'd like to talk through
+first? [Join the Discord](https://discord.gg/c3dfYATzsQ) and bring them to [the project's channel](https://discord.com/channels/1359579021108842617/1559361045468942346).
 
 
 ## Licence and credits

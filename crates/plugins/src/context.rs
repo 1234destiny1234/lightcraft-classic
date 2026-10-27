@@ -6,6 +6,7 @@
 //! | `catalog.query`, `photo.inspect`, `catalog.stats`, `keyword.list` | `catalog` | [`HostApi::catalog`] |
 //! | `metadata.setStandard`| `metadataWrite`             | [`HostApi::set_metadata`]               |
 //! | `ns.get`, `ns.set`, `ns.photos` | always (own namespace) | [`NamespaceStore`]               |
+//! | `settings.get`, `settings.set` | always (own settings) | [`SettingsStore`], checked against the manifest's `settings` |
 //! | `fs.readText`, `fs.list`, `fs.exists` | a readable root | std::fs                           |
 //! | `fs.writeText`        | a writable root (or a file lent for this call) | std::fs              |
 //! | `fs.readBytes`, `fs.writeBytes` | as the text calls; contents as base64 | std::fs              |
@@ -13,10 +14,13 @@
 //! | `http.request`        | the URL's host in `network` | `lcc-net` (native only)                 |
 
 use std::path::PathBuf;
+use std::sync::{Mutex, PoisonError};
 
 use serde_json::{Value, json};
 
+use crate::manifest::Field;
 use crate::permissions::Permissions;
+use crate::settings::SettingsStore;
 use crate::store::NamespaceStore;
 
 /// Largest file `fs.readText` returns / `fs.writeText` writes, and largest HTTP body.
@@ -51,6 +55,25 @@ pub(crate) struct CallContext<'a> {
     pub lent: &'a [PathBuf],
     pub host: &'a mut dyn HostApi,
     pub store: &'a mut NamespaceStore,
+    /// The plug-in's settings (shared: the Plugin Manager may read them while a call runs).
+    pub settings: &'a Mutex<SettingsStore>,
+    /// The settings the manifest declares.
+    pub fields: &'a [Field],
+    /// A prepare step (`command.prepare`, `settings.prepare`): it may read, never write.
+    pub read_only: bool,
+}
+
+/// Whether host call `method` with `p` changes something: refused in a read-only call.
+fn writes(method: &str, p: &Value) -> bool {
+    match method {
+        "metadata.setStandard" | "ns.set" | "settings.set" | "fs.writeText" | "fs.writeBytes" | "fs.remove" => true,
+        // a request that may change something on the server
+        "http.request" => {
+            let m = p.get("method").and_then(Value::as_str).unwrap_or("GET");
+            !m.eq_ignore_ascii_case("GET") && !m.eq_ignore_ascii_case("HEAD")
+        }
+        _ => false,
+    }
 }
 
 fn str_arg<'v>(p: &'v Value, key: &str) -> Result<&'v str, String> {
@@ -59,6 +82,9 @@ fn str_arg<'v>(p: &'v Value, key: &str) -> Result<&'v str, String> {
 
 impl CallContext<'_> {
     pub fn dispatch(&mut self, method: &str, p: &Value) -> Result<Value, String> {
+        if self.read_only && writes(method, p) {
+            return Err(format!("{method}: a prepare step can only read"));
+        }
         match method {
             "catalog.query" | "photo.inspect" | "catalog.stats" | "keyword.list" => {
                 if !self.perms.catalog {
@@ -78,6 +104,19 @@ impl CallContext<'_> {
                 Ok(Value::Null)
             }
             "ns.photos" => Ok(json!(self.store.photos())),
+            "settings.get" => Ok(Value::Object(self.settings.lock().unwrap_or_else(PoisonError::into_inner).values(self.fields))),
+            "settings.set" => {
+                let key = str_arg(p, "key")?;
+                let f = self.fields.iter().find(|f| f.key == key).ok_or_else(|| format!("no setting {key:?} in the manifest"))?;
+                let v = match p.get("value") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(f.coerce(v)?),
+                };
+                let mut s = self.settings.lock().unwrap_or_else(PoisonError::into_inner);
+                s.set(key, v.clone()).map_err(|e| e.to_string())?;
+                s.save().map_err(|e| e.to_string())?;
+                Ok(v.unwrap_or_else(|| f.default_value()))
+            }
             "fs.readText" => {
                 let path = self.perms.check_path(str_arg(p, "path")?, false, self.lent)?;
                 let bytes = crate::safe_io::read_checked(&path, MAX_IO_BYTES as u64).map_err(|e| format!("{}: {e}", path.display()))?;

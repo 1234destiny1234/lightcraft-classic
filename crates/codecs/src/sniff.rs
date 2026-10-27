@@ -177,6 +177,9 @@ fn tiff_is_raw(b: &[u8]) -> bool {
     let sony = t.ifd(ifd0).is_some_and(|(entries, _)| {
         entries.iter().any(|e| e.tag == 0x010f && t.bytes(e).and_then(|v| v.get(..4)).is_some_and(|v| v.eq_ignore_ascii_case(b"SONY")))
     });
+    let samsung = t.ifd(ifd0).is_some_and(|(entries, _)| {
+        entries.iter().any(|e| e.tag == 0x010f && t.bytes(e).and_then(|v| v.get(..7)).is_some_and(|v| v.eq_ignore_ascii_case(b"SAMSUNG")))
+    });
     // The DSLR-A100 ARW: an old-style-JPEG IFD0 whose SubIFDs pointer addresses the raw data (same rule as lcc-raw).
     let a100 = sony
         && t.ifd(ifd0).is_some_and(|(entries, _)| {
@@ -196,6 +199,14 @@ fn tiff_is_raw(b: &[u8]) -> bool {
             break;
         }
         let Some((entries, _)) = t.ifd(pos) else { continue };
+        // Samsung reuses the ordinary TIFF PackBits value 32773 for its sensor coding.
+        // Require its Make and CFA tag so exported PackBits TIFFs remain ordinary TIFFs.
+        if samsung
+            && entries.iter().any(|e| e.tag == 0x828e)
+            && entries.iter().find(|e| e.tag == 0x0103).and_then(|e| t.uint(e)).is_some_and(|v| matches!(v, 32772 | 32773))
+        {
+            return true;
+        }
         // Sony M/S lossless ARWs retain a dummy CFA pattern, but store linear YCbCr.
         // Requiring the raw pattern plus this layout keeps ordinary Sony TIFFs as TIFFs.
         let uint = |tag| entries.iter().find(|e| e.tag == tag).and_then(|e| t.uint(e));
@@ -250,6 +261,42 @@ mod tests {
         assert_eq!(sniff(b"IIRO\x08\0\0\0"), Some(Format::RawTiffLike));
         assert_eq!(sniff(b"nope"), None);
         assert_eq!(sniff(b""), None);
+    }
+
+    #[test]
+    fn samsung_private_compressions_route_to_raw_in_root_and_subifd() {
+        fn entry(b: &mut Vec<u8>, tag: u16, typ: u16, count: u32, value: u32) {
+            b.extend_from_slice(&tag.to_le_bytes());
+            b.extend_from_slice(&typ.to_le_bytes());
+            b.extend_from_slice(&count.to_le_bytes());
+            b.extend_from_slice(&value.to_le_bytes());
+        }
+        for compression in [32772u32, 32773] {
+            for subifd in [false, true] {
+                let mut b = b"II*\0\x08\0\0\0".to_vec();
+                let count = if subifd { 2u16 } else { 3 };
+                let make = 8 + 2 + u32::from(count) * 12 + 4;
+                b.extend_from_slice(&count.to_le_bytes());
+                entry(&mut b, 0x010f, 2, 8, make);
+                if subifd {
+                    entry(&mut b, 0x014a, 4, 1, make + 8);
+                    b.extend_from_slice(&0u32.to_le_bytes());
+                    b.extend_from_slice(b"SAMSUNG\0");
+                    b.extend_from_slice(&2u16.to_le_bytes());
+                }
+                entry(&mut b, 0x0103, 3, 1, compression);
+                let pattern = b.len();
+                entry(&mut b, 0x828e, 1, 4, 0x02010100);
+                b.extend_from_slice(&0u32.to_le_bytes());
+                if !subifd {
+                    b.extend_from_slice(b"SAMSUNG\0");
+                }
+                assert_eq!(sniff(&b), Some(Format::RawTiffLike), "compression {compression}, subifd {subifd}");
+                // The same compression without raw evidence must not capture ordinary TIFFs.
+                b[pattern..pattern + 2].copy_from_slice(&0x0100u16.to_le_bytes());
+                assert_eq!(sniff(&b), Some(Format::Tiff));
+            }
+        }
     }
 
     #[test]

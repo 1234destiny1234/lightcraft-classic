@@ -12,7 +12,10 @@ const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
 fn app() -> Headless {
-    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    // (the grid: the loupe's background work, a look preparing the full-size original, would
+    // outlast the toasts these tests read after a settle)
+    app.ui.view = crate::state::ViewMode::PhotoGrid;
     let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
     h.settle(SETTLE);
     h

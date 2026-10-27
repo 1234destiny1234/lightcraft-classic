@@ -209,9 +209,18 @@ walks the drive.
   threads read adjacent pixels; vertical ones slide running sums down chunks of a column), `map`
   (log luminance, dark channel, guided-filter steps, white balance, luminance / colour NR, airlight
   sampling), `mask` (linear / radial / luminance / colour range / brush shapes, combine, finalize),
-  `finish` (the whole per-pixel stage) — each mirrors a named CPU function.
+  `finish` (the whole per-pixel stage), `fit` / `fit_pack` (the loupe's display fit: the 8-bit
+  output unpacked for `resize`'s Lanczos taps and packed back with the CPU's rounding) — each
+  mirrors a named CPU function.
 - Soft proofing against an output space (`RenderRequest::proof`, with its destination and display gamut
   warnings) runs in `finish`; a proof against an output-device profile (its 3D table) renders on the CPU.
+- Display fit (`lcc_gpu::try_render_fitted`, used by `RenderJob::run` for jobs with a
+  `display_fit`): the render is shrunk to the size it is drawn on the device, after its histogram
+  is binned from the whole frame, and only the fitted image is read back (2560 → 1728 px: 11.4 →
+  3.7 ms with the fit, against the CPU's `fit_rgba8` after a full readback). It matches `fit_rgba8`
+  within 1 LSB (`the_display_fit_on_the_device_matches_the_cpus`). Overlays, a window that spots
+  grew, HDR renders and a monitor profile's conversion keep the CPU fit. A render at rest reads the full
+  image back with the fitted one, for the photo's view preview; a drag's updates cache the fitted one.
 - Per-stage hybrid: defringe and spot removal (rare, CPU-only for now) download the resampled image,
   run on the CPU and upload; heuristic mask shapes (Sky, Subject, Background, …) and brushes of more
   than 4096 dabs are evaluated on the CPU and uploaded; sources over the buffer limit are resampled
@@ -316,6 +325,11 @@ reduction (`DeepImage::to_rgba8`), so the histogram is still binned on the GPU. 
 compares the float samples (sRGB-encoded past 1, ×255) with the CPU's: max < 0.01, mean ≤ 0.0001 steps
 on the AMD Radeon 8060S across tone-map arms, light edits, vignette, curves, grain and an HDR request of
 an SDR edit. 16-bit and SDR float exports, soft proofs and Visualize HDR stay on the CPU (`handles`).
+An HDR view on an HDR display that takes texels (`HdrOutput::texel_headroom`) has its
+`Rgba16Float` texture made on the device (`lcc_gpu::try_render_hdr_texels`, `hdr_texels.wgsl`, the
+same transform as `lcc_engine::hdr_texture::encode_pixel`): 8 bytes a pixel come back instead of 12,
+and the CPU neither unpacks the floats nor encodes them (`the_gpus_hdr_texels_match_the_cpu_encoder`:
+within 2e-3 relative). HDR exports, gain maps and the CPU path keep the floats.
 3000 × 2000 HDR render (release, shared machine): CPU ~200–575 ms, GPU ~50–70 ms
 (`cargo test -p lcc-gpu --release --test it equivalence::hdr_render_time -- --ignored --nocapture`).
 
