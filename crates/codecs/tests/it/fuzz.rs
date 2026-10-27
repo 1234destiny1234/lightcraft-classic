@@ -302,9 +302,27 @@ fn zero_size_headers_are_refused() {
         j[at..at + 2].copy_from_slice(&[0, 0]);
         assert!(decode_unguarded(&j, Format::Jpeg, &small_opts()).is_err());
     }
-    let mut png = seeds()[1].clone();
-    png[16..20].copy_from_slice(&[0; 4]);
-    assert!(decode_unguarded(&png, Format::Png, &small_opts()).is_err());
+    let png = seeds()[1].clone();
+    for at in [16, 20] {
+        let mut p = png.clone();
+        p[at..at + 4].copy_from_slice(&[0; 4]);
+        // repair the IHDR CRC so the dimension, not the checksum, is what gets refused
+        let crc = crc32(&p[12..29]);
+        p[29..33].copy_from_slice(&crc.to_be_bytes());
+        assert!(decode_unguarded(&p, Format::Png, &small_opts()).is_err());
+    }
+}
+
+/// CRC-32 (IEEE), as PNG chunks use.
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut c = !0u32;
+    for &b in bytes {
+        c ^= u32::from(b);
+        for _ in 0..8 {
+            c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+        }
+    }
+    !c
 }
 
 fn seeds() -> &'static Vec<Vec<u8>> {
