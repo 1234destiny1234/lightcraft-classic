@@ -32,7 +32,7 @@ serde_json = { workspace = true }
 dhat = { workspace = true, optional = true }
 
 [features]
-default = ["denoise"]
+default = ["denoise", "heif"]
 denoise = ["lcc-engine/denoise"]
 rawnind-model = ["denoise", "lcc-engine/rawnind-model"]
 own-model = ["denoise", "lcc-engine/own-model"]
@@ -41,8 +41,8 @@ own-model = ["denoise", "lcc-engine/own-model"]
 # (open it in DHAT's viewer: allocation sites by bytes at the peak). Slows allocation-heavy work.
 dhat-heap = ["dep:dhat"]
 
-# Open HEIC/HEIF photos (the optional lcc-heif crate). Not default so distributors choose
-# it (HEVC patents); build with `--features heif` to include it.
+# Open HEIC/HEIF photos (the lcc-heif crate, pure Rust). On by default, as in the app;
+# `--no-default-features --features denoise` leaves HEVC out.
 heif = ["lcc-codecs/heif"]
 
 [dev-dependencies]

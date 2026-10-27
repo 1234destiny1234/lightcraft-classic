@@ -15,12 +15,13 @@ workspace = true
 
 [features]
 # The upstream project's own AI Denoise model (MIT OR Apache-2.0) is offered as a download
-default = ["denoise", "own-model"]
+default = ["denoise", "own-model", "heif"]
 denoise = ["lcc-engine/denoise"]
 rawnind-model = ["denoise", "lcc-engine/rawnind-model"]
 own-model = ["denoise", "lcc-engine/own-model"]
-# Open HEIC/HEIF photos (the optional lcc-heif crate). Not default so distributors choose
-# it (HEVC patents); build with `--features heif` to include it.
+# Open HEIC/HEIF photos (the lcc-heif crate, pure Rust). On by default so every build, local
+# ones included, opens iPhone photos; distributors who must avoid HEVC (patents) build with
+# `--no-default-features --features denoise,own-model`.
 heif = ["lcc-codecs/heif"]
 # Sound for video playback and slideshow music (cpal; links libasound on Linux). See docs/video.md.
 audio-out = ["lcc-engine/audio-out"]
