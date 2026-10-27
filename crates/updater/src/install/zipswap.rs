@@ -13,7 +13,7 @@
 //!    portable data folder and anything else the user put there stay as they are. A rename that
 //!    fails is retried for a moment (antivirus software holds new files briefly); if it still fails,
 //!    every file moved so far is put back.
-//! 3. The new program is started with [`AFTER_UPDATE`] and this one quits. The new one waits until
+//! 3. The new program is started with `<PREFIX>_AFTER_UPDATE` set ([`AFTER_UPDATE`]) and this one quits. The new one waits until
 //!    the old program's file can be deleted, which is once the old process has ended, before it
 //!    opens the library ([`finish_previous`]); if the old one is still running after
 //!    [`WAIT_FOR_EXIT`] (the user cancelled quitting), the new one ends without opening anything.
@@ -34,8 +34,10 @@ use crate::error::UpdateError;
 /// What a replaced file is renamed to until the next start deletes it.
 pub const OLD_SUFFIX: &str = ".update-old";
 
-/// The argument the new version is started with: it waits for the old one to quit.
-pub const AFTER_UPDATE: &str = "--after-update";
+/// The environment variable (`<PREFIX>_AFTER_UPDATE`, through [`lcc_brand::env_var`]) the new
+/// version is started with: it waits for the old one to quit. A variable, not an argument, so a
+/// version that doesn't know it (an older release) ignores it instead of refusing to start.
+pub const AFTER_UPDATE: &str = "AFTER_UPDATE";
 
 /// How long the new version waits for the old one to quit. Quitting can wait on the user (a
 /// running export, changes that couldn't be saved), so this is long; a new version still waiting

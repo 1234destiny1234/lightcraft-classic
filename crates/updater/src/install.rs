@@ -219,7 +219,7 @@ fn self_updating_copy() -> Option<(PathBuf, String)> {
 /// Swap the zip's files into the copy in `dir` and start the new `exe_name` there.
 fn install_zip(zip: &Path, dir: &Path, exe_name: &str, version: &str) -> Result<Outcome, UpdateError> {
     let files = zipswap::swap_in(zip, dir, exe_name, &mut |exe| {
-        Command::new(exe).arg(zipswap::AFTER_UPDATE).current_dir(dir).spawn().map(|_| ()).map_err(|e| e.to_string())
+        Command::new(exe).env(lcc_brand::env_var(zipswap::AFTER_UPDATE), "1").current_dir(dir).spawn().map(|_| ()).map_err(|e| e.to_string())
     })?;
     log::info!("updates: {files} files of {} replaced by {version}", dir.display());
     Ok(Outcome { message: format!("{version} is in place. The app restarts now."), exit: true })

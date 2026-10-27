@@ -799,8 +799,11 @@ pub fn clean_up_after_update() {
     }
 }
 
-/// The argument a zip update starts the new version with ([`wait_for_previous_version`]).
-pub const AFTER_UPDATE: &str = lcc_updater::AFTER_UPDATE;
+/// Whether a zip update started this process (`<PREFIX>_AFTER_UPDATE` is set): it then waits for
+/// the version it replaced ([`wait_for_previous_version`]).
+pub fn started_by_update() -> bool {
+    lcc_brand::env_is_set(lcc_updater::AFTER_UPDATE)
+}
 
 /// In a version a Windows zip update started: wait until the version it replaced has quit, so the
 /// two never hold the library at once. `false` when it is still running after the wait (two
