@@ -369,7 +369,7 @@ fn decode_stream(src: &[u8], w: usize, h: usize, set: usize, out: &mut [u16]) ->
                 if !(0..1024).contains(&v) {
                     return Err(RawError::Corrupt("CRW: sample out of range".into()));
                 }
-                *out.get_mut(p).ok_or(RawError::Corrupt("CRW: too many samples".into()))? = v as u16;
+                *out.get_mut(p).ok_or_else(|| RawError::Corrupt("CRW: too many samples".into()))? = v as u16;
                 p += 1;
             }
         }

@@ -935,6 +935,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-26 | patch | LR-IMP-FORMATS: Canon CRW decoding no longer allocates an error message per written sample (`ok_or_else`): all 15 corpus CRWs 2.86 → 1.19 s, the same samples; status unchanged |
 | 2026-10-26 | patch | LR-IMP-FORMATS: TIFF compression 32772 / 32773 is Samsung raw data when the directory has a CFA pattern and the file a Samsung Make (NX1, NX500, NX3000, NX mini SRWs were sniffed as TIFF); ordinary PackBits TIFFs unchanged; status unchanged |
 | 2026-10-26 | patch | LR-IMP-FORMATS: Canon CRX (CR3) decodes every tile's planes and every C-RAW subband in parallel and places samples by row in parallel; the same samples on all 35 corpus CR3s (6.0 → 3.8 s in all); status unchanged |
 | 2026-10-26 | patch | LR-VIEW-ZOOM, LR-VIEW-FILMSTRIP, LR-VIEW-HDR-DISPLAY, LRC-LIB-PREVIEWS: byte and GPU display fitting, the histogram steady on release, prepared neighbours adopted, one full-quality window after a zoomed edit, coalesced preview writes, HDR texels made on the GPU, the original prepared after a look; the view preview keeps the full render; statuses unchanged |
