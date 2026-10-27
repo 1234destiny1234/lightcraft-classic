@@ -362,6 +362,7 @@ impl TitleCompose {
             loaded: None,
             quick: None,
             display: None,
+            hdr_texels: None,
             gpu_fallback: None,
         }
     }

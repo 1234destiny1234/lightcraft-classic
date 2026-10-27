@@ -1,6 +1,6 @@
 //! Separable resampling with precomputed filter weights.
 
-use crate::{Image, par_rows};
+use crate::{Image, Rgba8, par_rows};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Filter {
@@ -150,10 +150,81 @@ pub fn resize<T: Pixel>(img: &Image<T>, w: usize, h: usize, filter: Filter) -> I
 
 /// Fit within `max_w × max_h` preserving aspect (never upscales).
 pub fn fit<T: Pixel>(img: &Image<T>, max_w: usize, max_h: usize, filter: Filter) -> Image<T> {
-    let s = (max_w as f64 / img.width as f64).min(max_h as f64 / img.height as f64).min(1.0);
-    let w = ((img.width as f64 * s).round() as usize).max(1);
-    let h = ((img.height as f64 * s).round() as usize).max(1);
+    let (w, h) = fit_size(img.width, img.height, max_w, max_h);
     resize(img, w, h, filter)
+}
+
+/// The size [`fit`] (and [`fit_rgba8`]) shrinks a `width × height` image to.
+pub fn fit_size(width: usize, height: usize, max_w: usize, max_h: usize) -> (usize, usize) {
+    let s = (max_w as f64 / width as f64).min(max_h as f64 / height as f64).min(1.0);
+    (((width as f64 * s).round() as usize).max(1), ((height as f64 * s).round() as usize).max(1))
+}
+
+/// [`fit`] for an 8-bit image, read and written as bytes: the same taps and float arithmetic as
+/// `fit` on a float copy of it, rounded back to bytes, so the result is identical, without the two
+/// full-size float copies and their single-threaded conversions (most of the time a 2560 px
+/// loupe render took to shrink). Alpha is filtered only when some pixel is not opaque.
+pub fn fit_rgba8(img: &Rgba8, max_w: usize, max_h: usize, filter: Filter) -> Rgba8 {
+    let (w, h) = fit_size(img.width, img.height, max_w, max_h);
+    if img.width == w && img.height == h {
+        return img.clone();
+    }
+    let mut opaque = vec![true; img.height];
+    par_rows(&mut opaque, 1, |y, o| o[0] = img.row(y).iter().all(|p| p[3] == 255));
+    let byte = |v: f32| v.round().clamp(0.0, 255.0) as u8;
+    if opaque.iter().all(|o| *o) {
+        resize_bytes(
+            img,
+            w,
+            h,
+            filter,
+            |p| [f32::from(p[0]), f32::from(p[1]), f32::from(p[2])],
+            |v: [f32; 3]| [byte(v[0]), byte(v[1]), byte(v[2]), 255],
+        )
+    } else {
+        resize_bytes(img, w, h, filter, |p| p.map(f32::from), |v: [f32; 4]| v.map(byte))
+    }
+}
+
+/// [`resize`] of bytes through `T` samples: `load` reads a pixel, `store` writes one back.
+fn resize_bytes<T: Pixel>(
+    img: &Rgba8,
+    w: usize,
+    h: usize,
+    filter: Filter,
+    load: impl Fn(&[u8; 4]) -> T + Sync + Send,
+    store: impl Fn(T) -> [u8; 4] + Sync + Send,
+) -> Rgba8 {
+    let wx = weights(img.width, w, filter);
+    let mut tmp = Image::<T>::new(w, img.height);
+    par_rows(&mut tmp.data, w, |y, row| {
+        let src = img.row(y);
+        for (x, o) in row.iter_mut().enumerate() {
+            let (lo, ws) = &wx[x];
+            let mut acc = T::zero();
+            for (k, wt) in ws.iter().enumerate() {
+                acc = acc.madd(load(&src[lo + k]), *wt);
+            }
+            *o = acc;
+        }
+    });
+    let wy = weights(img.height, h, filter);
+    let mut out = Rgba8::new(w, h);
+    par_rows(&mut out.data, w, |y, row| {
+        let (lo, ws) = &wy[y];
+        // (summed in the order `resize` sums, so the bytes match its float result rounded)
+        let mut acc = vec![T::zero(); w];
+        for (k, wt) in ws.iter().enumerate() {
+            let src = tmp.row(lo + k);
+            for (o, s) in acc.iter_mut().zip(src) {
+                *o = o.madd(*s, *wt);
+            }
+        }
+        for (o, a) in row.iter_mut().zip(acc) {
+            *o = store(a);
+        }
+    });
+    out
 }
 
 /// 2× box downsample (pyramid level).
@@ -209,5 +280,34 @@ mod tests {
         assert_eq!((r.width, r.height), (400, 300));
         let small = fit(&Image::<f32>::new(10, 5), 400, 400, Filter::Box);
         assert_eq!((small.width, small.height), (10, 5));
+    }
+
+    #[test]
+    fn byte_fit_matches_the_float_fit_rounded() {
+        // the float path the loupe's display fit used: bytes to floats, `fit`, rounded back
+        let float_fit = |img: &Rgba8, w: usize, h: usize, f: Filter| {
+            let fl = Image { width: img.width, height: img.height, data: img.data.iter().map(|p| p.map(f32::from)).collect() };
+            let r = fit(&fl, w, h, f);
+            Image { width: r.width, height: r.height, data: r.data.iter().map(|p| p.map(|v| v.round().clamp(0.0, 255.0) as u8)).collect::<Vec<_>>() }
+        };
+        // hard edges (Lanczos overshoots past 0 and 255) and texture
+        let opaque = Rgba8::from_fn(257, 171, |x, y| {
+            [if (x / 3 + y / 2) % 2 == 0 { 0 } else { 255 }, ((x * 7 + y * 13) % 256) as u8, ((x ^ y) % 256) as u8, 255]
+        });
+        let mut translucent = opaque.clone();
+        for (i, p) in translucent.data.iter_mut().enumerate() {
+            p[3] = if i % 5 == 0 { 0 } else { 200 };
+        }
+        for img in [&opaque, &translucent] {
+            for f in [Filter::Lanczos3, Filter::Mitchell, Filter::Bilinear, Filter::Box] {
+                for (w, h) in [(173, 115), (64, 64), (100, 300), (1, 1), (257, 171), (400, 400)] {
+                    let got = fit_rgba8(img, w, h, f);
+                    let want = float_fit(img, w, h, f);
+                    assert_eq!((got.width, got.height), (want.width, want.height), "{f:?} {w}x{h}");
+                    assert!(got.data == want.data, "{f:?} {w}x{h}: bytes differ");
+                }
+            }
+        }
+        assert!(fit_rgba8(&opaque, 100, 100, Filter::Lanczos3).data.iter().all(|p| p[3] == 255), "opaque stays opaque");
     }
 }
