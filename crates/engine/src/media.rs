@@ -269,10 +269,11 @@ impl DecodedSource {
         mixed
     }
 
-    /// Cache cost: the picture, its segmentation mattes, its denoised twin and room for the lazy mix.
+    /// Cache cost: the picture, its segmentation mattes and transparency, its denoised twin and room for the lazy mix.
     pub fn bytes(&self) -> usize {
         let mattes = self.info.as_ref().and_then(|i| i.mattes.as_ref()).map_or(0, |m| m.bytes());
         let mattes = mattes + self.info.as_ref().and_then(|i| i.local_tone.as_ref()).map_or(0, |t| t.map.gains.len() * 4);
+        let mattes = mattes + self.info.as_ref().and_then(|i| i.alpha.as_ref()).map_or(0, |a| a.data.len() * 4);
         self.image.data.len() * 12 + 64 + std::mem::size_of::<SourceInfo>() + mattes + self.denoised.as_ref().map_or(0, |t| t.bytes())
     }
 
@@ -343,7 +344,15 @@ impl SourceRef {
                 // Lanczos, not a box average: a box at 2-3:1 halves the contrast of detail near
                 // the output's resolution limit and aliases what is finer
                 let image = lcc_raster::resample::fit(&from.image, *max_edge, *max_edge, lcc_raster::resample::Filter::Lanczos3);
-                return Ok(DecodedSource { image: Arc::new(image), denoised: None, ..(**from).clone() });
+                // the transparency is fitted with the pixels (the same size and filter)
+                let info = from.info.clone().map(|i| SourceInfo {
+                    alpha: i.alpha.as_ref().map(|a| {
+                        let a = lcc_raster::resample::resize(a, image.width, image.height, lcc_raster::resample::Filter::Lanczos3);
+                        Arc::new(a)
+                    }),
+                    ..i
+                });
+                return Ok(DecodedSource { image: Arc::new(image), denoised: None, info, ..(**from).clone() });
             }
             SourceRef::Demo { scene, max_edge } => crate::demo::scene_pixels(scene, *max_edge)?,
             SourceRef::File { path, max_edge, loader, fallback, denoise, options, reduced } => {
@@ -1155,7 +1164,7 @@ impl RenderJob {
                 photo: self.photo,
                 level: self.level,
                 key: self.key,
-                rendered: Ok(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage: None }),
+                rendered: Ok(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage: None, alpha: None }),
                 gpu_fallback: None,
                 loaded: None,
                 quick: None,
@@ -1175,7 +1184,7 @@ impl RenderJob {
                 photo: self.photo,
                 level: self.level,
                 key: self.key,
-                rendered: Ok(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage: None }),
+                rendered: Ok(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage: None, alpha: None }),
                 gpu_fallback: None,
                 loaded: None,
                 quick: None,
@@ -1194,11 +1203,28 @@ impl RenderJob {
             Ok(source) => {
                 // the plain picture, or (Denoise amount above 0 and a denoised picture cached) the mix the amount asks for
                 let src = &source.image_for(self.settings.denoise_amount());
+                // (the result if the transparency can't follow the render, made before `self.info` moves)
+                let alpha_failed = self.request.alpha.then(|| self.failed("the transparency did not follow the render".into()));
                 let info = source.info_or(self.info);
+                // an export that keeps transparency develops the colour without the white the pixels
+                // were flattened onto, and carries the alpha through the same geometry (issue #2976)
+                let straight =
+                    if self.request.alpha { info.alpha.as_deref().and_then(|a| lcc_codecs::unflatten(src, a)).map(Arc::new) } else { None };
+                let src = straight.as_ref().unwrap_or(src);
+                // (a straight picture is this job's own: no stage of an earlier render applies to it)
+                let stages = if straight.is_some() { None } else { self.stages.as_deref() };
                 // Thumbnails (many small jobs side by side) stay on the CPU; views and exports use
                 // the GPU when there is one.
                 let gpu = self.cache.is_none();
-                let (mut rendered, gpu_fallback) = develop_reporting(src, &info, &self.settings, &self.request, self.stages.as_deref(), gpu);
+                let (mut rendered, gpu_fallback) = develop_reporting(src, &info, &self.settings, &self.request, stages, gpu);
+                if straight.is_some() {
+                    rendered.alpha = lcc_pipeline::render_alpha(src, &info, &self.settings, &self.request)
+                        .filter(|a| (a.width, a.height) == (rendered.image.width, rendered.image.height));
+                    // (the colour is unflattened: without its alpha the file would be wrong at soft edges)
+                    if let (None, Some(failed)) = (&rendered.alpha, alpha_failed) {
+                        return failed;
+                    }
+                }
                 // for a display profile: the image goes to the display's values, the histogram
                 // and the cached view preview stay sRGB
                 let mut srgb = None;
@@ -1376,7 +1402,7 @@ impl QuickJob {
         };
         let rendered = |image: Rgba8| {
             let histogram = Histogram::of_srgb8(&image);
-            Ok(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage: None })
+            Ok(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage: None, alpha: None })
         };
         for (cache, k) in &self.cached {
             if let Some(img) = cache.get(*k) {
@@ -1902,6 +1928,21 @@ impl crate::Session {
         space: lcc_pipeline::OutputSpace,
         depth: lcc_pipeline::OutputDepth,
     ) -> Result<RenderJob, String> {
+        self.export_job_with_alpha(id, max_w, max_h, space, depth, false)
+    }
+
+    /// [`Self::export_job`]; with `alpha`, for a file that keeps transparency (PNG, TIFF, WebP): the
+    /// render is of the source's colour without the white its transparent areas are flattened onto,
+    /// with [`Rendered::alpha`] (issue #2976). A source without transparency renders as without.
+    pub fn export_job_with_alpha(
+        &mut self,
+        id: PhotoId,
+        max_w: usize,
+        max_h: usize,
+        space: lcc_pipeline::OutputSpace,
+        depth: lcc_pipeline::OutputDepth,
+        alpha: bool,
+    ) -> Result<RenderJob, String> {
         lcc_pipeline::check_output_size(max_w, max_h)?;
         let mut job = self.render_job(id, max_w, max_h, false, true).ok_or("no such photo")?;
         // An export renders the full image: never a thumbnail's source developed from a smaller copy of the raw
@@ -1926,10 +1967,14 @@ impl crate::Session {
         }
         job.request.space = space;
         job.request.depth = depth;
+        job.request.alpha = alpha;
         // an export shrinks with a sharp filter: a preview's soft one leaves a small export blurred (#2970)
         job.request.downscale = lcc_pipeline::Downscale::Sharp;
         job.key ^=
             (space as u64 + 1).wrapping_mul(0xa076_1d64_78bd_642f) ^ (depth as u64 + 1).wrapping_mul(0xe703_7ed1_a0b4_28db) ^ 0x9e37_79b9_7f4a_7c15;
+        if alpha {
+            job.key ^= 0x8ebc_6af0_9c88_c6e3;
+        }
         Ok(job)
     }
 

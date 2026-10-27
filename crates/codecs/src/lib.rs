@@ -46,7 +46,8 @@ mod webp;
 
 pub use encode::{
     ChromaSubsampling, EncodeImage, EncodeMeta, HDR_REFERENCE_WHITE_NITS, HLG_REFERENCE_PEAK_NITS, HdrTransfer, Samples, TiffCompression,
-    encode_avif, encode_avif_hdr, encode_avif_pq, encode_jpeg, encode_png, encode_png_pq, encode_psd, encode_tiff, encode_webp_lossless, hlg_signal,
+    encode_avif, encode_avif_hdr, encode_avif_pq, encode_jpeg, encode_png, encode_png_pq, encode_psd, encode_tiff, encode_tiff_associated,
+    encode_webp_lossless, hlg_signal,
 };
 pub use jxl_encode::{JxlColour, JxlEffort, JxlOptions, encode_jxl};
 pub use sniff::{Format, sniff};
@@ -311,6 +312,27 @@ pub fn to_working(d: &Decoded) -> Rgb32f {
         }
     }
     img
+}
+
+/// Undo [`to_working`]'s flatten onto white for an output that keeps transparency (issue #2976):
+/// the straight colour `c` from the flattened `f = c·a + (1 − a)` and the alpha `a` it was flattened
+/// with. Exact in linear light, and after any linear resample of both (fitting, orienting), where it
+/// gives the alpha-weighted colour. Pixels with almost no alpha keep the white: their colour is not
+/// recoverable, and white is what edits around them saw before. `None` when `alpha` does not match
+/// `img`.
+pub fn unflatten(img: &Rgb32f, alpha: &Plane) -> Option<Rgb32f> {
+    if (alpha.width, alpha.height) != (img.width, img.height) || alpha.data.len() != img.data.len() {
+        return None;
+    }
+    const VISIBLE: f32 = 1.0 / 1024.0;
+    let mut out = img.clone();
+    for (p, &av) in out.data.iter_mut().zip(&alpha.data) {
+        if av.is_finite() && av >= VISIBLE {
+            let av = av.min(1.0);
+            *p = p.map(|f| (f - (1.0 - av)) / av);
+        }
+    }
+    Some(out)
 }
 
 /// Where a thumbnail came from.

@@ -8,7 +8,7 @@
 use lcc_develop::{DevelopSettings, EmbeddedLens};
 use lcc_geom::{Affine, CropGeometry, Homography, Orientation, Point, Rect};
 use lcc_raster::resample::{Filter, resize};
-use lcc_raster::{Coverage, Rgb32f, par_rows};
+use lcc_raster::{Coverage, Plane, Rgb32f, par_rows};
 
 use crate::optics::{Warp, reorient_lens};
 
@@ -309,6 +309,38 @@ impl Frame {
         }
     }
 
+    /// [`Self::sample`] for an alpha plane of the same source (`src` the size of its pixels): the
+    /// same resample through the same mapping, without the lens's vignette gain or per-channel
+    /// shifts (alpha follows green). What the mapping brings in from outside the source is 0.
+    pub fn sample_alpha(&self, src: &Plane, w: usize, h: usize) -> Plane {
+        let oriented = if self.orient == Orientation::Normal { None } else { Some(src.oriented(self.orient)) };
+        let o = oriented.as_ref().unwrap_or(src);
+        let plan = self.sample_plan(src.width, src.height, w, h);
+        let base = match plan.prefilter {
+            Some((nw, nh)) => std::borrow::Cow::Owned(resize(o, nw, nh, Filter::Mitchell)),
+            None => std::borrow::Cow::Borrowed(o),
+        };
+        let mut out = match (plan.mode, self.warp.as_ref()) {
+            (SampleMode::Copy, _) => base.into_owned(),
+            (SampleMode::Warp(o2t), Some(warp)) => {
+                let mut out = Plane::new(w, h);
+                par_rows(&mut out.data, w, |y, row| {
+                    for (x, px) in row.iter_mut().enumerate() {
+                        *px = warp.frame(&o2t, x, y).map_or(0.0, |(_, g)| bilinear_plane(&base, g.x * plan.sx, g.y * plan.sy));
+                    }
+                });
+                out
+            }
+            (SampleMode::Warp(o2t), None) => sample_alpha_affine(&base, Affine::scale(plan.sx, plan.sy) * o2t, w, h),
+            (SampleMode::Affine(xf), _) => sample_alpha_affine(&base, xf, w, h),
+        };
+        // (the Mitchell prefilter rings a little past 0 and 1)
+        for a in &mut out.data {
+            *a = if a.is_finite() { a.clamp(0.0, 1.0) } else { 0.0 };
+        }
+        out
+    }
+
     /// The crop rectangle as a quad in normalized oriented coordinates (for overlays).
     pub fn crop_quad_norm(&self) -> [Point; 4] {
         let r = self.crop.rect_px(self.ow, self.oh);
@@ -380,6 +412,44 @@ fn sample_warped(base: &Rgb32f, sx: f64, sy: f64, wp: &Warp, o2t: Affine, w: usi
         }
     });
     out
+}
+
+fn sample_alpha_affine(base: &Plane, xf: Affine, w: usize, h: usize) -> Plane {
+    let mut out = Plane::new(w, h);
+    par_rows(&mut out.data, w, |y, row| {
+        for (x, px) in row.iter_mut().enumerate() {
+            let p = xf.apply(Point::new(x as f64 + 0.5, y as f64 + 0.5));
+            *px = alpha_at(base, p.x, p.y);
+        }
+    });
+    out
+}
+
+/// Bilinear alpha at pixel coordinates `(x, y)` of `a`; 0 off the image, which (as for a warp,
+/// `Warp::edges`) has a half-pixel margin, where its edge pixels extend.
+fn alpha_at(a: &Plane, x: f64, y: f64) -> f32 {
+    const MARGIN: f64 = 0.5;
+    let (w, h) = (a.width as f64, a.height as f64);
+    if !(x >= -MARGIN && y >= -MARGIN && x <= w + MARGIN && y <= h + MARGIN) {
+        return 0.0;
+    }
+    bilinear_plane(a, x, y)
+}
+
+/// Bilinear sample of `a` at pixel coordinates `(x, y)`, reading the edge pixel past the edge (as
+/// `Rgb32f::sample_bilinear` does); 0 for an empty plane or a coordinate that is not finite.
+fn bilinear_plane(a: &Plane, x: f64, y: f64) -> f32 {
+    if a.data.is_empty() || !x.is_finite() || !y.is_finite() {
+        return 0.0;
+    }
+    let (w, h) = (a.width as f64, a.height as f64);
+    let (fx, fy) = (x.clamp(-1.0, w + 1.0) - 0.5, y.clamp(-1.0, h + 1.0) - 0.5);
+    let (x0, y0) = (fx.floor(), fy.floor());
+    let (tx, ty) = ((fx - x0) as f32, (fy - y0) as f32);
+    let at = |xi: f64, yi: f64| a.get_clamped(xi as isize, yi as isize);
+    let top = at(x0, y0) + (at(x0 + 1.0, y0) - at(x0, y0)) * tx;
+    let bot = at(x0, y0 + 1.0) + (at(x0 + 1.0, y0 + 1.0) - at(x0, y0 + 1.0)) * tx;
+    top + (bot - top) * ty
 }
 
 /// Whole-image rectangle in normalized coordinates.
