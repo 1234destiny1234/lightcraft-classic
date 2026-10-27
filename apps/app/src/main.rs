@@ -1093,7 +1093,9 @@ fn main() -> eframe::Result {
     let mut in_memory = false;
     let mut library_dir: Option<std::path::PathBuf> = None;
     let mut launch_link: Option<String> = None;
-    let mut args = std::env::args().skip(1).peekable();
+    // `std::env::args` panics on an argument that isn't UTF-8 (a file a file manager hands over, say):
+    // read it lossily, so such a file is reported as not found instead
+    let mut args = std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--control" => control_port = control_port_from("--control", Some(args.next().unwrap_or_default())),
