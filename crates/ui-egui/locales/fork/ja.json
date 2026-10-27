@@ -1501,6 +1501,11 @@
   "Install a newer version of the app to use it.": "使用するには、新しいバージョンのアプリをインストールしてください。",
   "It can't be installed:": "インストールできません:",
   "Install Older Version": "古いバージョンをインストール",
+  "Start the program": "プログラムを起動",
+  "not installed": "インストールされていません",
+  "checking…": "確認中…",
+  "installed:": "インストール済み：",
+  "Waiting for a plug-in's program": "プラグインのプログラムを待機中",
   "Plug-in Settings": "プラグインの設定",
   "this plug-in has no settings": "このプラグインには設定がありません"
 }

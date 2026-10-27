@@ -137,3 +137,107 @@ fn metadata_columns_narrow_the_grid_and_cascade() {
     assert!(h.app.ui.filter_columns.is_empty());
     assert!(!h.app.widgets.iter().any(|(w, _)| w == "filterColumns"));
 }
+
+/// Issue #218: each Metadata column has a sticky search box under its header. Typing narrows that column's rows at
+/// once (any case), another column keeps its rows, the grid's photos stay put, an emptied box brings every row back,
+/// and turning the columns — or the filter bar — off forgets what was typed.
+#[test]
+fn a_metadata_columns_search_narrows_its_rows() {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1600.0, 1000.0], 1.0);
+    h.app.ui.view = crate::state::ViewMode::PhotoGrid;
+    h.app.ui.filter_bar = true;
+    h.settle(SETTLE);
+    let column_rows = |h: &Headless, c: usize| {
+        let prefix = format!("filterValue:{c}:");
+        h.app.widgets.iter().filter(|(w, _)| w.starts_with(&prefix)).count()
+    };
+    let visible = h.app.session.visible_cloned().len();
+    ok(&mut h, "ui.clickWidget", json!({"id": "button:filterColumns"}));
+    // column 1 lists cameras
+    ok(&mut h, "engine.execute", json!({"command": "view.filterColumns", "params": {"column": 1, "field": "camera"}}));
+    let all = column_rows(&h, 1);
+    assert!(all > 2, "All and at least two cameras: {all}");
+    let years = column_rows(&h, 0);
+    let cameras = h.app.caches.filter_values(&h.app.session.catalog).cameras.clone();
+    assert!(cameras.len() >= 2, "the demo library has cameras: {cameras:?}");
+    let target = cameras[0].clone();
+    let matching = cameras.iter().filter(|c| c.to_lowercase().contains(&target.to_lowercase())).count();
+    // a click into the box, then the typing narrows the rows at once
+    ok(&mut h, "ui.clickWidget", json!({"id": "field:filterColumnSearch:1"}));
+    ok(&mut h, "ui.text", json!({"text": target.to_uppercase()}));
+    assert_eq!(h.app.ui.filter_column_search[1], target.to_uppercase(), "the column keeps what is typed");
+    let narrowed = column_rows(&h, 1);
+    // the matches (any case), All, and the Unknown row when the photos have a camera-less one
+    assert!(narrowed < all, "{narrowed} of {all} rows");
+    assert!((matching + 1..=matching + 2).contains(&narrowed), "{narrowed} rows for {matching} of {cameras:?}");
+    // the other column and the grid are untouched
+    assert_eq!(column_rows(&h, 0), years, "the next column keeps its rows");
+    assert_eq!(h.app.session.visible_cloned().len(), visible, "searching a column does not filter the photos");
+    // emptied, every row is back
+    ok(&mut h, "ui.key", json!({"key": "a", "cmd": true}));
+    ok(&mut h, "ui.key", json!({"key": "Backspace"}));
+    assert_eq!(h.app.ui.filter_column_search[1], "", "the emptied box is kept as it is");
+    assert_eq!(column_rows(&h, 1), all);
+    // typing again, then the columns go away: the search goes with them
+    ok(&mut h, "ui.text", json!({"text": target.to_uppercase()}));
+    assert_eq!(h.app.ui.filter_column_search[1], target.to_uppercase());
+    ok(&mut h, "ui.clickWidget", json!({"id": "button:filterColumns"}));
+    assert!(h.app.ui.filter_columns.is_empty());
+    assert!(h.app.ui.filter_column_search.is_empty(), "hiding the columns forgets their searches");
+    // and once more with the filter bar itself
+    ok(&mut h, "ui.clickWidget", json!({"id": "button:filterColumns"}));
+    ok(&mut h, "engine.execute", json!({"command": "view.filterColumns", "params": {"column": 0, "field": "camera"}}));
+    assert_eq!(column_rows(&h, 0), all);
+    ok(&mut h, "ui.clickWidget", json!({"id": "field:filterColumnSearch:0"}));
+    ok(&mut h, "ui.text", json!({"text": target.to_uppercase()}));
+    assert!(column_rows(&h, 0) < all);
+    ok(&mut h, "engine.execute", json!({"command": "view.filterBar"}));
+    assert!(!h.app.ui.filter_bar);
+    assert!(h.app.ui.filter_column_search.is_empty(), "hiding the filter bar forgets the column searches");
+    assert!(!h.app.widgets.iter().any(|(w, _)| w.starts_with("filterValue:")), "no column is drawn");
+}
+
+/// The People view's search box narrows the cards to the names that hold what is typed (any case) while the unnamed
+/// faces below stay; an emptied box, or the People button, brings everyone back.
+#[test]
+fn the_peoples_search_narrows_the_cards_by_name() {
+    use lcc_catalog::Op;
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
+    let ids: Vec<_> = h.app.session.catalog.photos().map(|p| p.id).take(2).collect();
+    for (id, name) in [(ids[0], "Jane Doe"), (ids[1], "John Roe")] {
+        let mut meta = h.app.session.catalog.photo(id).unwrap().meta.clone();
+        meta.regions = vec![lcc_meta::Region {
+            rect: lcc_geom::Rect { x0: 0.3, y0: 0.2, x1: 0.55, y1: 0.6 },
+            kind: lcc_meta::RegionKind::Face,
+            name: Some(name.to_string()),
+            description: None,
+        }];
+        h.app.session.commit("setup", Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
+    }
+    let cards = |h: &Headless| -> Vec<String> { h.app.widgets.iter().filter(|(w, _)| w.starts_with("person:")).map(|(w, _)| w.clone()).collect() };
+    ok(&mut h, "engine.execute", json!({"command": "view.people"}));
+    let both = cards(&h);
+    assert!(both.contains(&"person:Jane Doe".to_string()) && both.contains(&"person:John Roe".to_string()), "{both:?}");
+    // a name typed into the box narrows the cards to it
+    ok(&mut h, "ui.clickWidget", json!({"id": "field:peopleSearch"}));
+    ok(&mut h, "ui.text", json!({"text": "JANE"}));
+    assert_eq!(h.app.ui.people_search, "JANE");
+    let jane = cards(&h);
+    assert!(jane.contains(&"person:Jane Doe".to_string()), "{jane:?}");
+    assert!(!jane.contains(&"person:John Roe".to_string()), "the other person's card is gone: {jane:?}");
+    // emptied, everyone is back
+    ok(&mut h, "ui.key", json!({"key": "a", "cmd": true}));
+    ok(&mut h, "ui.key", json!({"key": "Backspace"}));
+    assert_eq!(h.app.ui.people_search, "");
+    assert_eq!(cards(&h).len(), both.len(), "every card again");
+    // a name no one has leaves no card, and the box to change it
+    ok(&mut h, "ui.text", json!({"text": "zzz"}));
+    assert!(cards(&h).is_empty(), "no card matches: {:?}", cards(&h));
+    assert!(h.app.widgets.iter().any(|(w, _)| w == "field:peopleSearch"), "the box stays");
+    // the People button starts everyone afresh
+    ok(&mut h, "engine.execute", json!({"command": "view.people"}));
+    assert_eq!(h.app.ui.people_search, "");
+    assert!(cards(&h).contains(&"person:Jane Doe".to_string()) && cards(&h).contains(&"person:John Roe".to_string()));
+}
