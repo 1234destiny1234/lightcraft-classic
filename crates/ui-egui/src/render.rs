@@ -46,7 +46,8 @@ pub enum Slot {
     Before,
     Compare(u8),
     /// Background preparation of a neighbouring photo (no texture: its decoded source and view
-    /// render are cached by the engine). 0 = next, 1 = previous.
+    /// render are cached by the engine). 0 = next, 1 = previous; 2 = the open photo's
+    /// full-resolution source, for a zoom to 1:1.
     Prefetch(u8),
     /// A variant thumbnail (profile / preset browsers), by its job key ([`Session::variant_job`]).
     /// Kept in a bounded LRU ([`VARIANT_TEXTURES`]).
@@ -190,6 +191,9 @@ pub struct WindowGeom {
     pub full: (usize, usize),
     pub window: lcc_engine::pipeline::PixelWindow,
     pub look: u64,
+    /// Rendered at full quality (a high quality drag's update, or the window after a drag), not
+    /// a draft: at rest it stands for the tiles it covers.
+    pub full_quality: bool,
 }
 
 pub struct Tex {
@@ -231,7 +235,11 @@ struct Finished {
 pub struct HdrResult {
     pub photo: PhotoId,
     pub key: u64,
-    pub deep: lcc_pipeline::DeepImage,
+    /// Its size in pixels.
+    pub size: [usize; 2],
+    /// Its linear float samples; `None` when the GPU made its texels instead
+    /// ([`lcc_engine::media::RenderJob::hdr_texels`]).
+    pub deep: Option<lcc_pipeline::DeepImage>,
     /// The part of the frame it shows ([`HdrView::window`]).
     pub window: Option<lcc_pipeline::PixelWindow>,
     /// Its texels, made on the render worker ([`crate::HdrOutput::upload_texels`]).
@@ -424,6 +432,11 @@ pub struct Renderer {
     catalog_rev: u64,
     /// Prefetch slot → key of the last job submitted (each runs once).
     prefetched: HashMap<Slot, u64>,
+    /// A neighbouring photo's finished prefetch, by prefetch slot: the very render the loupe asks
+    /// for once that photo is shown, adopted then instead of rendered again ([`Self::prefetch`]).
+    ready_views: HashMap<Slot, (RenderResult, Option<Arc<egui::ColorImage>>, f64)>,
+    /// Adopted prefetches, collected as finished loupe renders by the next [`Self::collect`].
+    adopted: Vec<(Slot, RenderResult, Option<Arc<egui::ColorImage>>, f64)>,
     /// Variant key → frame it was last asked for (LRU of [`Slot::Variant`] textures).
     variant_used: HashMap<u64, u64>,
     /// How many variants the last frame's views showed at once (see [`Self::want_variants`]).
@@ -520,6 +533,8 @@ impl Renderer {
             failed: HashMap::new(),
             catalog_rev: 0,
             prefetched: HashMap::new(),
+            ready_views: HashMap::new(),
+            adopted: Vec::new(),
             variant_used: HashMap::new(),
             variant_want: 0,
             frame: 0,
@@ -690,7 +705,10 @@ impl Renderer {
         }
         let hdr = matches!(slot, Slot::HdrView(_));
         let color = r.rendered.as_ref().ok().filter(|_| !hdr).map(|x| Arc::new(color_image(&x.image)));
-        let texels = headroom.filter(|_| hdr).and_then(|h| {
+        // (texels the GPU made, else encoded here from the floats)
+        let gpu_texels = r.hdr_texels.take().filter(|_| hdr);
+        let texels = gpu_texels.or_else(|| {
+            let h = headroom.filter(|_| hdr)?;
             let deep = r.rendered.as_ref().ok()?.deep.as_ref()?;
             let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { return None };
             lcc_engine::hdr_texture::encode_rgba16f(rgb, deep.width, deep.height, h).ok().map(|t| (t, h))
@@ -881,6 +899,18 @@ impl Renderer {
         self.pending.insert(slot, (job.key, priority));
         job.request_id = lcc_preview::next_tick();
         self.requests.insert(slot, Requested { id: job.request_id, source: Some(job.origin.clone()) });
+        // the loupe stepping to a neighbour that was prepared: its render is there already
+        // (its stages are not kept: a neighbour's would hold ~100 MB of device memory for the
+        // first edit after a step only)
+        if slot == Slot::Main
+            && let Some(from) = self.ready_views.iter().find(|(_, (r, _, _))| r.key == job.key && r.photo == job.photo).map(|(s, _)| *s)
+            && let Some((mut r, color, ms)) = self.ready_views.remove(&from)
+        {
+            r.request_id = job.request_id;
+            self.prefetched.remove(&from);
+            self.adopted.push((slot, r, color, ms));
+            return;
+        }
         // (an offload keeps its own per-view stage caches; the flag tells it to)
         let job = if slot.is_view() { job.with_stages(self.stages.entry(slot).or_default().clone()) } else { job };
         if self.offload.is_some() {
@@ -960,20 +990,24 @@ impl Renderer {
 
     /// Prepare a photo in the background (a [`Slot::Prefetch`] job runs once per key; a newer one
     /// replaces it while queued). Memory stays bounded by the engine's source caches.
-    pub fn prefetch(&mut self, slot: Slot, mut job: RenderJob, priority: u32) {
+    pub fn prefetch(&mut self, slot: Slot, job: RenderJob, priority: u32) {
+        // (made for the display as the loupe's would be, so its key is the one the loupe asks for)
+        let mut job = self.job_for(Slot::Main, job);
         if self.prefetched.get(&slot) == Some(&job.key) {
             return;
         }
         self.prefetched.insert(slot, job.key);
+        self.ready_views.remove(&slot);
         self.pending.insert(slot, (job.key, priority));
         job.request_id = lcc_preview::next_tick();
         self.requests.insert(slot, Requested { id: job.request_id, source: Some(job.origin.clone()) });
         let key = job.key;
+        let display = self.display.clone();
         self.pool.submit(
             slot,
             key,
             priority,
-            Box::new(move || Finished { result: lcc_engine::memory::in_background(|| job.run()), color: None, texels: None }),
+            Box::new(move || Self::run_for(slot, || lcc_engine::memory::in_background(|| job.run()), &display, None)),
         );
     }
 
@@ -1008,6 +1042,8 @@ impl Renderer {
         self.quick_tried.clear();
         self.failed.clear();
         self.prefetched.clear();
+        self.ready_views.clear();
+        self.adopted.clear();
         self.pending.clear();
         self.queue.clear();
         self.tiles.clear();
@@ -1293,7 +1329,7 @@ impl Renderer {
     /// that would only make the frame late is not waited for).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn wait_for_draft(&mut self, ctx: &egui::Context, session: &mut Session, budget: std::time::Duration) {
-        if self.offload.is_some() || self.last_main_ms * 1.5 >= budget.as_secs_f64() * 1e3 {
+        if !self.waits_for_draft(budget) {
             return;
         }
         let Some(deadline) = std::time::Instant::now().checked_add(budget) else { return };
@@ -1306,9 +1342,16 @@ impl Renderer {
         }
     }
 
+    /// Whether [`Self::wait_for_draft`] waits at all with `budget`: only when the last loupe render
+    /// took well under it.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn waits_for_draft(&self, budget: std::time::Duration) -> bool {
+        self.offload.is_none() && self.last_main_ms * 1.5 < budget.as_secs_f64() * 1e3
+    }
+
     /// Turn finished jobs into textures. Returns true if anything changed.
     fn collect(&mut self, ctx: &egui::Context, session: &mut Session, inline_ms: f64) -> bool {
-        let mut finished = Vec::new();
+        let mut finished: Vec<_> = std::mem::take(&mut self.adopted).into_iter().map(|(slot, r, color, ms)| (slot, r, color, None, ms)).collect();
         while let Some(done) = self.pool.try_recv() {
             finished.push((done.slot, done.result.result, done.result.color, done.result.texels, if done.ms > 0.0 { done.ms } else { inline_ms }));
         }
@@ -1381,6 +1424,10 @@ impl Renderer {
                 }
             };
             if matches!(slot, Slot::Prefetch(_)) {
+                // (its source was accepted above)
+                if self.prefetched.get(&slot) == Some(&r.key) {
+                    self.ready_views.insert(slot, (RenderResult { rendered: Ok(rendered), loaded: None, ..r }, color, ms));
+                }
                 continue;
             }
             if let Slot::Window(_) = slot {
@@ -1403,10 +1450,11 @@ impl Renderer {
                 continue;
             }
             if let Slot::HdrView(view) = slot {
-                if let Some(deep) = rendered.deep {
+                if rendered.deep.is_some() || texels.is_some() {
                     // (a result that gets here is for the geometry asked for now: older ones were retired)
                     let window = self.hdr_geometry.get(&view).and_then(|g| g.window);
-                    self.hdr_view_result.insert(view, HdrResult { photo: r.photo, key: r.key, deep, window, texels });
+                    let size = [rendered.image.width, rendered.image.height];
+                    self.hdr_view_result.insert(view, HdrResult { photo: r.photo, key: r.key, size, deep: rendered.deep, window, texels });
                     self.hdr_view_ms.insert(view, ms);
                     changed = true;
                 }
@@ -1784,6 +1832,22 @@ mod thumbnail_tests {
         r.wait_for_draft(&ctx, &mut s, budget);
         assert!(!r.is_pending(Slot::Main));
         assert_eq!(r.textures.get(&Slot::Main).map(|t| t.key), want);
+    }
+
+    // Given a 60 Hz display, a high quality adjustment update as fast as the GPU display fit makes
+    // it (~5 ms) is waited for, so it is drawn in the frame that asked for it; a draft that slow is
+    // not (its share of the frame is smaller), and neither is the update on a 144 Hz display
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_fast_full_quality_update_is_waited_for_at_60_hz() {
+        let mut r = Renderer::with_worker_threads(1);
+        r.last_main_ms = 5.0;
+        let budget = crate::panels::detail::wait_budget;
+        assert!(r.waits_for_draft(budget(1.0 / 60.0, false)), "a full-quality update at 60 Hz");
+        assert!(!r.waits_for_draft(budget(1.0 / 60.0, true)), "a draft as slow");
+        assert!(!r.waits_for_draft(budget(1.0 / 144.0, false)), "at 144 Hz");
+        // (a frame time that is not a number waits for nothing)
+        assert!(!r.waits_for_draft(budget(f32::NAN, false)));
     }
 
     #[derive(Default)]
@@ -2466,7 +2530,7 @@ mod thumbnail_tests {
         finish(&mut app, &work, &ctx, slot, second.run());
         let HdrResult { key, deep, .. } = &app.renderer.hdr_view_result[&HDR_LOUPE];
         assert_eq!(*key, keys[2], "late older frames never replace newer pixels");
-        let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { panic!("float HDR required") };
+        let lcc_pipeline::DeepSamples::F32(rgb) = &deep.as_ref().expect("float samples").samples else { panic!("float HDR required") };
         assert!(rgb.iter().any(|v| *v > 1.0), "highlights survive the draft pipeline");
         let final_job = app.session.render_job(PhotoId(1), 8, 8, false, true).unwrap();
         let final_render = crate::panels::detail::hdr_view_job(final_job, Some(4.0)).run().rendered.unwrap();
@@ -2860,6 +2924,7 @@ mod extended_linear_tests {
         r.set_surface_extended_linear(true);
 
         let job = RenderJob {
+            drawn_view_cache: false,
             cache_generation: 0,
             request_id: 1,
             source_key: None,
@@ -2877,6 +2942,7 @@ mod extended_linear_tests {
             origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
             info: Default::default(),
             display_fit: None,
+            hdr_texels: None,
             settings: Default::default(),
             request: lcc_pipeline::RenderRequest {
                 max_w: 100,

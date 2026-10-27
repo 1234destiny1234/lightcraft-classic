@@ -773,7 +773,8 @@ fn current_histogram(app: &LccApp, ctx: &egui::Context, id: PhotoId, hdr_edit: b
     // (only while the edit is HDR: one left from a drag before HDR was turned off would bring the
     // HDR layout back for each later drag, #277)
     let interacting = app.session.interaction.is_some();
-    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && hdr_edit && l.0 == id).map(|l| l.2.clone());
+    let loupe_live = interacting && !super::detail::adjust_drafts(app) && !super::detail::hdr_shown(app);
+    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && hdr_edit && !loupe_live && l.0 == id).map(|l| l.2.clone());
     // After such a drag its last live histogram stays until the loupe's render of the released edit
     // lands: until then the loupe render there is (on an HDR display) the one from before the drag,
     // and showing it would make the plots jump back for a moment on release.
@@ -809,7 +810,7 @@ pub(crate) fn shown_histogram(app: &mut LccApp, ctx: &egui::Context, id: PhotoId
     let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
     // a drag of an HDR edit: its drafts have no HDR histogram, so a small render beside them
     // gives one (at its own pace: the drafts don't wait for it)
-    if app.session.interaction.is_some() && hdr_edit {
+    if app.session.interaction.is_some() && hdr_edit && (super::detail::adjust_drafts(app) || super::detail::hdr_shown(app)) {
         let edge = lcc_pipeline::HDR_HISTOGRAM_DRAG_EDGE;
         if let Some(job) = app.session.render_job(id, edge, edge, false, app.ui.right != RightPanel::Crop)
             && app.renderer.live_hdr_histogram.as_ref().is_none_or(|l| l.1 != job.key)

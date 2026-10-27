@@ -388,3 +388,167 @@ fn slow_hdr_renders_make_a_high_quality_drag_fall_back() {
     assert!(h.settle(TIMEOUT));
     assert_eq!(latest(&work, Slot::HdrView(crate::render::HDR_LOUPE)).request.quality, Quality::Full);
 }
+/// The Histogram panel's luminance shape (a share of the pixels per bin; empty when it shows none).
+fn shape(h: &Option<lcc_raster::Histogram>) -> Vec<f64> {
+    h.as_ref().map(|h| h.luma.iter().map(|v| f64::from(*v) / f64::from(h.total.max(1))).collect()).unwrap_or_default()
+}
+
+fn same_shape(a: &[f64], b: &[f64]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9)
+}
+
+/// What the Histogram panel shows over an exposure drag and its release: before the drag, at its
+/// last update, every frame after the release, and once everything has settled.
+struct HistogramTrace {
+    before: Vec<f64>,
+    last: Vec<f64>,
+    released: Vec<Vec<f64>>,
+    settled: Vec<f64>,
+}
+
+fn trace_histogram_over_a_drag(h: &mut Headless) -> HistogramTrace {
+    let ctx = h.view.ctx.clone();
+    let shown = |h: &mut Headless| shape(&crate::panels::edit::shown_histogram(&mut h.app, &ctx, PhotoId(1), lcc_raster::HistogramMode::RgbOverlap));
+    // (the panel draws every frame: each step asks it for what it shows)
+    let frames = |h: &mut Headless, n: usize| {
+        let mut seen = Vec::new();
+        for _ in 0..n {
+            seen.push(shown(h));
+            h.step();
+        }
+        seen
+    };
+    frames(h, 2);
+    assert!(h.settle(TIMEOUT));
+    let before = shown(h);
+    h.app.session.begin_interaction("Exposure").unwrap();
+    for i in 1..=4 {
+        h.app.session.execute("develop.set", &json!({"values": {"light.exposure": f64::from(i) * 0.3}})).unwrap();
+        frames(h, 2);
+    }
+    frames(h, 30);
+    let last = shown(h);
+    h.app.session.end_interaction().unwrap();
+    let released = frames(h, 30);
+    for _ in 0..5 {
+        shown(h);
+        assert!(h.settle(TIMEOUT));
+    }
+    HistogramTrace { before, last, released, settled: shown(h) }
+}
+
+struct FakeHdrDisplay;
+
+impl crate::HdrOutput for FakeHdrDisplay {
+    fn headroom(&mut self) -> Option<f32> {
+        Some(4.0)
+    }
+    fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+        Ok(egui::TextureId::User(700 + u64::from(view)))
+    }
+}
+
+// Given high quality adjustment previews, an SDR edit or an HDR edit shown in SDR: the histogram a
+// drag ends on is the one the released view keeps (each update is the render at rest, HDR bins
+// included), so letting go of the slider does not change it
+#[test]
+fn high_quality_drags_keep_their_histogram_when_the_slider_is_let_go() {
+    for hdr_edit in [false, true] {
+        let (mut h, _) = detail([1200, 800], 1.0);
+        h.app.session.execute("develop.hdr", &json!({"enabled": hdr_edit})).unwrap();
+        let t = trace_histogram_over_a_drag(&mut h);
+        assert!(!same_shape(&t.before, &t.last), "the drag changed the histogram (hdr {hdr_edit})");
+        for (i, f) in t.released.iter().enumerate() {
+            assert!(same_shape(f, &t.last), "hdr {hdr_edit}: frame {i} after the release shows another histogram");
+        }
+        assert!(same_shape(&t.settled, &t.last), "hdr {hdr_edit}: the settled view shows another histogram");
+    }
+}
+
+// Given an HDR edit shown in HDR (its drag renders no 8-bit frames), the release goes from the
+// drag's live histogram to the released render's, never back to the one from before the drag
+#[test]
+fn an_hdr_view_drag_never_shows_its_histogram_from_before_on_release() {
+    for hq in [false, true] {
+        let (mut h, _) = detail([1200, 800], 1.0);
+        h.app.ui.settings.high_quality_adjustment_previews = hq;
+        h.app.services.hdr_output = Some(Box::new(FakeHdrDisplay));
+        h.app.hdr_headroom = Some(4.0);
+        h.app.session.execute("develop.hdr", &json!({"enabled": true})).unwrap();
+        let t = trace_histogram_over_a_drag(&mut h);
+        assert!(!same_shape(&t.before, &t.settled), "the drag changed the histogram (hq {hq})");
+        for (i, f) in t.released.iter().enumerate() {
+            assert!(!same_shape(f, &t.before), "hq {hq}: frame {i} after the release shows the histogram from before the drag");
+            assert!(same_shape(f, &t.last) || same_shape(f, &t.settled), "hq {hq}: frame {i} after the release shows a third histogram");
+        }
+    }
+}
+
+// Given a slider let go at 1:1 (high quality adjustment previews off or on), the part on screen
+// is one full-quality window of the final look, the pixels a full-size render has there, instead
+// of a render per tile on screen; only the ring of tiles around it is prepared
+#[test]
+fn a_release_at_one_to_one_shows_one_full_quality_window_instead_of_the_tiles_on_screen() {
+    for hq in [false, true] {
+        let (mut h, work) = detail([3000, 2000], 1.0);
+        h.app.renderer.keep_pixels = true;
+        h.app.ui.settings.high_quality_adjustment_previews = hq;
+        h.app.ui.zoom = Zoom::Percent(100.0);
+        assert!(h.settle(TIMEOUT));
+        h.app.session.begin_interaction("Exposure").unwrap();
+        for i in 1..=4 {
+            h.app.session.execute("develop.set", &json!({"values": {"light.exposure": f64::from(i) * 0.2}})).unwrap();
+            h.step();
+            h.step();
+        }
+        assert!(h.settle(TIMEOUT));
+        let from = work.borrow().asked.len();
+        h.app.session.end_interaction().unwrap();
+        assert!(h.settle(TIMEOUT));
+        let view = h.app.region_view.expect("a zoomed view");
+        let side = view.tile;
+        let on_screen = |slot: &Slot| match slot {
+            Slot::Tile { col, row, .. } => {
+                let (x, y) = (usize::from(*col) * side, usize::from(*row) * side);
+                x < view.window.x + view.window.w && x + side > view.window.x && y < view.window.y + view.window.h && y + side > view.window.y
+            }
+            _ => false,
+        };
+        assert!(!work.borrow().asked.iter().skip(from).any(|(s, _)| on_screen(s)), "hq {hq}: no tile on screen rendered");
+        let (tex, g) = h.app.renderer.window_texture(PANE_AFTER).expect("the window on screen");
+        assert!(g.full_quality && g.look == h.app.session.develop_of(PhotoId(1)).unwrap().hash64(), "hq {hq}: the final look at full quality");
+        // its pixels are the full-size render's there
+        let full = h.app.session.render_job(PhotoId(1), g.full.0, g.full.1, false, true).unwrap().run().rendered.unwrap().image;
+        let px = tex.pixels.as_ref().expect("kept pixels");
+        let mut max = 0u8;
+        for y in 0..g.window.h {
+            for x in 0..g.window.w {
+                let a = px.pixels[y * g.window.w + x].to_array();
+                let b = full.data[(g.window.y + y) * full.width + g.window.x + x];
+                max = max.max((0..3).map(|c| a[c].abs_diff(b[c])).max().unwrap_or(0));
+            }
+        }
+        assert!(max <= 2, "hq {hq}: the window differs from the full-size render by {max} levels");
+    }
+}
+
+// Given a photo larger than the preview level shown whole for a moment, its full-resolution
+// source is decoded in the background, so a zoom to 1:1 then renders from it with no decode;
+// a photo just stepped onto is not decoded at once
+#[test]
+fn a_short_look_prepares_the_full_resolution_source_for_a_zoom() {
+    let (mut h, work) = detail([3000, 2000], 1.0);
+    let id = PhotoId(1);
+    // (from when the whole photo was first shown: not at once, after the look)
+    let since = h.app.whole_since.filter(|(p, _)| *p == id).map(|(_, t)| t).expect("the photo is shown whole");
+    assert!(h.step_until(TIMEOUT, |h| h.app.session.media.has_source(id, lcc_engine::SourceLevel::Full)), "decoded after a look");
+    let asked = h.time();
+    assert!(asked - since >= crate::panels::detail::WARM_FULL_AFTER_S - 0.05, "it waited for the look ({:.2} s)", asked - since);
+    let from = work.borrow().asked.len();
+    h.app.ui.zoom = Zoom::Percent(100.0);
+    assert!(h.settle(TIMEOUT));
+    let zoomed: Vec<_> =
+        work.borrow().asked.iter().skip(from).filter(|(s, _)| matches!(s, Slot::Tile { .. } | Slot::Window(_))).map(|(_, j)| j.clone()).collect();
+    assert!(!zoomed.is_empty(), "the zoom rendered");
+    assert!(zoomed.iter().all(|j| matches!(j.source, lcc_engine::media::SourceRef::Loaded(_))), "every 1:1 render starts from the held source");
+}

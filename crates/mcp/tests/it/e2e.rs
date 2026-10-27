@@ -105,6 +105,31 @@ fn file_writers_advertise_destructive_effects() {
     assert_eq!(image_only["annotations"]["destructiveHint"], false);
 }
 
+/// A plug-in's settings are reachable over MCP: `plugin.settings` and `plugin.setSettings` are
+/// tools, and they reach the Plugin Manager (here: no such plug-in).
+#[test]
+fn plugin_settings_are_mcp_tools() {
+    // never the real user's plug-in folder
+    lcc_engine::cmd::plugins::use_in_memory_manager();
+    let mut server = Server::new(Box::new(Headless::demo()));
+    let replies = session(
+        &mut server,
+        &[
+            json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+            call(2, "cmd_plugin_setSettings", json!({"id": "test.none", "values": {"n": 1}})),
+            call(3, "cmd_plugin_settings", json!({"id": "test.none"})),
+        ],
+    );
+    let tools = replies[0]["result"]["tools"].as_array().unwrap();
+    for name in ["cmd_plugin_settings", "cmd_plugin_setSettings", "cmd_plugin_prepare"] {
+        assert!(tools.iter().any(|t| t["name"] == name), "{name}");
+    }
+    for r in &replies[1..] {
+        assert_eq!(r["result"]["isError"], true, "{r}");
+        assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("no plug-in \"test.none\""), "{r}");
+    }
+}
+
 #[test]
 fn headless_set_exposure_and_render() {
     exposure_roundtrip(&mut Server::new(Box::new(Headless::demo())));

@@ -29,9 +29,17 @@ pub fn headroom_of(l: &OutputLuminance) -> Option<f32> {
     (l.reference > 0 && max > 0).then(|| max as f32 / l.reference as f32).filter(|h| h.is_finite())
 }
 
-/// The largest headroom among `outputs` (the window may go to any of them), when above 1.
-pub fn best_headroom(outputs: &[OutputLuminance]) -> Option<f32> {
-    outputs.iter().filter_map(headroom_of).filter(|h| *h > 1.0).fold(None, |a, h| Some(a.map_or(h, |a: f32| a.max(h))))
+/// The output with the largest headroom above 1 (the window may go to any of them; its reference
+/// white is the SDR white the window is shown at), or `None` when every output is SDR.
+pub fn best_output(outputs: &[OutputLuminance]) -> Option<OutputLuminance> {
+    outputs
+        .iter()
+        .filter_map(|o| headroom_of(o).filter(|h| *h > 1.0).map(|h| (h, *o)))
+        .fold(None, |best: Option<(f32, OutputLuminance)>, (h, o)| match best {
+            Some((bh, _)) if bh >= h => best,
+            _ => Some((h, o)),
+        })
+        .map(|(_, o)| o)
 }
 
 #[derive(Default)]
@@ -140,8 +148,10 @@ mod tests {
     fn the_best_output_wins_and_sdr_outputs_count_for_nothing() {
         let sdr = OutputLuminance { reference: 200, max: 200, target_max: Some(200) };
         let hdr = OutputLuminance { reference: 203, max: 10_000, target_max: Some(812) };
-        assert_eq!(best_headroom(&[sdr]), None);
-        assert_eq!(best_headroom(&[]), None);
-        assert!((best_headroom(&[sdr, hdr]).unwrap() - 4.0).abs() < 1e-3);
+        assert_eq!(best_output(&[sdr]), None);
+        assert_eq!(best_output(&[]), None);
+        // the HDR one, whose reference white the window's SDR white follows
+        assert_eq!(best_output(&[sdr, hdr]), Some(hdr));
+        assert!((headroom_of(&hdr).unwrap() - 4.0).abs() < 1e-3);
     }
 }

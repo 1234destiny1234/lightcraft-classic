@@ -115,3 +115,32 @@ fn sdr_rendition_rolls_highlights_off_instead_of_clipping() {
     assert_eq!(row(&damaged), old);
     assert_eq!(sdr.sdr_rendition().hdr.rolloff_peak(), 1.0);
 }
+
+// Given an HDR edit dragged in a view whose stage cache also serves the view's own (larger)
+// render, the HDR histogram with the cache is the histogram without it, update after update
+#[test]
+fn a_cached_hdr_histogram_is_the_uncached_one_through_a_drag() {
+    let src = std::sync::Arc::new(lcc_scenes::demo_library()[1].render(960, 640));
+    let cache = crate::StageCache::default();
+    let view = RenderRequest::fit(960, 960);
+    let mut s = hdr_on(3.0);
+    s.light.highlights = -30.0;
+    s.effects.clarity = 20.0;
+    s.detail.nr_luminance = 25.0;
+    for step in 0..6 {
+        s.light.exposure = 0.25 * f64::from(step);
+        if step == 3 {
+            s.effects.clarity = 35.0; // a slider that feeds the spatial planes
+        }
+        // (the view renders through the same cache between histograms, as the loupe on the CPU does)
+        drop(crate::render_cached(&src, &raw(), &s, &view, &cache));
+        let cached = crate::hdr_histogram_cached(&src, &raw(), &s, &view, &cache).expect("an HDR histogram");
+        let plain = crate::hdr_histogram(&src, &raw(), &s, &view).expect("an HDR histogram");
+        assert!(cached.hdr.is_some());
+        assert_eq!(
+            (cached.luma, cached.r, cached.g, cached.b, cached.total, cached.hdr),
+            (plain.luma, plain.r, plain.g, plain.b, plain.total, plain.hdr),
+            "step {step}"
+        );
+    }
+}

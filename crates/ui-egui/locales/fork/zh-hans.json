@@ -1422,5 +1422,7 @@
   "It needs features this version of the app doesn't have:": "它需要此版本应用没有的功能：",
   "Install a newer version of the app to use it.": "请安装较新版本的应用以使用它。",
   "It can't be installed:": "无法安装：",
-  "Install Older Version": "安装旧版本"
+  "Install Older Version": "安装旧版本",
+  "Plug-in Settings": "增效工具设置",
+  "this plug-in has no settings": "此增效工具没有设置"
 }
