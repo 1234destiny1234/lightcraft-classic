@@ -22,6 +22,8 @@ const HEADER_H: f32 = 44.0;
 const NAME_H: f32 = 26.0;
 /// The unnamed-faces heading and its hints.
 const SECTION_H: f32 = 70.0;
+/// The search box at the right of the header (points wide).
+const SEARCH_W: f32 = 240.0;
 
 /// `thumb` (the thumbnail slider, 90 to 480) as a position between `low` and `high`.
 fn between(thumb: f32, low: f32, high: f32) -> f32 {
@@ -64,12 +66,20 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let now = ui.input(|i| i.time);
     let thumb = app.ui.thumb_size;
     let people = app.caches.people(&app.session.catalog, &app.session.filter);
+    // the search box, at the right of the header: the cards below keep only the names that hold what is typed
+    // (case aside); emptied, every person is back
+    let query = app.ui.people_search.trim().to_lowercase();
+    let listed: Vec<&Person> = people.iter().filter(|p| query.is_empty() || p.name.to_lowercase().contains(&query)).collect();
     let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEADER_H), Sense::hover());
+    let search = Rect::from_min_size(pos2(head.right() - PAD - SEARCH_W, head.center().y - 13.0), vec2(SEARCH_W, 26.0));
     let title =
         ui.painter().text(pos2(head.left() + PAD, head.center().y), Align2::LEFT_CENTER, crate::i18n::tr("Named People"), t.semibold(15.0), t.text);
-    // the person page last left (a face opened from it, or its back button): one click returns to it
+    // the person page last left (a face opened from it, or its back button): one click returns to it, as long as it
+    // stays on the header's side of the search box
     if let Some(last) = app.ui.last_person.clone().filter(|n| people.iter().any(|p| &p.name == n)) {
-        let label = fit(ui.painter(), &last, t.font(13.0), 224.0);
+        // its label plus the button's arrow and margins stay clear of the search box
+        let room = (search.left() - 66.0 - (title.right() + 14.0)).clamp(48.0, 224.0);
+        let label = fit(ui.painter(), &last, t.font(13.0), room);
         let width = ui.painter().layout_no_wrap(label.clone(), t.font(13.0), Color32::WHITE).size().x + 44.0;
         let r = Rect::from_min_size(pos2(title.right() + 14.0, head.center().y - 12.0), vec2(width, 24.0));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
@@ -79,8 +89,17 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             let _ = app.run("view.person", json!({"name": last}));
         }
     }
-    let count =
-        ui.painter().text(pos2(head.right() - PAD, head.center().y), Align2::RIGHT_CENTER, people.len().to_string(), t.font(13.0), t.text_dim);
+    // how many cards the search lets through (of all of them, while it narrows them)
+    let count_text = if query.is_empty() { people.len().to_string() } else { format!("{} / {}", listed.len(), people.len()) };
+    let count = ui.painter().text(pos2(search.left() - 16.0, head.center().y), Align2::RIGHT_CENTER, count_text, t.font(13.0), t.text_dim);
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(search));
+    crate::text_field::TextField::singleline("field:peopleSearch", &mut app.ui.people_search)
+        .hint(crate::i18n::tr("Search People"))
+        .label(crate::i18n::tr("Search People"))
+        .width(SEARCH_W - 12.0)
+        .font(t.font(13.0))
+        .margin(egui::Margin::symmetric(8, 4))
+        .show(&mut child);
     // faces the user ignored: one click brings them all back (one undo step)
     let ignored = app.caches.ignored_faces(&app.session.catalog);
     if !ignored.is_empty() {
@@ -118,8 +137,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         let width = ui.available_width();
         let cols = columns(width, edge);
         let row_h = edge + NAME_H + GAP;
-        let rows = people.len().div_ceil(cols);
-        let named_h = if people.is_empty() { 40.0 } else { PAD + rows as f32 * row_h };
+        let rows = listed.len().div_ceil(cols);
+        let named_h = if listed.is_empty() { 40.0 } else { PAD + rows as f32 * row_h };
         let (tile_cols, tile_row) = (columns(width, tile), tile + GAP);
         let tile_rows = unnamed.faces.len().div_ceil(tile_cols);
         let section_top = named_h + 6.0;
@@ -129,19 +148,20 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             let last = (((viewport.bottom() - top) / row_h).ceil().max(0.0) as usize).min(rows);
             first..last
         };
-        if people.is_empty() {
-            ui.painter().text(
-                pos2(area.left() + PAD, area.top() + 24.0),
-                Align2::LEFT_CENTER,
-                "No named people yet. Name the faces below to start.",
-                t.font(13.0),
-                t.text_dim,
-            );
+        if listed.is_empty() {
+            // nothing to show where the cards go: because nobody is named yet, or because the search box holds a
+            // name no one has (the unnamed faces below stay)
+            let message = if query.is_empty() {
+                crate::i18n::tr("No named people yet. Name the faces below to start.").to_string()
+            } else {
+                crate::i18n::tr("No people match. Clear the search box to see everyone again.").to_string()
+            };
+            ui.painter().text(pos2(area.left() + PAD, area.top() + 24.0), Align2::LEFT_CENTER, message, t.font(13.0), t.text_dim);
         }
         let mut shown = 0;
         for row in visible(PAD, rows, row_h) {
             for col in 0..cols {
-                let Some(person) = people.get(row * cols + col) else { break };
+                let Some(&person) = listed.get(row * cols + col) else { break };
                 shown += 1;
                 let min = area.min + vec2(PAD + col as f32 * (edge + GAP), PAD + row as f32 * row_h);
                 let selected = active.as_deref().is_some_and(|a| a.eq_ignore_ascii_case(&person.name));

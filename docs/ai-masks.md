@@ -82,8 +82,7 @@ same blue as the sky (0.60–0.67). Real photos need a CC0 set with hand-made re
 
 ## Subject and Background with BiRefNet
 
-**Maintainer decision 2026-10-13: BiRefNet adopted** for Subject (and Background, its inverse);
-the plug-in store, signing and Lua plug-ins (gap 19) are on hold.
+**Maintainer decision 2026-10-13: BiRefNet adopted** for Subject (and Background, its inverse).
 
 `crates/segment/src/birefnet.rs` runs **BiRefNet_lite** (Swin-T backbone, MIT code and weights,
 `ZhengPeng7/BiRefNet_lite`) in pure Rust on candle. Like SAM 3 it is optional and downloaded only

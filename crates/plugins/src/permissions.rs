@@ -8,6 +8,8 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::programs::ProgramDecl;
+
 /// Most network hosts / filesystem roots one plug-in may name.
 pub const MAX_HOSTS: usize = 32;
 pub const MAX_ROOTS: usize = 16;
@@ -29,6 +31,10 @@ pub struct Permissions {
     /// Folders the plug-in may read (and, with `write`, write) below.
     #[serde(default)]
     pub fs: Vec<FsRoot>,
+    /// Programs the plug-in may start (`program.start`). Granted only by the user, in the Plugin
+    /// Manager ([`crate::Manager::set_grant_by_user`]); never through a command.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub programs: Vec<ProgramDecl>,
 }
 
 /// A filesystem root.
@@ -64,7 +70,12 @@ impl Permissions {
         if let Some(r) = self.fs.iter().find(|r| !Path::new(&r.path).is_absolute() || has_parent_refs(Path::new(&r.path))) {
             return Err(format!("filesystem root {:?} must be an absolute path without `..`", r.path));
         }
-        Ok(())
+        crate::programs::validate_all(&self.programs)
+    }
+
+    /// The granted program `id`, if any.
+    pub fn program(&self, id: &str) -> Option<&ProgramDecl> {
+        self.programs.iter().find(|p| p.id == id)
     }
 
     /// What both sets allow: the effective capabilities of a grant for a request.
@@ -78,12 +89,15 @@ impl Permissions {
                 .iter()
                 .filter_map(|r| other.fs.iter().find(|o| o.path == r.path).map(|o| FsRoot { path: r.path.clone(), write: r.write && o.write }))
                 .collect(),
+            // the requested entry, when it names no more than the granted one (`ProgramDecl::within`):
+            // an update that widens where a program is found drops the grant
+            programs: other.programs.iter().filter(|o| self.programs.iter().any(|p| o.within(p))).cloned().collect(),
         }
     }
 
     /// True when nothing is allowed.
     pub fn is_empty(&self) -> bool {
-        !self.catalog && !self.metadata_write && self.network.is_empty() && self.fs.is_empty()
+        !self.catalog && !self.metadata_write && self.network.is_empty() && self.fs.is_empty() && self.programs.is_empty()
     }
 
     /// May the plug-in talk to `host`? Matching ignores ASCII case.
@@ -100,6 +114,12 @@ impl Permissions {
     /// paths and `..`, and resolves symbolic links of the existing part so a link cannot lead
     /// out of a root. Returns the resolved path, which is the one to open.
     pub fn check_path(&self, path: &str, write: bool, extra: &[PathBuf]) -> std::result::Result<PathBuf, String> {
+        self.check_path_in(path, write, extra, &[])
+    }
+
+    /// [`Permissions::check_path`], also allowing reads below `lent_dirs` (folders lent to one
+    /// call for reading, like a program run's folder in `program.end`).
+    pub fn check_path_in(&self, path: &str, write: bool, extra: &[PathBuf], lent_dirs: &[PathBuf]) -> std::result::Result<PathBuf, String> {
         let p = Path::new(path);
         if !p.is_absolute() || has_parent_refs(p) {
             return Err(format!("{path}: must be an absolute path without `..`"));
@@ -111,6 +131,9 @@ impl Permissions {
             return Err(format!("{path}: must be an absolute path without `..`"));
         }
         if extra.iter().any(|e| resolve(e) == real) {
+            return Ok(real);
+        }
+        if !write && lent_dirs.iter().any(|d| real.starts_with(resolve(d))) {
             return Ok(real);
         }
         for root in &self.fs {
@@ -179,6 +202,7 @@ mod tests {
             metadata_write: true,
             network: vec!["a.com".into(), "b.com".into()],
             fs: vec![FsRoot { path: "/x".into(), write: false }],
+            programs: vec![],
         };
         let e = grant.intersect(&req);
         assert!(e.catalog && !e.metadata_write);
