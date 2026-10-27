@@ -485,7 +485,7 @@ impl Updater {
     pub fn options(&self) -> lcc_updater::Options {
         lcc_updater::Options {
             prerelease: self.prefs.prerelease,
-            portable: std::env::current_exe().ok().and_then(|exe| exe.parent().map(portable_in)).unwrap_or(false),
+            portable: takes_portable_zip(),
             manifest_url: self.manifest_url.clone(),
             extra_origin: self.extra_origin.clone(),
             ..Default::default()
@@ -788,14 +788,26 @@ fn stage_for(dir: Option<&Path>) -> PathBuf {
 
 /// Tidy up after an update, once per app start, on a thread of its own so the start never waits
 /// for it: log why the last AppImage swap did not happen, if it didn't, and delete the previous
-/// AppImage (`<file>.old` beside `$APPIMAGE`) a successful one left. Nothing to do on other
-/// installs. Never fails: what it can't do is logged.
+/// AppImage (`<file>.old` beside `$APPIMAGE`) or the previous files of a Windows zip copy
+/// (`<file>.update-old`) a successful one left. Nothing to do on other installs. Never fails: what
+/// it can't do is logged.
 pub fn clean_up_after_update() {
     let stage = stage_for(crate::config::config_dir().as_deref());
     let spawned = std::thread::Builder::new().name("update-cleanup".into()).spawn(move || lcc_updater::clean_up_after_update(&stage));
     if let Err(e) = spawned {
         log::warn!("updates: could not start the clean-up after an update: {e}");
     }
+}
+
+/// The argument a zip update starts the new version with ([`wait_for_previous_version`]).
+pub const AFTER_UPDATE: &str = lcc_updater::AFTER_UPDATE;
+
+/// In a version a Windows zip update started: wait until the version it replaced has quit, so the
+/// two never hold the library at once. `false` when it is still running after the wait (two
+/// minutes; quitting can wait on the user): then this one ends without opening anything, and the
+/// next start is the new version.
+pub fn wait_for_previous_version() -> bool {
+    lcc_updater::wait_for_previous_version()
 }
 
 fn load_prefs(dir: &Path) -> Prefs {
@@ -810,6 +822,23 @@ fn load_prefs(dir: &Path) -> Prefs {
         Err(e) => {
             log::warn!("updates: {} could not be read ({e}); the defaults are used", path.display());
             Prefs::default()
+        }
+    }
+}
+
+/// Whether this copy updates from the portable zip rather than an installer: any copy on Windows the
+/// MSI did not install (it was unpacked from the zip, with or without `portable.txt`), and a copy
+/// with a portable marker beside it. A copy the MSI installed always takes the MSI; when Windows
+/// Installer can't say, the marker decides, as before Windows Installer was asked.
+fn takes_portable_zip() -> bool {
+    let Ok(exe) = std::env::current_exe() else { return false };
+    let marked = exe.parent().is_some_and(portable_in);
+    match lcc_updater::installed_by_msi(&exe) {
+        Ok(true) => false,
+        Ok(false) => marked || lcc_updater::unpacked_copy().is_some(),
+        Err(e) => {
+            log::warn!("updates: Windows Installer could not say whether it installed {} ({e})", exe.display());
+            marked
         }
     }
 }

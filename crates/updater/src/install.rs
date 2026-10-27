@@ -9,6 +9,7 @@
 //! | Windows | `.msi` | the installer runs (`msiexec`), then the app starts again |
 //! | macOS | `.dmg` | mounted, its app copied beside the running bundle, checked and swapped in, relaunched |
 //! | Linux | `.AppImage` | once the app has quit, the running file is replaced and the new one started |
+//! | Windows, a copy unpacked from the portable zip | `.zip` | unpacked beside the program, its files swapped in, the new version started ([`zipswap`]) |
 //! | anywhere else | `.tar.gz` / `.zip` | the folder it is in is shown, to unpack it yourself |
 //!
 //! The caller quits the app when [`Outcome::exit`] is `true` — the installer or the replacement
@@ -25,6 +26,7 @@ use crate::target::Kind;
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+pub mod zipswap;
 
 /// What the caller has to do once the install has been started.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -100,6 +102,16 @@ pub fn plan(kind: Kind, file: &Path, version: &str) -> Plan {
             destination: current_exe(),
             restart: Restart::QuitAndRelaunch,
         },
+        Kind::Archive if let Some((dir, _)) = self_updating_copy() => Plan {
+            summary: format!("Update this copy to {version}"),
+            steps: vec![
+                "The new version is unpacked beside this one and checked.".into(),
+                "The app quits, and its files are replaced by the new ones (the previous ones are deleted on the next start).".into(),
+                "The new version starts. Your settings, and portable.txt with the portable data, stay as they are.".into(),
+            ],
+            destination: Some(dir),
+            restart: Restart::QuitAndRelaunch,
+        },
         Kind::Archive => Plan {
             summary: format!("Download {version} and install it by hand"),
             steps: vec![
@@ -136,7 +148,10 @@ pub fn install_with(
         Kind::Msi => install_msi(&downloaded.path),
         Kind::Dmg => install_dmg(&downloaded.path, version),
         Kind::AppImage => install_appimage(&downloaded.path),
-        Kind::Archive => show(&downloaded.path).map_err(UpdateError::Install).map(|()| Outcome::manual(&downloaded.path)),
+        Kind::Archive => match self_updating_copy() {
+            Some((dir, exe_name)) => install_zip(&downloaded.path, &dir, &exe_name, version),
+            None => show(&downloaded.path).map_err(UpdateError::Install).map(|()| Outcome::manual(&downloaded.path)),
+        },
         Kind::Checksums => Err(UpdateError::Install("that file is the release's checksum list, not an update".into())),
     }
     .map_err(|e| match e {
@@ -173,6 +188,52 @@ fn current_exe() -> Option<PathBuf> {
 }
 
 // ---------- Windows
+
+/// This copy's folder and program name when it was unpacked from the portable zip on Windows: a
+/// release program (`<binary>.exe`) that the MSI did not install. `None` elsewhere, for an MSI
+/// install, when Windows Installer can't say, and for a development build (`app.exe`).
+pub fn unpacked_copy() -> Option<(PathBuf, String)> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let exe = std::env::current_exe().ok()?;
+    let name = exe.file_name()?.to_string_lossy().to_string();
+    if !name.eq_ignore_ascii_case(&format!("{}.exe", lcc_brand::BINARY)) {
+        return None;
+    }
+    match crate::msi::installed_by_msi(&exe) {
+        Ok(false) => Some((exe.parent()?.to_path_buf(), name)),
+        Ok(true) => None,
+        Err(e) => {
+            log::warn!("updates: could not tell whether the installer put {} there ({e}); it is updated by hand", exe.display());
+            None
+        }
+    }
+}
+
+/// [`unpacked_copy`], when its folder can be written: the copy replaces its own files.
+fn self_updating_copy() -> Option<(PathBuf, String)> {
+    unpacked_copy().filter(|(dir, name)| zipswap::writable(dir, name))
+}
+
+/// Swap the zip's files into the copy in `dir` and start the new `exe_name` there.
+fn install_zip(zip: &Path, dir: &Path, exe_name: &str, version: &str) -> Result<Outcome, UpdateError> {
+    let files = zipswap::swap_in(zip, dir, exe_name, &mut |exe| {
+        Command::new(exe).arg(zipswap::AFTER_UPDATE).current_dir(dir).spawn().map(|_| ()).map_err(|e| e.to_string())
+    })?;
+    log::info!("updates: {files} files of {} replaced by {version}", dir.display());
+    Ok(Outcome { message: format!("{version} is in place. The app restarts now."), exit: true })
+}
+
+/// In a version a zip update started ([`zipswap::AFTER_UPDATE`]): wait until the previous version
+/// has quit (at most [`zipswap::WAIT_FOR_EXIT`]), so the two never hold the library at once.
+/// `false` when it is still running after that: this one should end without opening anything.
+pub fn wait_for_previous_version() -> bool {
+    match std::env::current_exe() {
+        Ok(exe) => zipswap::finish_previous(&exe, zipswap::WAIT_FOR_EXIT),
+        Err(_) => true,
+    }
+}
 
 #[cfg(windows)]
 fn install_msi(msi: &Path) -> Result<Outcome, UpdateError> {
@@ -297,10 +358,14 @@ fn file_name(path: &Path) -> String {
 }
 
 /// Tidy up after an update, once, when the app starts: log why the last AppImage swap did not
-/// happen (if it left a note in `stage`, the download folder), and delete the `<file>.old` an
-/// update left beside the AppImage this copy runs from (`$APPIMAGE`; nothing without it). Never
+/// happen (if it left a note in `stage`, the download folder), delete the `<file>.old` an
+/// update left beside the AppImage this copy runs from (`$APPIMAGE`; nothing without it), and
+/// delete the `.update-old` files a zip update left in a Windows copy unpacked from the zip. Never
 /// fails and never panics: anything it can't do is logged.
 pub fn clean_up_after_update(stage: &Path) {
+    if let Some((dir, name)) = unpacked_copy() {
+        zipswap::clean_up(&dir, &name);
+    }
     #[cfg(unix)]
     if let Some(note) = linux::take_failure_note(stage) {
         log::warn!("updates: the last update was not installed: {note}");

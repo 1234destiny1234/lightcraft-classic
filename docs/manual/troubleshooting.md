@@ -65,8 +65,16 @@ download it for this system and install it; the app restarts afterwards. Things 
   the releases page instead, and tell the project.
 - "This build can't verify updates": the build was made without an update key (a fork or a build from
   source). It still tells you when a new version is out; download it from the releases page.
-- A tarball or zip (Linux riscv64, FreeBSD, or a Windows portable build) is downloaded and its folder shown:
-  quit the app and unpack it over the installation yourself.
+- A Windows copy unpacked from the portable zip (with or without `portable.txt`) updates itself: the new zip is
+  unpacked beside the program, its files replace the copy's own, and the new version starts once the old one has
+  quit. Only the zip's files are replaced; `portable.txt`, the portable data folder and anything else you put there
+  stay. The previous files are kept as `<file>.update-old` until the next start deletes them. If you cancel
+  quitting (a task still running, say), the new version doesn't start alongside this one; the next start is the
+  new version. A copy in a folder it
+  can't write to (inside Program Files, say) gets the zip and its folder shown instead. A copy the MSI installed
+  (Windows Installer is asked) always updates through the MSI.
+- A tarball (Linux riscv64, FreeBSD) is downloaded and its folder shown: quit the app and unpack it over the
+  installation yourself.
 - "Check for updates when the app starts" is off until you turn it on (Settings → General, the welcome dialog
   of a first start, or the update dialog); Help → Check for Updates… always works by hand. The setting lives in
   the app's own settings folder (`updates.json`), not in a catalog. Runs that keep no settings (`--memory`,

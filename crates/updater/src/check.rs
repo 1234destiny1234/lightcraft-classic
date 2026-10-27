@@ -50,8 +50,9 @@ pub struct Options {
     pub target: Option<Target>,
     /// Include prereleases (`-rc.1`) in what counts as newer.
     pub prerelease: bool,
-    /// This copy runs portable (a `portable.txt` beside the program): it takes the portable zip,
-    /// never an installer that would put the app somewhere else and leave this folder as it was.
+    /// This copy was not installed by an installer (a Windows copy unpacked from the portable zip,
+    /// or one with `portable.txt` beside the program): it takes the portable zip, never an installer
+    /// that would put the app somewhere else and leave this folder as it was.
     pub portable: bool,
     /// A feed URL that replaces the release's own (a mirror, or a test's local feed); it must be
     /// `https://`. The files it offers still have to be on this repository's releases.
@@ -162,7 +163,9 @@ pub fn from_release(opts: &Options, target: Target, release: Release, _cancel: O
         sha256,
         published: release.published.clone(),
         notes: release.notes.clone(),
-        action: if opts.portable && asset_kind == Kind::Archive {
+        action: if opts.portable && asset_kind == Kind::Archive && crate::install::unpacked_copy().is_some() {
+            "download it, replace this copy's files with the new ones and start the app again".into()
+        } else if opts.portable && asset_kind == Kind::Archive {
             "download it and open the folder it is in, so you can unpack it over this copy".into()
         } else {
             target.describe()

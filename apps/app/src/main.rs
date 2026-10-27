@@ -1091,6 +1091,7 @@ fn main() -> eframe::Result {
     let mut in_memory = false;
     let mut library_dir: Option<std::path::PathBuf> = None;
     let mut launch_link: Option<String> = None;
+    let mut after_update = false;
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -1099,6 +1100,8 @@ fn main() -> eframe::Result {
             "--library" => library_dir = args.next().map(std::path::PathBuf::from),
             "--no-demo" => seed_demo = false,
             "--memory" | "--demo" => in_memory = true,
+            // started by the copy it replaced (a Windows zip update), not by the user
+            o if o == lcc_engine::update::AFTER_UPDATE => after_update = true,
             "--hdr-probe" => {
                 // optional seconds (default 5)
                 let secs = args.next_if(|v| v.parse::<u64>().is_ok()).and_then(|v| v.parse().ok()).unwrap_or(5);
@@ -1145,6 +1148,13 @@ fn main() -> eframe::Result {
             Ok(None) => {}
             Err(e) => log::warn!("could not copy the previous settings folder: {e}"),
         }
+    }
+    // started by a zip update: the previous version is still quitting, and has to let go of the
+    // library (and its own program file) before this one goes on. Still running after the wait,
+    // it was kept open (quitting cancelled): it stays, and the next start is this version.
+    if after_update && !lcc_engine::update::wait_for_previous_version() {
+        log::warn!("the previous version is still running (quitting was cancelled?); this update's start ends here");
+        return Ok(());
     }
     // the start after an update: delete the previous AppImage, log a swap that failed (in the
     // background; the start never waits for it). Not in a run that keeps no settings (--memory,
