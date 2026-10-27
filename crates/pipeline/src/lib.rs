@@ -619,6 +619,17 @@ pub const HDR_HISTOGRAM_DRAG_EDGE: usize = 192;
 /// an HDR edit shows its SDR rendition; this says how far its highlights go. `None` for SDR edits,
 /// high-bit-depth, windowed and proofed requests (their histogram stays the image's).
 pub fn hdr_histogram(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) -> Option<Histogram> {
+    hdr_histogram_with(s, req, |hreq| render(src, info, s, hreq))
+}
+
+/// [`hdr_histogram`], its render reusing (and refreshing) the intermediate results in `cache`, as
+/// [`render_cached`] does: the same histogram. A slider drag of an HDR edit then redoes only the
+/// stages the slider feeds (a loupe rendered on the GPU leaves its cache's CPU entries free).
+pub fn hdr_histogram_cached(src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest, cache: &StageCache) -> Option<Histogram> {
+    hdr_histogram_with(s, req, |hreq| render_cached(src, info, s, hreq, cache))
+}
+
+fn hdr_histogram_with(s: &DevelopSettings, req: &RenderRequest, render: impl FnOnce(&RenderRequest) -> Rendered) -> Option<Histogram> {
     // a drag's drafts keep their own histogram: a second render per tick would slow them down
     if !s.hdr.enabled || req.depth != OutputDepth::U8 || req.window.is_some() || req.proof.is_some() || req.quality == Quality::Draft {
         return None;
@@ -635,7 +646,7 @@ pub fn hdr_histogram(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: 
         display: None,
         ..*req
     };
-    let r = render(src, info, s, &hreq);
+    let r = render(&hreq);
     let deep = r.deep?;
     let DeepSamples::F32(v) = &deep.samples else { return None };
     Some(Histogram::of_hdr_image(v.as_chunks::<3>().0, deep.width, r.coverage.as_deref(), lcc_develop::Hdr::MAX_EV_LIMIT as f32))

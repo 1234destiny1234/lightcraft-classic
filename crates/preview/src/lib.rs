@@ -41,7 +41,15 @@ struct Write {
     key: Hash128,
     img: Arc<Rgba8>,
     cost: usize,
+    /// Writes of one series ([`PreviewCache::put_deferred_series`]) replace each other until the
+    /// series has been quiet for [`SERIES_QUIET`]: only the last is written.
+    series: Option<u64>,
 }
+
+/// How long a series of deferred writes must be quiet before its last image is written (a slider
+/// drag at full quality puts one per update).
+#[cfg(not(target_arch = "wasm32"))]
+const SERIES_QUIET: std::time::Duration = std::time::Duration::from_millis(400);
 
 /// Rendered-thumbnail cache: memory LRU over an optional disk cache.
 pub struct PreviewCache {
@@ -140,6 +148,17 @@ impl PreviewCache {
     }
 
     pub fn put_deferred_at(self: &Arc<Self>, generation: u64, key: Hash128, img: Arc<Rgba8>) {
+        self.put_deferred_in(generation, None, key, img);
+    }
+
+    /// [`Self::put_deferred_at`] for one of a series of images (a photo's view as an edit moves):
+    /// in memory at once, and on disk only the last of the series, once it has been quiet for a
+    /// moment (a high quality slider drag wrote dozens of intermediate previews).
+    pub fn put_deferred_series(self: &Arc<Self>, generation: u64, series: u64, key: Hash128, img: Arc<Rgba8>) {
+        self.put_deferred_in(generation, Some(series), key, img);
+    }
+
+    fn put_deferred_in(self: &Arc<Self>, generation: u64, series: Option<u64>, key: Hash128, img: Arc<Rgba8>) {
         let current = self.generation.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         if *current != Some(generation) {
             return;
@@ -150,6 +169,7 @@ impl PreviewCache {
         let Some(d) = &self.disk else { return };
         #[cfg(target_arch = "wasm32")]
         {
+            let _ = series;
             d.put(key, &img);
         }
         #[cfg(not(target_arch = "wasm32"))]
@@ -165,22 +185,24 @@ impl PreviewCache {
             }
             let Some(tx) = writer.as_ref() else { return };
             self.queued.fetch_add(c, Ordering::Relaxed);
-            if tx.send(Write { generation, key, img, cost: c }).is_err() {
+            if tx.send(Write { generation, key, img, cost: c, series }).is_err() {
                 self.queued.fetch_sub(c, Ordering::Relaxed);
                 *writer = None;
             }
         }
     }
 
-    /// The thread that makes the deferred disk writes, one after another. It holds the cache weakly, so it ends
-    /// once the cache is dropped (its queue's sender with it).
+    /// The thread that makes the deferred disk writes, one after another; a series' writes wait until it is quiet
+    /// and only its last is made. It holds the cache weakly, so it ends once the cache is dropped (its queue's sender
+    /// with it), writing what it still holds first.
     #[cfg(not(target_arch = "wasm32"))]
     fn start_writer(self: &Arc<Self>) -> Option<std::sync::mpsc::Sender<Write>> {
+        use std::sync::mpsc::RecvTimeoutError;
         let (tx, rx) = std::sync::mpsc::channel::<Write>();
         let cache = Arc::downgrade(self);
         let queued = self.queued.clone();
         let spawned = std::thread::Builder::new().name("lc-preview-write".into()).spawn(move || {
-            for job in rx {
+            let write = |job: Write| {
                 if let Some(me) = cache.upgrade() {
                     let current = me.generation.read().unwrap_or_else(std::sync::PoisonError::into_inner);
                     if *current == Some(job.generation)
@@ -190,6 +212,34 @@ impl PreviewCache {
                     }
                 }
                 queued.fetch_sub(job.cost, Ordering::Relaxed);
+            };
+            let mut held: std::collections::HashMap<u64, (Write, std::time::Instant)> = std::collections::HashMap::new();
+            loop {
+                let next = if held.is_empty() { rx.recv().map_err(|_| RecvTimeoutError::Disconnected) } else { rx.recv_timeout(SERIES_QUIET / 4) };
+                match next {
+                    Ok(job) => match job.series {
+                        Some(series) => {
+                            // (the image it replaces is never written)
+                            if let Some((old, _)) = held.insert(series, (job, std::time::Instant::now())) {
+                                queued.fetch_sub(old.cost, Ordering::Relaxed);
+                            }
+                        }
+                        None => write(job),
+                    },
+                    Err(RecvTimeoutError::Timeout) => {}
+                    Err(RecvTimeoutError::Disconnected) => {
+                        for (job, _) in held.into_values() {
+                            write(job);
+                        }
+                        return;
+                    }
+                }
+                let quiet: Vec<u64> = held.iter().filter(|(_, (_, at))| at.elapsed() >= SERIES_QUIET).map(|(s, _)| *s).collect();
+                for series in quiet {
+                    if let Some((job, _)) = held.remove(&series) {
+                        write(job);
+                    }
+                }
             }
         });
         if spawned.is_err() {

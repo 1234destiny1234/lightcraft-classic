@@ -44,6 +44,9 @@ const MODULES: &[Module] = &[
         bindings: &[("src", false, "f32"), ("table", false, "u32"), ("dst", true, "f32")],
         entries: &["resize_h", "resize_v"],
     },
+    Module { src: include_str!("wgsl/fit.wgsl"), bindings: &[("src", false, "u32"), ("dst", true, "f32")], entries: &["unpack_rgb8"] },
+    Module { src: include_str!("wgsl/fit_pack.wgsl"), bindings: &[("src", false, "f32"), ("dst", true, "u32")], entries: &["pack_rgb8"] },
+    Module { src: include_str!("wgsl/hdr_texels.wgsl"), bindings: &[("src", false, "u32"), ("dst", true, "u32")], entries: &["hdr_texels"] },
     Module {
         src: include_str!("wgsl/map.wgsl"),
         bindings: &[("a", false, "f32"), ("b", false, "f32"), ("c", false, "f32"), ("dst", true, "f32")],
@@ -716,9 +719,18 @@ impl Gpu {
     /// A failed readback (device lost, map error, timeout) fails the render ([`FailKind::Fatal`])
     /// and returns zeros, which the caller discards; after an earlier failure in the same render
     /// nothing more is submitted.
-    pub fn finish_and_read<T: bytemuck::Pod>(&self, mut enc: wgpu::CommandEncoder, src: &Buf, len: usize) -> Vec<T> {
+    pub fn finish_and_read<T: bytemuck::Pod>(&self, enc: wgpu::CommandEncoder, src: &Buf, len: usize) -> Vec<T> {
+        self.finish_and_read_parts(enc, src, &[len]).pop().unwrap_or_default()
+    }
+
+    /// [`Self::finish_and_read`] of consecutive parts of `src` (the first `lens[0]` values, the
+    /// `lens[1]` after them, …), each into its own vector, with one submission and one mapping.
+    pub fn finish_and_read_parts<T: bytemuck::Pod>(&self, mut enc: wgpu::CommandEncoder, src: &Buf, lens: &[usize]) -> Vec<Vec<T>> {
+        let len: usize = lens.iter().sum();
         assert!(len <= src.len, "readback of {len} values from a buffer of {}", src.len);
-        let zeros = || vec![<T as bytemuck::Zeroable>::zeroed(); len];
+        // (lengths are in 32-bit values, as for `finish_and_read`; a part holds as many `T` as fit)
+        let count = |l: usize| l * 4 / std::mem::size_of::<T>().max(1);
+        let zeros = || lens.iter().map(|&l| vec![<T as bytemuck::Zeroable>::zeroed(); count(l)]).collect::<Vec<_>>();
         if failed() {
             return zeros();
         }
@@ -761,7 +773,15 @@ impl Gpu {
             Ok(d) => d,
             Err(e) => return failed(format!("{e:?}")),
         };
-        let out: Vec<T> = bytemuck::cast_slice(&data).to_vec();
+        let mut at = 0;
+        let out = lens
+            .iter()
+            .map(|&l| {
+                let part = data.get(at..at + 4 * l).and_then(|b| bytemuck::try_cast_slice::<u8, T>(b).ok()).map(<[T]>::to_vec);
+                at += 4 * l;
+                part.unwrap_or_else(|| vec![<T as bytemuck::Zeroable>::zeroed(); count(l)])
+            })
+            .collect();
         drop(data);
         staging.unmap();
         out
