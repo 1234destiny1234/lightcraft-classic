@@ -121,6 +121,10 @@ pub struct PendingCall {
     settings: Arc<Mutex<SettingsStore>>,
     request: Value,
     lent: Vec<PathBuf>,
+    /// Folders lent for reading (a program run's folder in `program.end`).
+    lent_dirs: Vec<PathBuf>,
+    /// Where `program.start` makes run folders (`None`: [`crate::programs::runs_root`]).
+    runs_root: Option<PathBuf>,
     /// A prepare step: its host calls may read, never write.
     read_only: bool,
 }
@@ -134,16 +138,39 @@ impl PendingCall {
     /// Runs the call (the plug-in's code: possibly long, e.g. an upload).
     pub fn run(&mut self, host: &mut dyn HostApi) -> crate::Outcome {
         let plugin = self.plugin.clone();
+        let manifest = plugin.manifest();
         let mut ctx = CallContext {
+            plugin: &self.id,
+            requested: &manifest.permissions,
             perms: &self.perms,
             lent: &self.lent,
+            lent_dirs: &self.lent_dirs,
+            runs_root: self.runs_root.as_deref(),
             host,
             store: &mut self.store,
+            notes: Vec::new(),
             settings: &self.settings,
-            fields: &plugin.manifest().settings,
+            fields: &manifest.settings,
             read_only: self.read_only,
         };
-        plugin.invoke(&self.request, &mut ctx)
+        let mut outcome = plugin.invoke(&self.request, &mut ctx);
+        // what the host did on the plug-in's behalf that the user should see in its log
+        let notes = std::mem::take(&mut ctx.notes);
+        outcome.logs.extend(notes);
+        outcome
+    }
+}
+
+/// Refuses a grant from a command that names a program the user hasn't allowed in `granted`, or
+/// more of one (a wider entry, [`crate::ProgramDecl::within`]). Repeating or leaving out granted
+/// programs is fine: only the user adds them.
+fn programs_kept(grant: &Permissions, granted: &Permissions) -> Result<()> {
+    match grant.programs.iter().find(|p| !granted.programs.iter().any(|g| p.within(g))) {
+        Some(p) => Err(Error::Params(format!(
+            "programs can only be allowed by the user, in the Plugin Manager (File ▸ Plug-ins ▸ Plug-in Manager…); this grant names {:?}, which the user hasn't allowed as it stands",
+            p.id
+        ))),
+        None => Ok(()),
     }
 }
 
@@ -187,6 +214,8 @@ pub struct Manager {
     unloaded: BTreeMap<String, String>,
     /// The open library's id: plug-in data is kept per library (photo ids are per library).
     library: String,
+    /// Where `program.start` makes run folders (`None`: [`crate::programs::runs_root`]).
+    runs_root: Option<PathBuf>,
 }
 
 impl Default for Manager {
@@ -200,6 +229,7 @@ impl Default for Manager {
             kept: BTreeMap::new(),
             unloaded: BTreeMap::new(),
             library: String::new(),
+            runs_root: None,
         }
     }
 }
@@ -227,6 +257,9 @@ impl Manager {
             }),
             Err(_) => State::default(),
         };
+        // run folders a program still used when the app last quit
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::programs::sweep_old_runs(&crate::programs::runs_root(), crate::programs::STALE_RUN_AGE);
         let mut m = Manager { dir: Some(dir.to_path_buf()), ..Manager::default() };
         m.set_features(features);
         let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -348,6 +381,12 @@ impl Manager {
         &self.library
     }
 
+    /// Where `program.start` makes run folders from now on (tests; `None`, the default:
+    /// [`crate::programs::runs_root`]).
+    pub fn set_runs_root(&mut self, root: Option<PathBuf>) {
+        self.runs_root = root;
+    }
+
     pub fn set_limits(&mut self, limits: Limits) {
         self.limits = limits;
     }
@@ -364,7 +403,23 @@ impl Manager {
     /// Refused, with nothing written: a plug-in that requires host features this version lacks, a
     /// `version` that isn't semver, and a lower version than the installed one unless
     /// `allow_downgrade` (the same version again is a repair, and allowed).
+    ///
+    /// `grant` can't add a program (`programs`): only the user grants those, in the Plugin
+    /// Manager ([`Manager::install_bytes_by_user`]). It may repeat or leave out the programs the
+    /// installed version has granted; one it hasn't, or a wider entry, is an error and installs
+    /// nothing. A module whose code differs from the installed one (another digest) keeps none
+    /// of its programs, and its log says so: the user allowed them for the code they had.
     pub fn install_bytes(&mut self, bytes: &[u8], grant: Option<Permissions>, allow_downgrade: bool) -> Result<&Installed> {
+        self.install_checked(bytes, grant, allow_downgrade, false)
+    }
+
+    /// [`Manager::install_bytes`] as the user approved it in the Plugin Manager's install dialog:
+    /// the grant may include programs. Never reachable from a command.
+    pub fn install_bytes_by_user(&mut self, bytes: &[u8], grant: Option<Permissions>, allow_downgrade: bool) -> Result<&Installed> {
+        self.install_checked(bytes, grant, allow_downgrade, true)
+    }
+
+    fn install_checked(&mut self, bytes: &[u8], grant: Option<Permissions>, allow_downgrade: bool, by_user: bool) -> Result<&Installed> {
         let plugin = Plugin::load(bytes, self.limits.clone())?;
         let (missing, version, downgrade) = self.install_check(plugin.manifest());
         if !missing.is_empty() {
@@ -381,8 +436,34 @@ impl Manager {
         }
         let id = plugin.id().to_string();
         // a module that stopped loading keeps its grant for the version that replaces it
-        let previous = self.plugins.get(&id).map(|i| i.grant.clone()).or_else(|| self.kept.get(&id).map(|e| e.grant.clone())).unwrap_or_default();
-        let grant = grant.unwrap_or(previous).intersect(&plugin.manifest().permissions);
+        let mut previous = self.plugins.get(&id).map(|i| i.grant.clone()).or_else(|| self.kept.get(&id).map(|e| e.grant.clone())).unwrap_or_default();
+        // programs were allowed for the code the user saw: different code from a command keeps
+        // none (a module that stopped loading counts as different)
+        let same_code = self.plugins.get(&id).is_some_and(|i| i.plugin.digest() == plugin.digest());
+        let mut dropped = Vec::new();
+        if !by_user && !same_code {
+            let declared = &plugin.manifest().permissions.programs;
+            dropped = std::mem::take(&mut previous.programs)
+                .into_iter()
+                .filter(|p| declared.iter().any(|d| d.id == p.id))
+                .map(|p| format!("{}: this version's code is different, so it may no longer start it; allow it again in the Plug-in Manager", p.name))
+                .collect();
+        }
+        if let Some(g) = &grant
+            && !by_user
+        {
+            programs_kept(g, &previous)?;
+        }
+        let grant = grant.unwrap_or_else(|| previous.clone()).intersect(&plugin.manifest().permissions);
+        // a granted program whose entry the update widened is unticked: say why
+        let widened: Vec<String> = plugin
+            .manifest()
+            .permissions
+            .programs
+            .iter()
+            .filter(|p| previous.program(&p.id).is_some_and(|g| !p.within(g)) && grant.program(&p.id).is_none())
+            .map(|p| format!("{}: this version finds it in more places than you allowed; allow it again in the Plug-in Manager", p.name))
+            .collect();
         if let Some(dir) = &self.dir {
             write_atomic(&dir.join(format!("{id}.wasm")), bytes)?;
             let file = dir.join(format!("{id}.wasm")).display().to_string();
@@ -418,6 +499,9 @@ impl Manager {
                     Some(old) => format!("downgraded from {old} to {new}"),
                     None => format!("installed version {new}"),
                 });
+                for line in dropped.into_iter().chain(widened) {
+                    i.push_log(line);
+                }
                 &*i
             })
             .ok_or(Error::NotFound(id))
@@ -427,6 +511,12 @@ impl Manager {
     pub fn install_file(&mut self, path: &Path, grant: Option<Permissions>, allow_downgrade: bool) -> Result<&Installed> {
         let bytes = read_module(path, &self.limits)?;
         self.install_bytes(&bytes, grant, allow_downgrade)
+    }
+
+    /// [`Manager::install_file`] as the user approved it ([`Manager::install_bytes_by_user`]).
+    pub fn install_file_by_user(&mut self, path: &Path, grant: Option<Permissions>, allow_downgrade: bool) -> Result<&Installed> {
+        let bytes = read_module(path, &self.limits)?;
+        self.install_bytes_by_user(&bytes, grant, allow_downgrade)
     }
 
     /// Removes a plug-in, its module, its data and its settings.
@@ -480,8 +570,19 @@ impl Manager {
         self.save()
     }
 
-    /// Replaces the grant (revoking what it leaves out); it can never exceed the request.
+    /// Replaces the grant (revoking what it leaves out); it can never exceed the request. It can't
+    /// add a program: one the plug-in hasn't been granted, or a wider entry, is an error and
+    /// changes nothing (only the user grants programs, [`Manager::set_grant_by_user`]). Repeating
+    /// granted programs keeps them; leaving them out revokes them.
     pub fn set_grant(&mut self, id: &str, grant: Permissions) -> Result<Permissions> {
+        let granted = self.plugins.get(id).ok_or_else(|| Error::NotFound(id.into()))?.effective();
+        programs_kept(&grant, &granted)?;
+        self.set_grant_by_user(id, grant)
+    }
+
+    /// [`Manager::set_grant`] as the user set it in the Plugin Manager: it may grant programs.
+    /// Never reachable from a command.
+    pub fn set_grant_by_user(&mut self, id: &str, grant: Permissions) -> Result<Permissions> {
         let p = self.plugins.get_mut(id).ok_or_else(|| Error::NotFound(id.into()))?;
         p.grant = grant.intersect(&p.plugin.manifest().permissions);
         let e = p.effective();
@@ -520,6 +621,11 @@ impl Manager {
     /// worker thread while the manager's lock is free), then is handed back with [`Manager::end`]. The
     /// plug-in's data is lent to the call: until then, other calls of the same plug-in are refused as busy.
     pub fn begin(&mut self, id: &str, request: Value, lent: Vec<PathBuf>) -> Result<PendingCall> {
+        self.begin_with_dirs(id, request, lent, Vec::new())
+    }
+
+    /// [`Manager::begin`] with folders lent to the call for reading.
+    pub fn begin_with_dirs(&mut self, id: &str, request: Value, lent: Vec<PathBuf>, lent_dirs: Vec<PathBuf>) -> Result<PendingCall> {
         let library = self.library.clone();
         let dir = self.dir.clone();
         let p = self.plugins.get_mut(id).ok_or_else(|| Error::NotFound(id.into()))?;
@@ -545,7 +651,24 @@ impl Manager {
         p.busy = true;
         // the host builds every request, so a plug-in can't make its prepare step anything else
         let read_only = matches!(request.get("hook").and_then(Value::as_str), Some("command.prepare" | "settings.prepare"));
-        Ok(PendingCall { id: id.to_string(), plugin, perms, store, settings, request, lent, read_only })
+        Ok(PendingCall { id: id.to_string(), plugin, perms, store, settings, request, lent, lent_dirs, runs_root: self.runs_root.clone(), read_only })
+    }
+
+    /// The `program.end` call for a run of plug-in `id` ([`crate::programs`]): `{"hook": "program.end",
+    /// "run", "program", "status", "code", "tmpDir"}` (`code`: the program's exit code, null when
+    /// unknown), with the run's folder lent for reading. Run it like any [`Manager::begin`] call,
+    /// then delete the folder once the program has exited too.
+    pub fn program_end_call(
+        &mut self,
+        id: &str,
+        run: &str,
+        program: &str,
+        status: crate::EndStatus,
+        code: Option<i32>,
+        dir: &Path,
+    ) -> Result<PendingCall> {
+        let req = json!({"hook": "program.end", "run": run, "program": program, "status": status.as_str(), "code": code, "tmpDir": dir});
+        self.begin_with_dirs(id, req, Vec::new(), vec![dir.to_path_buf()])
     }
 
     /// Hands a call from [`Manager::begin`] back with how it went (`None`: it never ran, e.g.

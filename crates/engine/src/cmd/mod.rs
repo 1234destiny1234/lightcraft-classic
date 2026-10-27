@@ -57,6 +57,8 @@ pub mod peers;
 pub(crate) use organize::STACK_WORK;
 pub(crate) mod plugin_filters;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod plugin_programs;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod plugins;
 /// The web build has no plug-ins: plug-in fields read from XMP have nowhere to go.
 #[cfg(target_arch = "wasm32")]

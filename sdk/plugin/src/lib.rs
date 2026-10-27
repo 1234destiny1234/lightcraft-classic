@@ -110,7 +110,7 @@ pub struct Request(pub Value);
 
 impl Request {
     /// `command`, `command.prepare`, `settings.prepare`, `export`, `export.destination`, `metadata`,
-    /// `publish.upload`, `publish.delete`.
+    /// `publish.upload`, `publish.delete`, `program.end`.
     pub fn hook(&self) -> &str {
         self.0.get("hook").and_then(Value::as_str).unwrap_or("")
     }
@@ -132,6 +132,29 @@ impl Request {
     }
     pub fn get(&self, key: &str) -> &Value {
         self.0.get(key).unwrap_or(&Value::Null)
+    }
+    /// The run a `program.start` returned (`hook == "program.end"`).
+    pub fn run(&self) -> &str {
+        self.0.get("run").and_then(Value::as_str).unwrap_or("")
+    }
+    /// The program's id in the manifest (`hook == "program.end"`).
+    pub fn program(&self) -> &str {
+        self.0.get("program").and_then(Value::as_str).unwrap_or("")
+    }
+    /// How the run ended: `exited`, `cancelled` (the user stopped waiting; the program may still
+    /// run) or `failed` (`hook == "program.end"`).
+    pub fn status(&self) -> &str {
+        self.0.get("status").and_then(Value::as_str).unwrap_or("")
+    }
+    /// The program's exit code, when the app knows it (`hook == "program.end"`, status `exited`):
+    /// `None` on macOS, where the app starts programs through `open`, and for a program ended by a
+    /// signal.
+    pub fn code(&self) -> Option<i64> {
+        self.0.get("code").and_then(Value::as_i64)
+    }
+    /// The run's folder, lent for reading (`hook == "program.end"`).
+    pub fn tmp_dir(&self) -> &str {
+        self.0.get("tmpDir").and_then(Value::as_str).unwrap_or("")
     }
     /// The export destination id (`hook == "export.destination"`).
     pub fn destination(&self) -> &str {
@@ -290,6 +313,21 @@ pub mod host {
             "http.request",
             json!({"method": method, "url": url, "headers": headers, "contentType": content_type, "bodyBase64": crate::base64::encode(body)}),
         )
+    }
+
+    /// The programs this plug-in declares: `[{program, name, granted, installed: [{bundleId?, path?,
+    /// version?}]}]`. Needs nothing; tells the user what to install or allow. `path` only once the
+    /// program is granted.
+    pub fn program_list() -> Result<Value, String> {
+        call("program.list", json!({}))
+    }
+
+    /// Starts a granted program (`programs` permission): `files` (`{name: text}`) are written into
+    /// a fresh folder for the run first, and `{tmpDir}` in `args` becomes its path. → `{run,
+    /// tmpDir}`; the plug-in's `program.end` hook is called when it exits or the user stops
+    /// waiting. `bundle_id` picks one of the entry's versions (macOS).
+    pub fn program_start(program: &str, args: &[&str], files: Value, bundle_id: Option<&str>) -> Result<Value, String> {
+        call("program.start", json!({"program": program, "args": args, "files": files, "bundleId": bundle_id}))
     }
 
     /// An HTTP request (needs the URL's host in the `network` permission) →

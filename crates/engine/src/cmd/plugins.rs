@@ -54,7 +54,7 @@ fn manager_slot() -> MutexGuard<'static, Option<Manager>> {
 
 /// The manager pointed at `library` (a session's [`Session::plugin_library`]): plug-ins' data is
 /// kept per library, and sessions with different libraries share the process-wide manager.
-fn manager_for(library: &str) -> MutexGuard<'static, Option<Manager>> {
+pub(super) fn manager_for(library: &str) -> MutexGuard<'static, Option<Manager>> {
     let mut g = manager();
     if let Some(m) = g.as_mut()
         && m.library() != library
@@ -141,6 +141,14 @@ impl HostApi for SessionHost<'_> {
         }
         self.0.execute("photo.setMeta", &Value::Object(p)).map_err(|e| e.to_string())
     }
+
+    fn find_program(&mut self, program: &lcc_plugins::ProgramDecl) -> Vec<lcc_plugins::Found> {
+        self.0.desktop.find_program(program)
+    }
+
+    fn start_program(&mut self, run: lcc_plugins::StartRequest) -> std::result::Result<(), String> {
+        super::plugin_programs::start(self.0, run)
+    }
 }
 
 fn plugin_err(cmd: &str, e: lcc_plugins::Error) -> crate::EngineError {
@@ -185,6 +193,40 @@ fn list(_: &mut Session, _: &Value) -> Result<Value> {
 }
 
 fn install(s: &mut Session, p: &Value) -> Result<Value> {
+    install_as(s, p, false)
+}
+
+/// Installs a plug-in as the user approved it in the Plugin Manager's install dialog (`{path,
+/// grant?}`, as `plugin.install`): the grant may include programs, which no command can grant.
+/// The UI's install button only; never registered as a command.
+pub fn install_by_user(s: &mut Session, p: &Value) -> Result<Value> {
+    install_as(s, p, true)
+}
+
+/// Sets a plug-in's grant as the user ticked it in the Plugin Manager (`{id, grant}`, as
+/// `plugin.grant`): it may grant programs. The UI's checkboxes only; never registered as a command.
+pub fn grant_by_user(_: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "plugin.grant";
+    let id = id_param(p, C)?;
+    let grant = grant_param(p, C)?.ok_or_else(|| bad(C, "missing `grant`"))?;
+    with_manager(|m| m.set_grant_by_user(id, grant).map(|g| json!({"id": id, "granted": g})).map_err(|e| plugin_err(C, e)))
+}
+
+/// Where a plug-in's declared program (a `programs` entry, as `plugin.list` gives it) is
+/// installed, as the session's desktop finds it: `[{bundleId?, path, version?}]` (the Plugin
+/// Manager shows it next to the permission). An entry that isn't valid finds nothing.
+///
+/// It doesn't wait (the UI thread asks every frame): `None` while the first lookup runs in the
+/// background ([`crate::desktop::Desktop::find_program_soon`]).
+pub fn find_program(s: &Session, program: &Value) -> Option<Vec<Value>> {
+    let Ok(decl) = serde_json::from_value::<lcc_plugins::ProgramDecl>(program.clone()) else { return Some(Vec::new()) };
+    if decl.validate().is_err() {
+        return Some(Vec::new());
+    }
+    Some(s.desktop.find_program_soon(&decl)?.iter().filter_map(|f| serde_json::to_value(f).ok()).collect())
+}
+
+fn install_as(s: &mut Session, p: &Value, by_user: bool) -> Result<Value> {
     const C: &str = "plugin.install";
     let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path` (a .wasm file)"))?;
     let grant = grant_param(p, C)?;
@@ -195,8 +237,11 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
         return Ok(crate::filter_plugins::info(&f));
     }
     let lib = s.plugin_library.clone();
-    let r =
-        with_library(&lib, |m| m.install_file(std::path::Path::new(path), grant, allow_downgrade).map(|i| i.info()).map_err(|e| plugin_err(C, e)))?;
+    let r = with_library(&lib, |m| {
+        let path = std::path::Path::new(path);
+        let installed = if by_user { m.install_file_by_user(path, grant, allow_downgrade) } else { m.install_file(path, grant, allow_downgrade) };
+        installed.map(|i| i.info()).map_err(|e| plugin_err(C, e))
+    })?;
     sync_fields(s);
     Ok(r)
 }
@@ -364,7 +409,7 @@ fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
         photos.push(v);
     }
     let lib = s.plugin_library.clone();
-    let mut host = SessionHost(s);
+    let mut host = HookSession(SessionHost(s));
     with_library(&lib, |m| Ok(Value::Array(m.suggest_metadata(&photos, &mut host))))
 }
 
@@ -372,7 +417,7 @@ fn post_export(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.postExport";
     let files = p.get("files").and_then(Value::as_array).ok_or_else(|| bad(C, "missing `files: [{path, photo?}]`"))?;
     let lib = s.plugin_library.clone();
-    let mut host = SessionHost(s);
+    let mut host = HookSession(SessionHost(s));
     let r = with_library(&lib, |m| Ok(Value::Array(m.post_export(files, &mut host))));
     sync_fields(s);
     r
@@ -471,7 +516,7 @@ impl Drop for PluginService {
 /// the same calls on a worker ([`export_hooks`], [`ExportHooks::run`]).
 pub fn after_export(s: &mut Session, files: &[Value], destination: Option<&Value>) -> Option<Vec<Value>> {
     let hooks = export_hooks(&s.plugin_library, files, destination)?;
-    let r = hooks.run(&mut SessionHost(s), &|| false, &mut |_, _| {});
+    let r = hooks.run(&mut HookSession(SessionHost(s)), &|| false, &mut |_, _| {});
     // hooks may have written their own fields (a "delivered" mark)
     sync_fields(s);
     Some(r)
@@ -551,11 +596,24 @@ pub struct HostRequest {
     method: Option<String>,
     params: Value,
     reply: std::sync::mpsc::Sender<std::result::Result<Value, String>>,
+    /// Who got to the request first: the session's thread taking it (`TAKEN`) or a caller
+    /// that gave up waiting (`ABANDONED`), so a request is never run after its caller was
+    /// told it failed.
+    state: std::sync::Arc<std::sync::atomic::AtomicU8>,
 }
+
+const WAITING: u8 = 0;
+const TAKEN: u8 = 1;
+const ABANDONED: u8 = 2;
 
 impl HostRequest {
     /// Answers the request from `s`, with the same checks as a call on the session's thread.
+    /// A request its caller gave up on is skipped.
     pub fn answer(self, s: &mut Session) {
+        use std::sync::atomic::Ordering;
+        if self.state.compare_exchange(WAITING, TAKEN, Ordering::AcqRel, Ordering::Acquire).is_err() {
+            return;
+        }
         let mut host = SessionHost(s);
         let r = match &self.method {
             Some(m) => host.catalog(m, &self.params),
@@ -565,15 +623,44 @@ impl HostRequest {
     }
 }
 
+/// Why a hook can't start a program: a run starts from a plug-in command, which the user chose.
+pub(super) const HOOK_NO_START: &str = "program.start is not available in hooks or export destinations; start the program from a command";
+
 /// What plug-ins running on a worker see of the catalog: each request goes to the session's thread
-/// (see [`relay_host`]) and waits for its answer.
-pub struct RelayHost(std::sync::mpsc::Sender<HostRequest>);
+/// (see [`relay_host`]) and waits for its answer. Programs are looked up through the session's
+/// desktop; none is started ([`HOOK_NO_START`]).
+pub struct RelayHost(std::sync::mpsc::Sender<HostRequest>, std::sync::Arc<dyn crate::desktop::Desktop>);
 
 impl RelayHost {
+    pub(super) fn new(tx: std::sync::mpsc::Sender<HostRequest>, desktop: std::sync::Arc<dyn crate::desktop::Desktop>) -> RelayHost {
+        RelayHost(tx, desktop)
+    }
+
     fn ask(&self, method: Option<String>, params: &Value) -> std::result::Result<Value, String> {
         let (reply, rx) = std::sync::mpsc::channel();
-        self.0.send(HostRequest { method, params: params.clone(), reply }).map_err(|_| "the catalog is closed".to_string())?;
+        let state = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(WAITING));
+        self.0.send(HostRequest { method, params: params.clone(), reply, state }).map_err(|_| "the catalog is closed".to_string())?;
         rx.recv().map_err(|_| "the catalog is closed".to_string())?
+    }
+
+    /// [`RelayHost::ask`], giving up after `limit` unless the session's thread has already taken
+    /// the request (then its answer is awaited: it may have written already).
+    pub(super) fn ask_within(&self, method: Option<String>, params: &Value, limit: std::time::Duration) -> std::result::Result<Value, String> {
+        use std::sync::atomic::Ordering;
+        let (reply, rx) = std::sync::mpsc::channel();
+        let state = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(WAITING));
+        let request = HostRequest { method, params: params.clone(), reply, state: state.clone() };
+        self.0.send(request).map_err(|_| "the catalog is closed".to_string())?;
+        match rx.recv_timeout(limit) {
+            Ok(r) => r,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err("the catalog is closed".into()),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if state.compare_exchange(WAITING, ABANDONED, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+                    return Err("the catalog didn't answer".into());
+                }
+                rx.recv().map_err(|_| "the catalog is closed".to_string())?
+            }
+        }
     }
 }
 
@@ -585,12 +672,43 @@ impl HostApi for RelayHost {
     fn set_metadata(&mut self, params: &Value) -> std::result::Result<Value, String> {
         self.ask(None, params)
     }
+
+    fn find_program(&mut self, program: &lcc_plugins::ProgramDecl) -> Vec<lcc_plugins::Found> {
+        self.1.find_program(program)
+    }
+
+    fn start_program(&mut self, _: lcc_plugins::StartRequest) -> std::result::Result<(), String> {
+        Err(HOOK_NO_START.into())
+    }
 }
 
-/// A host for plug-in calls on a worker, and where its requests arrive for the session's thread to answer.
-pub fn relay_host() -> (RelayHost, std::sync::mpsc::Receiver<HostRequest>) {
+/// A host for plug-in calls of session `s` on a worker, and where its requests arrive for the
+/// session's thread to answer.
+pub fn relay_host(s: &Session) -> (RelayHost, std::sync::mpsc::Receiver<HostRequest>) {
     let (tx, rx) = std::sync::mpsc::channel();
-    (RelayHost(tx), rx)
+    (RelayHost(tx, s.desktop.clone()), rx)
+}
+
+/// [`SessionHost`] for hooks and export destinations: the same catalog and lookups, no starts
+/// ([`HOOK_NO_START`]), wherever the hook runs.
+struct HookSession<'a>(SessionHost<'a>);
+
+impl HostApi for HookSession<'_> {
+    fn catalog(&mut self, method: &str, params: &Value) -> std::result::Result<Value, String> {
+        self.0.catalog(method, params)
+    }
+
+    fn set_metadata(&mut self, params: &Value) -> std::result::Result<Value, String> {
+        self.0.set_metadata(params)
+    }
+
+    fn find_program(&mut self, program: &lcc_plugins::ProgramDecl) -> Vec<lcc_plugins::Found> {
+        self.0.find_program(program)
+    }
+
+    fn start_program(&mut self, _: lcc_plugins::StartRequest) -> std::result::Result<(), String> {
+        Err(HOOK_NO_START.into())
+    }
 }
 
 fn destinations(_: &mut Session, _: &Value) -> Result<Value> {
@@ -616,7 +734,7 @@ fn export_to(s: &mut Session, p: &Value) -> Result<Value> {
     let files = p.get("files").and_then(Value::as_array).ok_or_else(|| bad(C, "missing `files: [{path, photo?}]`"))?;
     let args = p.get("args").cloned().unwrap_or(Value::Null);
     let lib = s.plugin_library.clone();
-    let mut host = SessionHost(s);
+    let mut host = HookSession(SessionHost(s));
     let r = with_library(&lib, |m| m.export_to(id, dest, &args, files, &mut host).map_err(|e| plugin_err(C, e)));
     sync_fields(s);
     r
@@ -795,10 +913,10 @@ pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(query "plugin.list", "Plug-ins", [], None, "{} → {dir, host: {abi, features}, plugins: [{id, name, version, requires, enabled, requested, granted, commands, hooks, publish}], failed: [{file, error, id?: to remove it with plugin.uninstall, missing?: features this version lacks}]}", always, list),
         cmd!(query "plugin.inspectFile", "Inspect Plug-in File", [], None, "{path} — loads a .wasm without installing it → {manifest, installed: {version, granted, loaded?: false (it needs features this version lacks)} | null, missing: [features this version lacks], versionError: why `version` isn't semver | null, downgrade: older than the installed version}; plugin.install refuses each of these (a downgrade only without allowDowngrade). The install dialog shows each requested permission for approval", always, inspect_file),
-        cmd!(query "plugin.install", "Install Plug-in", [], None, "{path: .wasm, grant?: {catalog, metadataWrite, network: [hosts], fs: [{path, write}]}, allowDowngrade?: bool = false} — installs or updates with the permissions the user approved (each one shown first, see plugin.inspectFile); without `grant` nothing new is granted: none on a first install, the previous grant on an update. Refused: features in `requires` this version lacks, a `version` that isn't semver, an older version than the installed one unless allowDowngrade → plugin", always, install),
+        cmd!(query "plugin.install", "Install Plug-in", [], None, "{path: .wasm, grant?: {catalog, metadataWrite, network: [hosts], fs: [{path, write}], programs: [entries as plugin.list gives them]}, allowDowngrade?: bool = false} — installs or updates with the permissions the user approved (each one shown first, see plugin.inspectFile); without `grant` nothing new is granted: none on a first install, the previous grant on an update. A grant may repeat or leave out the `programs` the installed version has granted, never add one or widen one: only the user allows those, in the Plugin Manager (an error, nothing installed). A module whose code differs from the installed one keeps none of its programs (its log says so). Refused: features in `requires` this version lacks, a `version` that isn't semver, an older version than the installed one unless allowDowngrade → plugin", always, install),
         cmd!(query "plugin.uninstall", "Remove Plug-in", [], None, "{id} — removes the module and its data; also a plug-in listed under plugin.list → failed (by its id there)", always, uninstall),
         cmd!(query "plugin.enable", "Enable Plug-in", [], None, "{id, enabled?: bool = true}", always, enable),
-        cmd!(query "plugin.grant", "Set Plug-in Permissions", [], None, "{id, grant} — replaces the grant (revokes what it leaves out; never more than requested) → granted", always, set_grant),
+        cmd!(query "plugin.grant", "Set Plug-in Permissions", [], None, "{id, grant} — replaces the grant (revokes what it leaves out, programs included; never more than requested). Granted `programs` may be repeated (kept) or left out (revoked), never added or widened: only the user allows those, in the Plugin Manager (an error, nothing changes) → granted", always, set_grant),
         cmd!(query "plugin.log", "Plug-in Log", [], None, "{id} → [lines]", always, log),
         cmd!(query "plugin.commands", "Plug-in Commands", [], None, "{} → [{plugin, pluginName, command, label, menu, dialog, prepare, values: what the dialog opens with (the last-run values of fields that remember, else defaults)}] of enabled plug-ins", always, commands),
         cmd!(query "plugin.prepare", "Prepare Plug-in Command", [], None, "{plugin, command, ids?} — asks a command with `prepare` how to run on ids / the selection (others: their dialog as declared) → {dialog: [field + value], error: why the plug-in's own options are missing | null} | {run: args} | {message}; runs nothing", always, prepare),
@@ -921,14 +1039,14 @@ mod tests {
         let files = [json!({"path": "/tmp/x.jpg"})];
         let d = json!({"plugin": "test.relay", "destination": "d"});
         let hooks = export_hooks("", &files, Some(&d)).unwrap();
-        let (mut host, requests) = relay_host();
+        let mut s = Session::with_demo();
+        let (mut host, requests) = relay_host(&s);
         let worker = std::thread::spawn(move || {
             // a catalog read from the worker waits for the session's thread to answer it
             let stats = host.catalog("catalog.stats", &json!({}));
             let r = hooks.run(&mut host, &|| false, &mut |_, _| {});
             (stats, r)
         });
-        let mut s = Session::with_demo();
         requests.recv_timeout(std::time::Duration::from_secs(20)).unwrap().answer(&mut s);
         let (stats, r) = worker.join().unwrap();
         assert!(stats.unwrap().is_object());
@@ -936,7 +1054,7 @@ mod tests {
         assert!(mine.iter().any(|v| v["ok"]["seen"] == true && v.get("destination").is_none()), "{r:?}");
         assert_eq!(mine.last().unwrap()["destination"], "d", "{r:?}");
         // the relay with nobody answering: an error, not a hang
-        let (mut host, requests) = relay_host();
+        let (mut host, requests) = relay_host(&s);
         drop(requests);
         assert!(host.catalog("catalog.stats", &json!({})).is_err());
         // cancelled before they start: no plug-in runs, none stays busy
@@ -1339,5 +1457,281 @@ mod tests {
         let b = s.execute("photo.inspect", &json!({"id": ids[1]})).unwrap();
         assert_eq!(a["meta"]["title"], "From a plug-in");
         assert_ne!(b["meta"]["title"], "From a plug-in");
+    }
+
+    /// A plug-in with the program `conv` whose every call sends `program.start` for it. Its
+    /// `program.end` hook fails (the run is still active then, so the start is refused as already
+    /// running) and logs that once per run, which the tests count.
+    fn program_module() -> Vec<u8> {
+        program_module_with(r#""commands":[{"id":"go","label":"Go"}]"#)
+    }
+
+    /// [`program_module`] with `more` in its manifest (commands, hooks, destinations).
+    fn program_module_with(more: &str) -> Vec<u8> {
+        let manifest = format!(
+            r#"{{"id":"test.prog","name":"Prog","version":"1.0.0","requires":["programs"],"permissions":{{"programs":[{{"id":"conv","name":"Converter","macBundleIds":["org.example.conv"],"windowsExe":"conv.exe","linuxExe":"conv"}}]}},{more}}}"#
+        );
+        let request = r#"{"method":"program.start","params":{"program":"conv","args":["{tmpDir}/job.txt"],"files":{"job.txt":"1\n"}}}"#;
+        let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+        let src = format!(
+            r#"(module
+  (import "host" "call" (func $call (param i32 i32) (result i32)))
+  (import "host" "response" (func $response (param i32)))
+  (memory (export "memory") 2)
+  (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
+  (func (export "lcc_abi_version") (result i32) (i32.const 1))
+  (func (export "lcc_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "lcc_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "lcc_handle") (param i32 i32) (result i64) (local $n i32)
+    (local.set $n (call $call (i32.const 8192) (i32.const {rl})))
+    (call $response (i32.const 16384))
+    (i64.or (i64.shl (i64.extend_i32_u (local.get $n)) (i64.const 32)) (i64.const 16384))))"#,
+            m = esc(&manifest),
+            r = esc(request),
+            ml = manifest.len(),
+            rl = request.len()
+        );
+        wat::parse_str(&src).unwrap()
+    }
+
+    /// Waits up to 20 s for `done`.
+    fn eventually(what: &str, done: impl Fn() -> bool) {
+        let start = std::time::Instant::now();
+        while !done() {
+            assert!(start.elapsed() < std::time::Duration::from_secs(20), "timed out waiting: {what}");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    fn end_failures() -> usize {
+        manager()
+            .get_or_insert_with(Manager::in_memory)
+            .get("test.prog")
+            .map_or(0, |p| p.log.iter().filter(|l| l.starts_with("program.end failed")).count())
+    }
+
+    #[test]
+    fn agents_cannot_grant_programs() {
+        let _turn = turn();
+        let mut s = Session::with_demo();
+        let grant = json!({"programs": [{"id": "conv", "name": "Converter", "linuxExe": "conv", "windowsExe": "conv.exe", "macBundleIds": ["org.example.conv"]}]});
+        let _ = manager().get_or_insert_with(Manager::in_memory).uninstall("test.prog");
+        manager().get_or_insert_with(Manager::in_memory).install_bytes(&program_module(), None, false).unwrap();
+        let e = s.execute("plugin.grant", &json!({"id": "test.prog", "grant": grant})).unwrap_err().to_string();
+        assert!(e.contains("Plugin Manager"), "{e}");
+        // the Plugin Manager's path grants it
+        let g = grant_by_user(&mut s, &json!({"id": "test.prog", "grant": grant})).unwrap();
+        assert_eq!(g["granted"]["programs"][0]["id"], "conv", "{g}");
+        // an agent may repeat it (kept) or leave it out (revoked)
+        let kept = s.execute("plugin.grant", &json!({"id": "test.prog", "grant": grant})).unwrap();
+        assert_eq!(kept["granted"]["programs"][0]["id"], "conv", "{kept}");
+        let revoked = s.execute("plugin.grant", &json!({"id": "test.prog", "grant": {}})).unwrap();
+        assert!(revoked["granted"]["programs"].as_array().is_none_or(Vec::is_empty), "{revoked}");
+        manager().get_or_insert_with(Manager::in_memory).uninstall("test.prog").unwrap();
+    }
+
+    /// A run: recorded start with its folder, a row in the activity stack, ✕ ends it without
+    /// stopping the program (the folder stays), `program.end` once per run, the folder removed
+    /// once the program has exited.
+    #[test]
+    fn a_plugin_program_run_is_watched_and_cleaned_up() {
+        let _turn = turn();
+        let mut s = Session::with_demo();
+        let desktop = std::sync::Arc::new(crate::desktop::Recorder::default());
+        s.desktop = desktop.clone();
+        let decl = json!({"programs": [{"id": "conv", "name": "Converter", "linuxExe": "conv", "windowsExe": "conv.exe", "macBundleIds": ["org.example.conv"]}]});
+        manager()
+            .get_or_insert_with(Manager::in_memory)
+            .install_bytes_by_user(&program_module(), Some(serde_json::from_value(decl).unwrap()), false)
+            .unwrap();
+
+        let first = s.execute("plugin.run", &json!({"plugin": "test.prog", "command": "go"})).unwrap();
+        let folder = PathBuf::from(first["tmpDir"].as_str().unwrap());
+        let job = folder.join("job.txt");
+        assert_eq!(std::fs::read_to_string(&job).unwrap(), "1\n", "the files are written before the start");
+        let started = desktop.requests();
+        assert!(
+            matches!(started.as_slice(), [crate::desktop::Request::StartProgram { args, tmp, .. }] if args == &[job.display().to_string()] && tmp == &folder),
+            "{started:?}"
+        );
+        let rows: Vec<_> = s.activity.list().into_iter().filter(|t| t.kind == "pluginProgram").collect();
+        assert_eq!(rows.len(), 1, "one row for the run");
+        assert_eq!(rows[0].detail, "Converter");
+
+        // ✕: the run ends (its hook runs once), the program and its folder stay
+        s.activity.cancel(rows[0].id).unwrap();
+        eventually("the cancelled run's hook", || end_failures() == 1);
+        eventually("the cancelled run's row to go", || s.activity.list().iter().all(|t| t.kind != "pluginProgram"));
+        // the watcher removes the folder right after the row if it doesn't wait for the program
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(folder.exists(), "the program may still use its folder");
+
+        // the run is over, so a new start works
+        let second = s.execute("plugin.run", &json!({"plugin": "test.prog", "command": "go"})).unwrap();
+        let second_folder = PathBuf::from(second["tmpDir"].as_str().unwrap());
+        assert_ne!(second_folder, folder);
+
+        // both programs exit: the second run's hook runs once, and both folders go
+        desktop.finish_programs();
+        eventually("both folders to go", || !folder.exists() && !second_folder.exists());
+        assert_eq!(end_failures(), 2, "program.end once per run");
+        assert!(s.activity.list().iter().all(|t| t.kind != "pluginProgram"));
+        manager().get_or_insert_with(Manager::in_memory).uninstall("test.prog").unwrap();
+    }
+
+    /// A desktop whose programs all fail as they start.
+    struct FailsAtOnce;
+    struct Failed;
+    impl lcc_plugins::Running for Failed {
+        fn try_wait(&mut self) -> std::result::Result<Option<lcc_plugins::Exit>, String> {
+            Ok(Some(lcc_plugins::Exit { success: false, code: Some(1) }))
+        }
+    }
+    impl crate::desktop::Desktop for FailsAtOnce {
+        fn reveal(&self, _: &std::path::Path) -> std::result::Result<(), String> {
+            Ok(())
+        }
+        fn launch(&self, _: &[String]) -> std::result::Result<(), String> {
+            Ok(())
+        }
+        fn run_and_wait(&self, _: &[String]) -> std::result::Result<bool, String> {
+            Ok(true)
+        }
+        fn find_program(&self, p: &lcc_plugins::ProgramDecl) -> Vec<lcc_plugins::Found> {
+            crate::desktop::Recorder::default().find_program(p)
+        }
+        fn start_program(
+            &self,
+            _: &lcc_plugins::Found,
+            _: &[String],
+            _: &std::path::Path,
+        ) -> std::result::Result<Box<dyn lcc_plugins::Running>, String> {
+            Ok(Box::new(Failed))
+        }
+    }
+
+    /// A program that exits with an error as it starts: the start is an error (in the plug-in's
+    /// log), no row is shown, the run folder is gone and the program can be started again.
+    #[test]
+    fn a_program_that_fails_as_it_starts_leaves_nothing_behind() {
+        let _turn = turn();
+        let root = std::env::temp_dir().join(format!("lcc-engine-runs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut s = Session::with_demo();
+        s.desktop = std::sync::Arc::new(FailsAtOnce);
+        let decl = json!({"programs": [{"id": "conv", "name": "Converter", "linuxExe": "conv", "windowsExe": "conv.exe", "macBundleIds": ["org.example.conv"]}]});
+        {
+            let mut g = manager();
+            let m = g.get_or_insert_with(Manager::in_memory);
+            m.set_runs_root(Some(root.clone()));
+            m.install_bytes_by_user(&program_module(), Some(serde_json::from_value(decl).unwrap()), false).unwrap();
+        }
+        for _ in 0..2 {
+            let _ = s.execute("plugin.run", &json!({"plugin": "test.prog", "command": "go"}));
+        }
+        let mut g = manager();
+        let m = g.get_or_insert_with(Manager::in_memory);
+        let failed: Vec<String> = m.get("test.prog").unwrap().log.iter().filter(|l| l.starts_with("program.start failed")).cloned().collect();
+        assert_eq!(failed.len(), 2, "each start fails, and the second isn't refused as already running: {failed:?}");
+        assert!(failed[0].contains("exited at once"), "{failed:?}");
+        assert!(s.activity.list().iter().all(|t| t.kind != "pluginProgram"), "no row");
+        let left: Vec<_> = std::fs::read_dir(&root).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name()).collect();
+        assert!(left.is_empty(), "the run folders and their locks are gone: {left:?}");
+        m.set_runs_root(None);
+        m.uninstall("test.prog").unwrap();
+        drop(g);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Hooks (`program.end`, export hooks and destinations, on a worker or the session's thread)
+    /// find programs through the session's desktop and can't start one.
+    #[test]
+    fn hooks_look_programs_up_but_start_none() {
+        use lcc_plugins::HostApi;
+        let desktop = std::sync::Arc::new(crate::desktop::Recorder::default());
+        let mut s = Session::with_demo();
+        s.desktop = desktop.clone();
+        let decl: lcc_plugins::ProgramDecl = serde_json::from_value(
+            json!({"id": "conv", "name": "Converter", "linuxExe": "conv", "windowsExe": "conv.exe", "macBundleIds": ["org.example.conv"]}),
+        )
+        .unwrap();
+        let root = std::env::temp_dir().join(format!("lcc-engine-hook-runs-{}", std::process::id()));
+        let check = |host: &mut dyn HostApi, what: &str| {
+            assert_eq!(host.find_program(&decl).len(), 1, "{what}: found through the desktop");
+            let dir = lcc_plugins::RunDir::create(&root).unwrap();
+            let folder = dir.path().to_path_buf();
+            let found = host.find_program(&decl).remove(0);
+            let reservation = lcc_plugins::Reservation::take("test.hook", "conv").unwrap();
+            let req = lcc_plugins::StartRequest { plugin: "test.hook".into(), program: decl.clone(), found, args: vec![], dir, reservation };
+            let e = host.start_program(req).unwrap_err();
+            assert!(e.contains("from a command"), "{what}: {e}");
+            assert!(!folder.exists(), "{what}: the refused run's folder is gone");
+        };
+        let (relay, _requests) = relay_host(&s);
+        check(&mut super::super::plugin_programs::hook_host(relay), "program.end");
+        let (mut relay, _requests) = relay_host(&s);
+        check(&mut relay, "a worker's export hooks");
+        check(&mut HookSession(SessionHost(&mut s)), "hooks on the session's thread");
+        assert!(desktop.requests().is_empty(), "nothing started");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The hook commands run on the session's thread start nothing either.
+    #[test]
+    fn export_hooks_and_destinations_start_no_program() {
+        let _turn = turn();
+        let mut s = Session::with_demo();
+        let desktop = std::sync::Arc::new(crate::desktop::Recorder::default());
+        s.desktop = desktop.clone();
+        let decl = json!({"programs": [{"id": "conv", "name": "Converter", "linuxExe": "conv", "windowsExe": "conv.exe", "macBundleIds": ["org.example.conv"]}]});
+        manager()
+            .get_or_insert_with(Manager::in_memory)
+            .install_bytes_by_user(
+                &program_module_with(r#""hooks":{"export":true,"metadata":true},"exportDestinations":[{"id":"d","name":"D"}]"#),
+                Some(serde_json::from_value(decl).unwrap()),
+                false,
+            )
+            .unwrap();
+        let file = json!([{"path": "/tmp/x.jpg"}]);
+        let _ = s.execute("plugin.postExport", &json!({"files": file}));
+        let _ = s.execute("plugin.exportTo", &json!({"plugin": "test.prog", "destination": "d", "files": file}));
+        let _ = s.execute("plugin.suggestMetadata", &json!({}));
+        let _ = after_export(&mut s, &[json!({"path": "/tmp/x.jpg"})], Some(&json!({"plugin": "test.prog", "destination": "d"})));
+        assert!(desktop.requests().is_empty(), "nothing started");
+        let mut g = manager();
+        let m = g.get_or_insert_with(Manager::in_memory);
+        let refused = m
+            .get("test.prog")
+            .unwrap()
+            .log
+            .iter()
+            .filter(|l| l.starts_with("program.start failed") && l.contains("start the program from a command"))
+            .count();
+        assert_eq!(refused, 5, "each hook's start is refused: {:?}", m.get("test.prog").unwrap().log);
+        m.uninstall("test.prog").unwrap();
+    }
+
+    /// A relayed write its caller gave up on is never made later; one the session's thread has
+    /// taken is waited for.
+    #[test]
+    fn a_relayed_request_given_up_on_is_never_answered_late() {
+        let mut s = Session::with_demo();
+        let id = s.visible_cloned()[0].0;
+        let (host, requests) = relay_host(&s);
+        let late = json!({"ids": [id.to_string()], "title": "Too late"});
+        let e = host.ask_within(None, &late, std::time::Duration::from_millis(20)).unwrap_err();
+        assert!(e.contains("didn't answer"), "{e}");
+        requests.recv().unwrap().answer(&mut s);
+        let title = s.execute("photo.inspect", &json!({"id": id})).unwrap()["meta"]["title"].clone();
+        assert_ne!(title, "Too late", "the abandoned write was not made");
+
+        // taken in time: the answer comes back even when it arrives after the limit
+        let worker = std::thread::spawn(move || host.ask_within(Some("catalog.stats".into()), &json!({}), std::time::Duration::from_secs(2)));
+        let taken = requests.recv_timeout(std::time::Duration::from_secs(20)).unwrap();
+        use std::sync::atomic::Ordering;
+        assert!(taken.state.compare_exchange(WAITING, TAKEN, Ordering::AcqRel, Ordering::Acquire).is_ok(), "taken before the limit");
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        taken.reply.send(Ok(json!({"late": true}))).unwrap();
+        assert_eq!(worker.join().unwrap().unwrap()["late"], true, "the answer after the limit is the one returned");
     }
 }
