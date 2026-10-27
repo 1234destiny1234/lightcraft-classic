@@ -216,9 +216,7 @@ fn the_peoples_search_narrows_the_cards_by_name() {
         }];
         h.app.session.commit("setup", Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
     }
-    let cards = |h: &Headless| -> Vec<String> {
-        h.app.widgets.iter().filter(|(w, _)| w.starts_with("person:")).map(|(w, _)| w.clone()).collect()
-    };
+    let cards = |h: &Headless| -> Vec<String> { h.app.widgets.iter().filter(|(w, _)| w.starts_with("person:")).map(|(w, _)| w.clone()).collect() };
     ok(&mut h, "engine.execute", json!({"command": "view.people"}));
     let both = cards(&h);
     assert!(both.contains(&"person:Jane Doe".to_string()) && both.contains(&"person:John Roe".to_string()), "{both:?}");
