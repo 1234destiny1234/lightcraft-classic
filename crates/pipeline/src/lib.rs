@@ -111,6 +111,12 @@ pub struct SourceInfo {
     /// spectral sensitivities, so the photo's Profile option can start from them instead of the
     /// look fitted to its JPEG (`lcc_develop::CameraColour`).
     pub colorimetric: bool,
+    /// The source's straight alpha (0..1), EXIF-oriented and the size of the source buffer, when it
+    /// has transparency. The pixels handed to the renderer are flattened onto white in linear light
+    /// (`lcc_codecs::to_working`, issue #1212); an export that keeps transparency recovers
+    /// their colour (`lcc_codecs::unflatten`) and carries this plane through the geometry
+    /// beside the render ([`render_alpha`], issue #2976).
+    pub alpha: Option<Arc<Plane>>,
 }
 
 impl Default for SourceInfo {
@@ -129,6 +135,7 @@ impl Default for SourceInfo {
             filters: None,
             native_long: None,
             colorimetric: false,
+            alpha: None,
         }
     }
 }
@@ -185,6 +192,9 @@ pub struct RenderRequest {
     pub display: Option<DisplaySpace>,
     /// Filter of the downscale to the output size.
     pub downscale: Downscale,
+    /// The output keeps the source's transparency (exports to PNG, TIFF and WebP): the caller
+    /// renders unflattened colour and asks [`render_alpha`] for the alpha (issue #2976).
+    pub alpha: bool,
 }
 
 /// A window of the (virtual) full output, in its pixels: what a zoomed view needs, rendered
@@ -238,6 +248,7 @@ impl RenderRequest {
             window: None,
             display: None,
             downscale: Downscale::Smooth,
+            alpha: false,
         }
     }
 }
@@ -254,6 +265,9 @@ pub struct Rendered {
     /// Which pixels of `image` show the photo, when lens corrections or perspective leave a blank
     /// border ([`geometry::Frame::coverage`]); `None` when all of them do. `histogram` leaves the rest out.
     pub coverage: Option<Arc<Coverage>>,
+    /// Straight alpha (0..1) of the output, the size of `image`, when the request keeps the
+    /// source's transparency and the source has some ([`render_alpha`]).
+    pub alpha: Option<Plane>,
 }
 
 /// Everything the per-pixel stage needs, precomputed at output resolution.
@@ -652,6 +666,23 @@ pub fn render_cached(src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, 
     render_impl(Src::Shared(src), info, s, req, Some(cache))
 }
 
+/// The source's alpha ([`SourceInfo::alpha`]) through the same geometry as [`render`] of the same
+/// arguments: orientation, crop, straighten, flips, lens corrections, Transform / Upright and the
+/// output size. Develop settings never touch it; areas the warp brings in from outside the source
+/// are transparent. `None` when the source has no alpha or a plane that does not match `src`.
+pub fn render_alpha(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) -> Option<Plane> {
+    let alpha = info.alpha.as_deref().filter(|a| a.width == src.width && a.height == src.height)?;
+    let effective = s.effective();
+    let rendition = settings_for(&effective, req);
+    let plan = plan(src, info, &rendition, req);
+    let a = plan.frame.sample_alpha(alpha, plan.w, plan.h);
+    // (only 8-bit renders are cut back to a window, as in `render_impl`)
+    Some(match plan.keep {
+        Some(k) if req.depth == OutputDepth::U8 => a.crop(k.x, k.y, k.w, k.h),
+        _ => a,
+    })
+}
+
 enum Src<'a> {
     Borrowed(&'a Rgb32f),
     Shared(&'a Arc<Rgb32f>),
@@ -746,7 +777,7 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
         let coverage = frame.coverage(src_img.width, src_img.height, w, h).map(Arc::new);
         let histogram = Histogram::of_srgb8_covered(&image, coverage.as_deref());
         lap("finish (deep)", &mut t);
-        return Rendered { image, histogram, deep: Some(deep), warnings, coverage };
+        return Rendered { image, histogram, deep: Some(deep), warnings, coverage, alpha: None };
     }
     let image = finish::finish(&prep, s, frame, info, req.space, req.display.as_ref(), req.proof, &post);
     lap("finish", &mut t);
@@ -777,7 +808,7 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
         }
         lap("visualize hdr", &mut t);
     }
-    Rendered { image, histogram, deep: None, warnings, coverage }
+    Rendered { image, histogram, deep: None, warnings, coverage, alpha: None }
 }
 
 /// The colour a colour-range mask would sample at normalized image point `p` (OkLab of the

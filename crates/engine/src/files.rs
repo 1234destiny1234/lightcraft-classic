@@ -766,6 +766,7 @@ fn load_bytes_now(
                 // (the catalog knows the original's size: `media::source_info`)
                 native_long: None,
                 colorimetric,
+                alpha: None,
             },
             used_reduced,
         ));
@@ -773,8 +774,15 @@ fn load_bytes_now(
     let d = lcc_codecs::decode(&bytes, fit_box(max_edge)).map_err(|e| e.to_string())?;
     drop(bytes);
     let img = d.to_working();
+    let orientation = Orientation::from_exif(d.orientation);
+    // the transparency, fitted and oriented with the pixels, for exports that keep it (issue #2976);
+    // a channel that is opaque everywhere is not kept
+    let alpha = d.alpha.filter(|a| (a.width, a.height) == (img.width, img.height) && a.data.iter().any(|&v| v < 1.0)).map(|a| {
+        let a = if a.width.max(a.height) > max_edge { fit(&a, max_edge, max_edge, Filter::Mitchell) } else { a };
+        Arc::new(a.into_oriented(orientation))
+    });
     let img = if img.width.max(img.height) > max_edge { fit(&img, max_edge, max_edge, Filter::Mitchell) } else { img };
-    Ok((img.into_oriented(Orientation::from_exif(d.orientation)), None, SourceInfo::default(), false))
+    Ok((img.into_oriented(orientation), None, SourceInfo { alpha, ..SourceInfo::default() }, false))
 }
 
 /// Which white-balance scale a raw is edited on, decided from the file alone, the way the catalog decides it from
