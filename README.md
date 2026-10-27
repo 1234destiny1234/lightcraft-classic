@@ -511,6 +511,10 @@ Humans and agents follow the same rules, so read [AGENTS.md](AGENTS.md) first. T
   `unsafe`, checked indexing on anything derived from input, and a regression test with every crash fix. Details in
   [AGENTS.md](AGENTS.md#never-crash-outranks-feature-work).
 
+To take something on, claim its issue with a comment and open a pull request with `Fixes #123` in the description;
+[CONTRIBUTING.md](CONTRIBUTING.md) has the whole workflow. Questions, ideas or a bug you'd like to talk through
+first? [Join the Discord](https://discord.gg/c3dfYATzsQ) and bring them to [the project's channel](https://discord.com/channels/1359579021108842617/1559361045468942346).
+
 
 ## Licence and credits
 
