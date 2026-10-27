@@ -88,9 +88,14 @@ Before changing records, the importer attempts to save source image records, dec
 verbatim develop settings, history, snapshots and collection content to compressed
 `Interop/lightroom-import-N.lca` recovery archives in the app's library. Archiving is
 best-effort: a size limit or write failure produces a warning and does not prevent photo import.
-Unchanged source data reuses its existing archive. Opaque SQL BLOBs are skipped. Each archive is
-capped at 32 MiB (uncompressed and on disk), with at most eight archives and 128 MiB total
-retained. Oldest managed archives are retired; legacy `.json` archives remain untouched.
+Unchanged source data reuses its existing archive. History-step and snapshot settings that Lightroom
+Classic 13 and later store compressed are decoded into it; one that can't be decoded, or past 32 MiB
+of them in one table, is left out with a warning (a row past that limit is marked
+`_overDecodeBudget`). Other opaque SQL BLOBs are skipped. Each archive is capped at 32 MiB
+(uncompressed and on disk); one past that with its history-step and snapshot settings is saved
+without them, with a warning, and skipped only when still too big. At most eight archives and
+128 MiB total are retained. Oldest managed archives are retired; legacy `.json` archives remain
+untouched.
 `Interop/lightroom-index.json` records imported identities. Source catalogs and originals are
 never overwritten.
 
@@ -143,7 +148,10 @@ Lightroom's develop history (`Adobe_libraryImageDevelopHistoryStep`) becomes the
 oldest first, each step named as in Lightroom and mapped like the current settings (so a step shows
 what the app can reproduce of it). When the newest step differs from the photo's settings, a final
 "Lightroom catalog" entry holds them, so History ends where the photo is. Steps that can't be read
-are skipped with a warning; at most the newest 200 are kept. The report counts them as
+are skipped with a warning; at most the newest 200 are kept. Lightroom 6 stores each step's
+settings as text, Lightroom Classic 13 and later compressed (a 4-byte big-endian length, then zlib,
+as for XMP); both are read, and a compressed one that is damaged is skipped with a warning naming
+the step. The report counts them as
 `historySteps`. A photo whose edits are preserved (reimport without `updateExisting`) keeps its
 History. Lightroom snapshots (`Adobe_libraryImageDevelopSnapshot`) become the photo's Versions, in
 Lightroom's order and under their names, mapped the same way; unreadable ones are skipped with a
