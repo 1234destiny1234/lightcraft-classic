@@ -12,7 +12,14 @@
 //!
 //! This is the workspace's only crate allowed `unsafe` (two FFI calls, in `macos`). Its API is safe;
 //! on failure or on other platforms `release_free_memory` simply releases nothing.
+//!
+//! It also says how much memory the process may use ([`limits`], safe std-only code): physical RAM
+//! held to the process's cgroup limit on Linux, for the engine's memory budget and `cargo xtask ci`.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+
+pub mod limits;
+
+pub use limits::{available, effective_total};
 
 /// Return free allocator pages to the system. Returns the number of bytes released (always 0 on
 /// platforms where freed large blocks are already unmapped). Safe to call at any time, from any
