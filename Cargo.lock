@@ -4593,15 +4593,16 @@ dependencies = [
  "lcc-meta",
  "lcc-raw",
  "lcc-sysmem",
+ "lcc-testkit",
  "log",
  "proptest",
  "redb",
- "same-file",
  "serde",
  "serde_json",
  "siphasher",
  "thiserror 2.0.21",
  "web-time",
+ "winapi-util",
 ]
 
 [[package]]
