@@ -1191,6 +1191,14 @@ pub struct UiState {
     pub filter_bar: bool,
     /// The filter bar's Metadata columns (issue #218): the field each column lists; empty = hidden.
     pub filter_columns: Vec<String>,
+    /// The search box at the top of each Metadata column, by column: the text narrows that
+    /// column's values as it is typed. Not saved; emptied with the columns and the filter bar.
+    #[serde(skip)]
+    pub filter_column_search: Vec<String>,
+    /// The People view's search box: the text narrows the person cards by name as it is typed.
+    /// Not saved; the People button (or emptying the box) shows everyone again.
+    #[serde(skip)]
+    pub people_search: String,
     /// Folders kept in Local (Browse Folder…, Keep in Local / Add to Local; `local.addRoot`):
     /// listed after the built-in locations, across restarts, whatever is browsed.
     pub local_roots: Vec<String>,
@@ -1974,6 +1982,8 @@ impl Default for UiState {
             // Lightroom Classic shows the Library Filter bar over the Grid (the fork's default)
             filter_bar: true,
             filter_columns: Vec::new(),
+            filter_column_search: Vec::new(),
+            people_search: String::new(),
             local_roots: Vec::new(),
             local_browse_root: None,
             compare: None,

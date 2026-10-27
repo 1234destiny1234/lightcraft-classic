@@ -419,8 +419,8 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
     }
 }
 
-/// The Metadata columns' height (points), under the filter bar's rows.
-pub const COLUMNS_HEIGHT: f32 = 170.0;
+/// The Metadata columns' height (points), under the filter bar's rows: a column's field, its search box and its values.
+pub const COLUMNS_HEIGHT: f32 = 198.0;
 /// The fields a Metadata column can list (`library.facetPick`'s fields), with their headers.
 pub const COLUMN_FIELDS: [(&str, &str); 9] = [
     ("year", "Date"),
@@ -485,6 +485,8 @@ fn filter_columns(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let show = show.unwrap_or(field.is_some() || count.is_some() || !shown);
     if !show {
         app.ui.filter_columns.clear();
+        // the columns' search boxes go with them
+        app.ui.filter_column_search.clear();
         return Ok(json!({"columns": []}));
     }
     if app.ui.filter_columns.is_empty() {
@@ -503,6 +505,10 @@ fn filter_columns(app: &mut LccApp, p: &Value) -> Result<Value, String> {
         let Some(slot) = app.ui.filter_columns.get_mut(c) else {
             return Err(format!("{C}: there are {n} columns"));
         };
+        // another field lists other values: the column's search starts empty
+        if let Some(search) = app.ui.filter_column_search.get_mut(c) {
+            search.clear();
+        }
         *slot = f.to_string();
     }
     // the columns live in the filter bar, over the grid
@@ -549,6 +555,13 @@ fn value_label(field: &str, value: &str) -> String {
     }
 }
 
+/// Whether what a Metadata column's search box holds lets `text` (a value as the column shows it) through.
+/// An empty box lets everything through; case is ignored.
+fn matches(query: &str, text: &str) -> bool {
+    let needle = query.trim().to_lowercase();
+    needle.is_empty() || text.to_lowercase().contains(&needle)
+}
+
 /// One row of a Metadata column: the value, its count at the right. Returns whether it was clicked.
 fn value_row(ui: &mut egui::Ui, widget: String, text: String, count: u64, on: bool, clickable: bool) -> bool {
     let t = Tokens::get(ui.ctx());
@@ -587,6 +600,8 @@ fn columns(app: &mut LccApp, ui: &mut egui::Ui, area: Rect) {
     let gap = 8.0;
     let w = ((area.width() - gap * (n as f32 - 1.0)) / n as f32).max(60.0);
     register(ui.ctx(), "filterColumns", area);
+    // one search box per column, kept from frame to frame (a search survives the faceted counts changing with it)
+    app.ui.filter_column_search.resize(fields.len(), String::new());
     let mut picked: Option<(String, Value)> = None;
     let mut retitle: Option<(usize, &'static str)> = None;
     for (i, field) in fields.iter().enumerate() {
@@ -606,6 +621,18 @@ fn columns(app: &mut LccApp, ui: &mut egui::Ui, area: Rect) {
             }
         });
         c.separator();
+        // the sticky search box: it stays at the top while the values below scroll, and narrows them as it is
+        // typed (issue #218); an emptied box shows every value again
+        let mut query = app.ui.filter_column_search.get(i).cloned().unwrap_or_default();
+        crate::text_field::TextField::singleline(&format!("field:filterColumnSearch:{i}"), &mut query)
+            .hint(crate::i18n::tr("Search…"))
+            .width((w - 12.0).max(24.0))
+            .font(t.font(12.0))
+            .margin(egui::Margin::symmetric(6, 2))
+            .show(&mut c);
+        if let Some(slot) = app.ui.filter_column_search.get_mut(i) {
+            *slot = query.clone();
+        }
         let data = &facets[field.as_str()];
         let chosen: Vec<&str> = data["chosen"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
         let all = format!("{} ({})", crate::i18n::tr("All"), data["distinct"].as_u64().unwrap_or(0));
@@ -614,14 +641,25 @@ fn columns(app: &mut LccApp, ui: &mut egui::Ui, area: Rect) {
         }
         egui::ScrollArea::vertical().id_salt(("filterColumnRows", i)).auto_shrink([false, false]).show(&mut c, |ui| {
             let values = data["values"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+            // the search box lets through only the rows whose text holds what is typed; a row keeps its place in
+            // the full list, so clicking one picks the same value whatever is typed
+            let mut shown = 0;
             for (n, v) in values.iter().enumerate() {
                 let (Some(value), Some(count)) = (v["value"].as_str(), v["count"].as_u64()) else { continue };
+                let label = value_label(field, value);
+                if !matches(&query, &label) {
+                    continue;
+                }
+                shown += 1;
                 let on = chosen.iter().any(|c| c.eq_ignore_ascii_case(value));
                 // the filter has no "unrated only": a rating of 0 asks nothing
                 let clickable = !(field == "rating" && value == "0");
-                if value_row(ui, format!("filterValue:{i}:{}", n + 1), value_label(field, value), count, on, clickable) {
+                if value_row(ui, format!("filterValue:{i}:{}", n + 1), label, count, on, clickable) {
                     picked = Some((field.clone(), json!(value)));
                 }
+            }
+            if shown == 0 && !query.trim().is_empty() {
+                ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("No matches")).font(t.font(12.0)).color(t.text_dim)));
             }
             let none = data["none"].as_u64().unwrap_or(0);
             if none > 0 {
