@@ -1923,6 +1923,7 @@ impl Session {
         let source = self.media.origin_ref(&p.source, level.max_edge());
         let key = lcc_preview::Hasher128::new().str(&c.path).u64(c.file_size).u64(edge as u64).finish().0 as u64;
         let small = crate::media::RenderJob {
+            drawn_view_cache: false,
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
             source_key: None,
@@ -1941,6 +1942,7 @@ impl Session {
             slide: None,
             preview_cut: None,
             display_fit: None,
+            hdr_texels: None,
         };
         let embedded = match (&self.media.preview_loader, c.kind) {
             (Some(l), MediaKind::Raw) => Some((c.path.clone(), l.clone(), edge)),

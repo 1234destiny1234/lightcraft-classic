@@ -420,6 +420,12 @@ pub trait HdrOutput {
     fn extended(&self) -> bool {
         false
     }
+    /// The headroom [`Self::upload_texels`] takes texels for, when it takes them: an HDR view
+    /// rendered on the GPU then has its texels made there and comes back without float samples.
+    /// `None` (the default): views come back with their floats, for [`Self::upload`].
+    fn texel_headroom(&self) -> Option<f32> {
+        None
+    }
 }
 
 /// Grades a playing clip's frames on the window's GPU (desktop: the egui-wgpu device, through
@@ -671,6 +677,9 @@ pub struct LccApp {
     pub(crate) drag_scale: region::DragScale,
     /// High quality adjustment previews: whether a drag keeps full quality or falls back to drafts.
     pub(crate) hq_drag: region::HqDrag,
+    /// The photo the loupe shows whole, and since when (host clock, s): after a short look its
+    /// full-resolution source is decoded in the background, for a 1:1 zoom to start from.
+    pub(crate) whole_since: Option<(lcc_catalog::PhotoId, f64)>,
     /// (photo, look, window frame size) a window was refused for: it reads more than one render holds.
     pub(crate) window_refused: Option<(lcc_catalog::PhotoId, u64, usize)>,
     /// (photo, look) whose 1:1 preview was last asked to be read from disk (see `detail`).
@@ -870,6 +879,7 @@ impl LccApp {
             size_hold: Default::default(),
             drag_scale: Default::default(),
             hq_drag: Default::default(),
+            whole_since: None,
             window_refused: None,
             full_preview_loaded: None,
             merge: merge::MergeState::default(),

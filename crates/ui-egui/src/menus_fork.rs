@@ -43,6 +43,7 @@ const PLUGIN_COMMANDS: &[UiCommand] = &[
     ("plugins.manager", "Plug-in Manager…", None, "File>Plug-ins"),
     ("plugins.install", "Install Plug-in…", None, ""),
     ("plugins.runItem", "Run Plug-in Command", None, ""),
+    ("plugins.page", "Plug-in Settings", None, ""),
 ];
 #[cfg(target_arch = "wasm32")]
 const PLUGIN_COMMANDS: &[UiCommand] = &[];

@@ -391,5 +391,6 @@ fn placeholder_manifest() -> Manifest {
         publish: None,
         export_destinations: Vec::new(),
         metadata_fields: Vec::new(),
+        settings: Vec::new(),
     }
 }

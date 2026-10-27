@@ -98,46 +98,68 @@ pub(crate) fn decode(sample: &[u8], config: &Cr3Compression) -> Result<Vec<u16>>
     let count = image_size(config)?;
     let tiles = layout(sample, config)?;
     validate_planes(&tiles, config)?;
-    // Allocated once the first plane decodes: a tiny crafted file can claim a huge image.
-    let mut output = Vec::new();
     let midpoint = 1i32 << (config.bit_depth - 1);
     let maximum = (1i32 << config.bit_depth) - 1;
-    for tile in tiles {
-        let qp = tile_qp(sample, &tile)?;
-        // Each plane is its own entropy stream: decode a tile's planes in parallel.
-        let planes: Vec<Result<Vec<i32>>> = tile
-            .planes
-            .par_iter()
-            .enumerate()
-            .map(|(p, plane)| {
-                if config.levels == 0 {
-                    let band = plane.bands.first().ok_or_else(|| corrupt("missing lossless band"))?;
-                    lossless_plane(band_bytes(sample, band)?, tile.width / 2, tile.height / 2)
-                } else {
-                    let edges =
-                        TileEdges { left: tile.x > 0, right: tile.x + tile.width < width, top: tile.y > 0, bottom: tile.y + tile.height < height };
-                    wavelet_plane(sample, plane, tile.width / 2, tile.height / 2, edges, qp.as_ref())
-                }
-                .map_err(|error| RawError::Corrupt(format!("Canon CRX tile ({}, {}), plane {p}: {error}", tile.x, tile.y)))
-            })
-            .collect();
-        for (p, decoded) in planes.into_iter().enumerate() {
-            let decoded = decoded?;
-            if output.is_empty() {
-                output.try_reserve_exact(count).map_err(|_| RawError::Limit("CRX sample allocation"))?;
-                output.resize(count, 0);
+    let qps: Vec<Result<Option<QpMap>>> = tiles.iter().map(|tile| tile_qp(sample, tile)).collect();
+    // Every plane of every tile is its own entropy stream: all of them decode in parallel (a
+    // tile's four planes alone keep four cores busy). A plane grows with the rows it decodes, so a
+    // crafted file's claimed size reserves nothing until its data is read.
+    let streams: Vec<(usize, usize)> = tiles.iter().enumerate().flat_map(|(t, tile)| (0..tile.planes.len()).map(move |p| (t, p))).collect();
+    let mut decoded: Vec<Result<Vec<i32>>> = streams
+        .par_iter()
+        .map(|&(t, p)| {
+            let (Some(tile), Some(Ok(qp))) = (tiles.get(t), qps.get(t)) else { return Ok(Vec::new()) };
+            let plane = tile.planes.get(p).ok_or_else(|| corrupt("missing plane"))?;
+            if config.levels == 0 {
+                let band = plane.bands.first().ok_or_else(|| corrupt("missing lossless band"))?;
+                lossless_plane(band_bytes(sample, band)?, tile.width / 2, tile.height / 2)
+            } else {
+                let edges =
+                    TileEdges { left: tile.x > 0, right: tile.x + tile.width < width, top: tile.y > 0, bottom: tile.y + tile.height < height };
+                wavelet_plane(sample, plane, tile.width / 2, tile.height / 2, edges, qp.as_ref())
             }
-            for (i, &value) in decoded.iter().enumerate() {
-                let sensor_value = sensor_sample(value, midpoint, maximum, config.levels != 0)?;
-                let (x, y) = (tile.x + 2 * (i % (tile.width / 2)) + p % 2, tile.y + 2 * (i / (tile.width / 2)) + p / 2);
-                let slot = y
-                    .checked_mul(width)
-                    .and_then(|n| n.checked_add(x))
-                    .and_then(|n| output.get_mut(n))
-                    .ok_or_else(|| corrupt("tile writes outside image"))?;
-                *slot = sensor_value;
-            }
+            .map_err(|error| RawError::Corrupt(format!("Canon CRX tile ({}, {}), plane {p}: {error}", tile.x, tile.y)))
+        })
+        .collect();
+    // The first failure in file order, as when tiles decoded one after another: a tile's
+    // quantization map, then its planes in order.
+    let mut planes_of = Vec::with_capacity(tiles.len());
+    let mut results = decoded.drain(..);
+    for (tile, qp) in tiles.iter().zip(qps) {
+        qp?;
+        let planes = tile.planes.iter().map(|_| results.next().unwrap_or_else(|| Err(corrupt("missing plane")))).collect::<Result<Vec<_>>>()?;
+        planes_of.push(planes);
+    }
+    // Allocated once every plane decoded: a tiny crafted file can claim a huge image.
+    let mut output = Vec::new();
+    output.try_reserve_exact(count).map_err(|_| RawError::Limit("CRX sample allocation"))?;
+    output.resize(count, 0u16);
+    for (tile, planes) in tiles.iter().zip(&planes_of) {
+        let half = tile.width / 2;
+        if half == 0 {
+            continue;
         }
+        // Each output row of the tile takes every other sample from the two planes of its CFA
+        // row: rows are filled in parallel. `place` is one of them.
+        let place = |r: usize, row: &mut [u16]| -> Result<()> {
+            for (p, plane) in planes.iter().enumerate().filter(|(p, _)| p / 2 == r % 2) {
+                let line = plane.get(r / 2 * half..).unwrap_or_default();
+                for (c, &value) in line.iter().take(half).enumerate() {
+                    let x = tile.x + 2 * c + p % 2;
+                    *row.get_mut(x).ok_or_else(|| corrupt("tile writes outside image"))? =
+                        sensor_sample(value, midpoint, maximum, config.levels != 0)?;
+                }
+            }
+            Ok(())
+        };
+        let rows = planes.iter().map(|plane| plane.len().div_ceil(half) * 2).max().unwrap_or(0);
+        let first = tile.y.checked_mul(width).ok_or_else(|| corrupt("tile writes outside image"))?;
+        let area = output.get_mut(first..).ok_or_else(|| corrupt("tile writes outside image"))?;
+        // (a row below the image is as outside as a sample past its end)
+        if rows > area.len() / width {
+            return Err(corrupt("tile writes outside image"));
+        }
+        area.par_chunks_mut(width).take(rows).enumerate().try_for_each(|(r, row)| place(r, row))?;
     }
     Ok(output)
 }
@@ -416,21 +438,26 @@ fn wavelet_plane(sample: &[u8], plane: &Plane, width: usize, height: usize, edge
     for high in high_dimensions.iter().rev() {
         shapes.extend_from_slice(high);
     }
-    let mut bands = Vec::with_capacity(10);
-    for (i, (&(w, h), band)) in shapes.iter().zip(&plane.bands).enumerate() {
-        let bytes = band_bytes(sample, band)?;
-        let mut data = if i == 0 { lossless_plane(bytes, w, h)? } else { coded_high_frequency_band(bytes, w, coded_band_width(i, w, edges), h)? };
-        for (position, value) in data.iter_mut().enumerate() {
-            let step = match band.quant {
-                Quantization::Uniform(value) => quant_step(value, MAX_UNIFORM_QUANT)?,
-                Quantization::Adaptive { base, gain } => {
-                    adaptive_step(qp.ok_or_else(|| corrupt("missing QP map"))?, i, position % w, position / w, base, gain)?
-                }
-            };
-            *value = value.checked_mul(step).ok_or_else(|| corrupt("dequantized coefficient overflow"))?;
-        }
-        bands.push(WaveletBand { width: w, height: h, data });
-    }
+    // Each subband is its own entropy stream (its own byte range): they decode in parallel.
+    let bands = shapes
+        .par_iter()
+        .zip(&plane.bands)
+        .enumerate()
+        .map(|(i, (&(w, h), band))| {
+            let bytes = band_bytes(sample, band)?;
+            let mut data = if i == 0 { lossless_plane(bytes, w, h)? } else { coded_high_frequency_band(bytes, w, coded_band_width(i, w, edges), h)? };
+            for (position, value) in data.iter_mut().enumerate() {
+                let step = match band.quant {
+                    Quantization::Uniform(value) => quant_step(value, MAX_UNIFORM_QUANT)?,
+                    Quantization::Adaptive { base, gain } => {
+                        adaptive_step(qp.ok_or_else(|| corrupt("missing QP map"))?, i, position % w, position / w, base, gain)?
+                    }
+                };
+                *value = value.checked_mul(step).ok_or_else(|| corrupt("dequantized coefficient overflow"))?;
+            }
+            Ok(WaveletBand { width: w, height: h, data })
+        })
+        .collect::<Result<Vec<_>>>()?;
     crx_wavelet::reconstruct(&bands, width, height, 3, edges)
 }
 
