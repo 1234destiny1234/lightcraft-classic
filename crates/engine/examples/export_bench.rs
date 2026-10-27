@@ -1,18 +1,18 @@
 //! Single-photo export benchmark (median and minimum of N runs):
-//! `cargo run --release -p lightcraft-engine --example export_bench -- corpus/raw/arw-sony-a7m3-compressed.arw`
+//! `cargo run --release -p lcc-engine --example export_bench -- corpus/raw/arw-sony-a7m3-compressed.arw`
 //!
 //! Imports the files given and runs the export path the app, CLI and MCP share
-//! ([`lightcraft_engine::export::export_photo`]: decode the original, render it full size, encode)
+//! ([`lcc_engine::export::export_photo`]: decode the original, render it full size, encode)
 //! once per file per run, forgetting the decoded original between runs so each export reads and
 //! decodes it like a batch export does. `N=9` runs (default), `OPT='{"format":"png"}'` for other
-//! export options (JSON as `app.export` takes them), `LIGHTCRAFT_GPU=0` for the CPU pipeline,
+//! export options (JSON as `app.export` takes them), `<PREFIX>_GPU=0` for the CPU pipeline,
 //! `PHASES=1` to time render and encode separately, `OUT=dir` to write each file's export there
 //! (for byte comparisons between builds).
 use std::time::Instant;
 
-use lightcraft_engine::Session;
-use lightcraft_engine::catalog::PhotoId;
-use lightcraft_engine::export::{ExportOptions, encode_rendered, export_metadata, export_photo};
+use lcc_engine::Session;
+use lcc_engine::catalog::PhotoId;
+use lcc_engine::export::{ExportOptions, encode_rendered, export_metadata, export_photo};
 
 fn stats(mut v: Vec<f64>) -> (f64, f64) {
     v.sort_by(f64::total_cmp);
@@ -31,7 +31,7 @@ fn main() {
     let r = s.execute("library.import", &serde_json::json!({"paths": paths})).expect("import");
     let ids: Vec<PhotoId> = r["imported"].as_array().expect("ids").iter().filter_map(|v| v.as_u64()).map(PhotoId).collect();
     assert_eq!(ids.len(), args.len(), "every file imports");
-    println!("{} file(s), {:?}, {n} runs, gpu {}", ids.len(), o.format, lightcraft_engine::gpu::available());
+    println!("{} file(s), {:?}, {n} runs, gpu {}", ids.len(), o.format, lcc_engine::gpu::available());
     let mut times = Vec::new();
     for i in 0..=n {
         let t = Instant::now();
@@ -60,7 +60,7 @@ fn main() {
         let (mut tr, mut te) = (0.0, 0.0);
         for &id in &ids {
             let p = s.catalog.photo(id).expect("photo").clone();
-            let (w, h) = lightcraft_engine::export::output_size(&p, &o);
+            let (w, h) = lcc_engine::export::output_size(&p, &o);
             let meta = export_metadata(&p, &s.catalog, &o);
             let job = s.export_job(id, w, h, o.effective_space(), o.effective_depth()).expect("job");
             let t = Instant::now();
