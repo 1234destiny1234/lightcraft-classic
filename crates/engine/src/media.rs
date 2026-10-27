@@ -968,21 +968,22 @@ pub struct RenderJob {
     /// Shrink a full-quality result to fit this size (physical pixels) with a Lanczos filter once
     /// it is rendered. The loupe renders a little larger than it is drawn (its edge is rounded up
     /// to a 64 px step) and the window would otherwise shrink the texture with 2-tap bilinear sampling, which blurs fine detail at
-    /// small ratios and aliases it at large ones. The caches keep the full render.
+    /// small ratios and aliases it at large ones. The caches keep the full render (a fit made on
+    /// the GPU reads it back as well for the view cache, unless [`Self::drawn_view_cache`]).
     pub display_fit: Option<(usize, usize)>,
+    /// A slider drag's update: a fit made on the GPU leaves its drawn-size image in the view cache
+    /// instead of reading the full render back too (+3 ms an update; the next render at rest
+    /// replaces it). Not part of [`Self::key`]: the same render, cached at another size.
+    pub drawn_view_cache: bool,
+    /// An HDR view's render for an HDR display that uploads at this headroom: rendered on the
+    /// GPU, it comes back as the texture's texels made there ([`RenderResult::hdr_texels`]) and
+    /// without float samples; on the CPU, as usual. Set by the frontend.
+    pub hdr_texels: Option<f32>,
 }
 
 /// `img` shrunk to fit `max_w × max_h` with a Lanczos filter (see [`RenderJob::display_fit`]).
 pub fn fit_for_display(img: &Rgba8, max_w: usize, max_h: usize) -> Rgba8 {
-    use lcc_raster::resample::{Filter, fit};
-    let f = lcc_raster::Image {
-        width: img.width,
-        height: img.height,
-        data: img.data.iter().map(|p| [f32::from(p[0]), f32::from(p[1]), f32::from(p[2]), f32::from(p[3])]).collect(),
-    };
-    let small = fit(&f, max_w.max(1), max_h.max(1), Filter::Lanczos3);
-    let c = |v: f32| v.round().clamp(0.0, 255.0) as u8;
-    Rgba8 { width: small.width, height: small.height, data: small.data.iter().map(|p| [c(p[0]), c(p[1]), c(p[2]), c(p[3])]).collect() }
+    lcc_raster::resample::fit_rgba8(img, max_w.max(1), max_h.max(1), lcc_raster::resample::Filter::Lanczos3)
 }
 
 pub struct RenderResult {
@@ -1002,6 +1003,9 @@ pub struct RenderResult {
     /// The display profile (id) the image is encoded for; `None`: sRGB (see
     /// [`crate::display::present`]).
     pub display: Option<u64>,
+    /// An HDR view's texture texels made on the GPU, and the headroom they were made for
+    /// ([`RenderJob::hdr_texels`]); its render then has no float samples.
+    pub hdr_texels: Option<(Vec<u16>, f32)>,
 }
 
 impl RenderJob {
@@ -1011,6 +1015,12 @@ impl RenderJob {
     pub fn with_display_fit(mut self, w: usize, h: usize) -> Self {
         self.display_fit = Some((w, h));
         self.key ^= ((w as u64) << 32 | h as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        self
+    }
+
+    /// See [`Self::drawn_view_cache`].
+    pub fn with_drawn_view_cache(mut self) -> Self {
+        self.drawn_view_cache = true;
         self
     }
 
@@ -1117,6 +1127,7 @@ impl RenderJob {
             loaded: None,
             quick: None,
             display: None,
+            hdr_texels: None,
         }
     }
 
@@ -1160,6 +1171,7 @@ impl RenderJob {
                 loaded: None,
                 quick: None,
                 display: None,
+                hdr_texels: None,
             };
         }
         // a face tile of an unedited raw: cut from the camera's embedded preview when it is big enough
@@ -1180,6 +1192,7 @@ impl RenderJob {
                 loaded: None,
                 quick: None,
                 display: None,
+                hdr_texels: None,
             };
         }
         let was_loaded = matches!(self.source, SourceRef::Loaded(_));
@@ -1198,7 +1211,29 @@ impl RenderJob {
                 // Thumbnails (many small jobs side by side) stay on the CPU; views and exports use
                 // the GPU when there is one.
                 let gpu = self.cache.is_none();
-                let (mut rendered, gpu_fallback) = develop_reporting(src, &info, &self.settings, &self.request, self.stages.as_deref(), gpu);
+                // the display fit on the GPU when the render is there and nothing is done to its
+                // full-size image first (a monitor profile's conversion); else below, on the CPU
+                let fit =
+                    self.display_fit.filter(|_| self.request.quality == Quality::Full && (self.display.is_none() || self.request.display.is_none()));
+                // an HDR view's texture straight from the GPU, when it renders there
+                let mut hdr_texels = None;
+                // the full-size render when the GPU fitted it, for the view cache
+                let mut unfitted = None;
+                let texels = self.hdr_texels.filter(|_| gpu && gpu_renders_faithfully(&self.settings, &self.request));
+                let (mut rendered, gpu_fallback) =
+                    match texels.map(|h| (h, lcc_gpu::try_render_hdr_texels(src, &info, &self.settings, &self.request, self.stages.as_deref(), h))) {
+                        Some((headroom, Ok((r, t)))) => {
+                            hdr_texels = Some((t, headroom));
+                            (r, None)
+                        }
+                        _ => {
+                            let keep_full = self.view_cache.is_some() && !self.drawn_view_cache;
+                            let (r, fallback, full) =
+                                develop_reporting_fitted(src, &info, &self.settings, &self.request, self.stages.as_deref(), gpu, fit, keep_full);
+                            unfitted = full;
+                            (r, fallback)
+                        }
+                    };
                 // for a display profile: the image goes to the display's values, the histogram
                 // and the cached view preview stay sRGB
                 let mut srgb = None;
@@ -1222,7 +1257,9 @@ impl RenderJob {
                     && self.request.quality == Quality::Full
                     && (display.is_none() || srgb.is_some())
                 {
-                    cache.put_deferred_at(self.cache_generation, *key, Arc::new(srgb.unwrap_or_else(|| rendered.image.clone())));
+                    // (one series per photo: a drag's updates replace each other on the way to disk)
+                    let full = srgb.or_else(|| unfitted.take()).unwrap_or_else(|| rendered.image.clone());
+                    cache.put_deferred_series(self.cache_generation, self.photo.0, *key, Arc::new(full));
                 }
                 // the display fit, after the caches have the full render
                 if let Some((fw, fh)) = self.display_fit
@@ -1244,6 +1281,7 @@ impl RenderJob {
                     loaded: (!was_loaded).then_some(source),
                     quick: None,
                     display,
+                    hdr_texels,
                 }
             }
             Err(e) => self.failed(e),
@@ -1269,15 +1307,36 @@ pub fn develop_reporting(
     stages: Option<&StageCache>,
     gpu: bool,
 ) -> (Rendered, Option<String>) {
-    let (mut rendered, fallback) = develop_image(src, info, s, req, stages, gpu);
+    let (rendered, fallback, _) = develop_reporting_fitted(src, info, s, req, stages, gpu, None, false);
+    (rendered, fallback)
+}
+
+/// [`develop_reporting`], shrunk to fit `fit` on the GPU when it renders there
+/// ([`lcc_gpu::try_render_fitted`]); a CPU render comes back at its own size.
+fn develop_reporting_fitted(
+    src: &Arc<Rgb32f>,
+    info: &SourceInfo,
+    s: &DevelopSettings,
+    req: &RenderRequest,
+    stages: Option<&StageCache>,
+    gpu: bool,
+    fit: Option<(usize, usize)>,
+    keep_full: bool,
+) -> (Rendered, Option<String>, Option<Rgba8>) {
+    let (mut rendered, fallback, full) = develop_image(src, info, s, req, stages, gpu, fit, keep_full);
     // an HDR edit's preview is its SDR rendition: its histogram shows the HDR range instead
-    if let Some(h) = lcc_pipeline::hdr_histogram(src, info, s, req) {
+    // (with the view's stage cache: a drag of an HDR edit redoes only what the slider feeds)
+    let hdr = match stages {
+        Some(c) => lcc_pipeline::hdr_histogram_cached(src, info, s, req, c),
+        None => lcc_pipeline::hdr_histogram(src, info, s, req),
+    };
+    if let Some(h) = hdr {
         rendered.histogram = h;
     }
     for w in &rendered.warnings {
         log::warn!("render: {w}");
     }
-    (rendered, fallback)
+    (rendered, fallback, full)
 }
 
 /// Whether the GPU pipeline renders `s` for `req` like the CPU does. LUT profiles, masks with
@@ -1296,10 +1355,16 @@ fn develop_image(
     req: &RenderRequest,
     stages: Option<&StageCache>,
     gpu: bool,
-) -> (Rendered, Option<String>) {
+    fit: Option<(usize, usize)>,
+    keep_full: bool,
+) -> (Rendered, Option<String>, Option<Rgba8>) {
     let fallback = if gpu && gpu_renders_faithfully(s, req) {
-        match lcc_gpu::try_render(src, info, s, req, stages) {
-            Ok(r) => return (r, None),
+        let r = match fit.filter(|_| keep_full) {
+            Some(size) => lcc_gpu::try_render_fitted_keeping_full(src, info, s, req, stages, size),
+            None => lcc_gpu::try_render_fitted(src, info, s, req, stages, fit).map(|r| (r, None)),
+        };
+        match r {
+            Ok((r, full)) => return (r, None, full),
             Err(lcc_gpu::Fallback::Failed(why)) => Some(why),
             Err(lcc_gpu::Fallback::NotTried) => None,
         }
@@ -1310,7 +1375,7 @@ fn develop_image(
         Some(st) => lcc_pipeline::render_cached(src, info, s, req, st),
         None => lcc_pipeline::render(src, info, s, req),
     };
-    (rendered, fallback)
+    (rendered, fallback, None)
 }
 
 /// Where a [`QuickJob`]'s stand-in image came from.
@@ -1356,6 +1421,7 @@ impl QuickJob {
             loaded: None,
             quick: None,
             display: None,
+            hdr_texels: None,
         })
     }
 
@@ -1373,6 +1439,7 @@ impl QuickJob {
             loaded: None,
             quick,
             display: None,
+            hdr_texels: None,
         };
         let rendered = |image: Rgba8| {
             let histogram = Histogram::of_srgb8(&image);
@@ -1506,6 +1573,7 @@ impl crate::Session {
             (self.media.rendered.clone(), k.finish())
         });
         Some(RenderJob {
+            drawn_view_cache: false,
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
             source_key: Some(source_key),
@@ -1524,6 +1592,7 @@ impl crate::Session {
             slide: None,
             preview_cut: None,
             display_fit: None,
+            hdr_texels: None,
         })
     }
 
@@ -1560,6 +1629,7 @@ impl crate::Session {
         let source = self.media.source_ref(&p, level);
         let ck = Self::variant_key(&p, settings, edge);
         Some(RenderJob {
+            drawn_view_cache: false,
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
             source_key: Some(Hasher128::new().str(&pixels_key(&p)).finish()),
@@ -1578,6 +1648,7 @@ impl crate::Session {
             slide: None,
             preview_cut: None,
             display_fit: None,
+            hdr_texels: None,
         })
     }
 
@@ -1615,6 +1686,7 @@ impl crate::Session {
         let ck = Self::variant_key(&p, &settings, edge);
         let preview_cut = self.face_preview_cut(&p, rect, edge, needed as usize);
         Some(RenderJob {
+            drawn_view_cache: false,
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
             source_key: Some(Hasher128::new().str(&pixels_key(&p)).finish()),
@@ -1633,6 +1705,7 @@ impl crate::Session {
             slide: None,
             preview_cut,
             display_fit: None,
+            hdr_texels: None,
         })
     }
 
@@ -2305,6 +2378,18 @@ mod tests {
         let a = s.loupe_job(id, 1024, 1024, true).unwrap();
         let b = s.loupe_job(id, 1024, 1024, true).unwrap().with_display_fit(400, 400);
         assert_ne!(a.key, b.key, "the fit is part of the result key");
+        // the photo's view preview keeps the render, not the drawn size (on the GPU the fit is
+        // made there, and the full image read back too for it)
+        let job = s.loupe_job(id, 1024, 1024, true).unwrap().with_display_fit(400, 400);
+        let (cache, key) = job.view_cache.clone().expect("a loupe job keeps the view preview");
+        let shown = job.run().rendered.unwrap().image;
+        assert_eq!(shown.width.max(shown.height), 400);
+        let kept = cache.get_in_memory(key).expect("the view preview is cached");
+        assert_eq!((kept.width, kept.height), (plain.width, plain.height), "the view preview is the full render");
+        // a drag's update may cache its drawn size instead: the same render, so the same key (the
+        // release finds the drag's last render)
+        let at_rest = s.loupe_job(id, 1024, 1024, true).unwrap().with_display_fit(400, 400);
+        assert_eq!(at_rest.clone().with_drawn_view_cache().key, at_rest.key);
     }
 
     #[test]

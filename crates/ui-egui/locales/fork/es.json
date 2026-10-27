@@ -1503,5 +1503,7 @@
   "It needs features this version of the app doesn't have:": "Necesita funciones que esta versión de la aplicación no tiene:",
   "Install a newer version of the app to use it.": "Instala una versión más reciente de la aplicación para usarlo.",
   "It can't be installed:": "No se puede instalar:",
-  "Install Older Version": "Instalar versión anterior"
+  "Install Older Version": "Instalar versión anterior",
+  "Plug-in Settings": "Ajustes del plugin",
+  "this plug-in has no settings": "este plugin no tiene ajustes"
 }

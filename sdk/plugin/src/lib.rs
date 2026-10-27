@@ -109,11 +109,12 @@ pub fn __handle(ptr: i32, len: i32, handler: fn(&Request) -> Result<Value, Strin
 pub struct Request(pub Value);
 
 impl Request {
-    /// `command`, `export`, `metadata`, `publish.upload`, `publish.delete`.
+    /// `command`, `command.prepare`, `settings.prepare`, `export`, `export.destination`, `metadata`,
+    /// `publish.upload`, `publish.delete`.
     pub fn hook(&self) -> &str {
         self.0.get("hook").and_then(Value::as_str).unwrap_or("")
     }
-    /// The command id (`hook == "command"`).
+    /// The command id (`hook == "command"` or `"command.prepare"`).
     pub fn command(&self) -> &str {
         self.0.get("command").and_then(Value::as_str).unwrap_or("")
     }
@@ -121,7 +122,7 @@ impl Request {
     pub fn arg(&self, key: &str) -> &Value {
         self.0.get("args").and_then(|a| a.get(key)).unwrap_or(&Value::Null)
     }
-    /// Selected photo ids (`hook == "command"`).
+    /// Selected photo ids (`hook == "command"` or `"command.prepare"`).
     pub fn selection(&self) -> Vec<String> {
         self.0
             .get("selection")
@@ -237,6 +238,22 @@ pub mod host {
     /// Sets (or with `Value::Null`, removes) a key in this plug-in's own metadata for `photo`.
     pub fn ns_set(photo: &str, key: &str, value: Value) -> Result<(), String> {
         call("ns.set", json!({"photo": photo, "key": key, "value": value})).map(|_| ())
+    }
+
+    /// This plug-in's settings (`settings` in the manifest): every key, defaults for those never set.
+    pub fn settings() -> Result<Value, String> {
+        call("settings.get", json!({}))
+    }
+
+    /// One setting (its default when never set, `Value::Null` when there is no host or no such key).
+    pub fn setting(key: &str) -> Value {
+        settings().ok().and_then(|mut s| s.get_mut(key).map(Value::take)).unwrap_or(Value::Null)
+    }
+
+    /// Changes a setting (`Value::Null`: back to its default); the host checks it against its
+    /// field and returns the value kept (a number clamped to its range).
+    pub fn set_setting(key: &str, value: Value) -> Result<Value, String> {
+        call("settings.set", json!({"key": key, "value": value}))
     }
 
     pub fn read_text(path: &str) -> Result<String, String> {
