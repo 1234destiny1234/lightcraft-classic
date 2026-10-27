@@ -936,6 +936,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-26 | patch | LR-VIEW-ZOOM, LR-VIEW-FILMSTRIP, LR-VIEW-HDR-DISPLAY, LRC-LIB-PREVIEWS: byte and GPU display fitting, the histogram steady on release, prepared neighbours adopted, one full-quality window after a zoomed edit, coalesced preview writes, HDR texels made on the GPU, the original prepared after a look; the view preview keeps the full render; statuses unchanged |
+| 2026-10-27 | patch | LR-VIEW-HDR-DISPLAY: on Wayland the window's SDR white follows the compositor's reference white (`reference / 80` on the extended-linear surface, as on Windows); with HDR on, KDE Plasma showed the app at 80 cd/m² beside a brighter desktop; status unchanged |
 | 2026-10-26 | minor | LRC-LIB-LIBFOLDERS: a Folders folder's or disk's menu has Export Folder… and Export Folder with Preset ▸ (upstream #2956); status unchanged (✅) |
 | 2026-10-26 | minor | LRC-LIB-LIBFOLDERS: Copy Path in every folder menu; a disk's row gains Show in Finder and New Folder on Disk…, a Local row New Folder on Disk…; a folder can be made in a disk's root (upstream #2959); status unchanged (✅) |
 | 2026-10-26 | minor | LR-EDIT-DETAIL-DENOISE: AI Denoise follows Auto Sync in one undo step, starts at import above an ISO, and shows one batch row (upstream #2932); status unchanged (🟡) |
