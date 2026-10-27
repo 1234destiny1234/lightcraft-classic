@@ -52,6 +52,9 @@ Overrides (read once at launch):
 - `<PREFIX>_GPU=0`: GPU rendering off for the process (the window is unaffected).
 - Both `<PREFIX>_GPU=0` and `<PREFIX>_GPU_BACKEND=off` also keep AI Denoise, the face models
   and the AI mask model (SAM 3 on Metal) on the CPU.
+- `<PREFIX>_GPU_INIT_TIMEOUT=<seconds>` (whole seconds, 1–3600; default 30): how long creating a
+  compute device (rendering, AI Denoise, faces) and compiling its kernels may take. See *Device
+  creation time limit* below.
 
 **DX12 shader compiler (issue #471).** Every instance (window and compute) compiles DX12 shaders with
 FXC (`d3dcompiler_47.dll`, part of Windows; `lcc_gpu::backend::backend_options`). wgpu's
@@ -84,6 +87,24 @@ up (`gpu::warm_up` from the first frame's settings), and never while GPU renderi
 Settings ▸ Performance ▸ *Use the GPU for rendering* unchecked (applied before the window opens),
 `<PREFIX>_GPU=0` or `<PREFIX>_GPU_BACKEND=off`, no GPU driver is loaded for rendering at all.
 
+**Device creation time limit (issue #3068).** Creating the wgpu instance, adapter and device calls
+into the driver, which on Linux may first talk to the display server; with one that accepts the
+connection and never answers (a crash-looping WSLg compositor, a stale `WAYLAND_DISPLAY` socket) those
+calls never returned, and every render waiting for the device, and every test that creates one, hung
+for good. wgpu's native calls are synchronous, so each compute device (rendering, denoise, faces) is
+now created, kernels included, on a thread of its own (`lc-gpu-device`, `crates/gpu/src/init.rs`), and
+the caller waits at most `<PREFIX>_GPU_INIT_TIMEOUT` seconds (default 30: a first run that compiles
+every kernel with FXC takes seconds). Past it that device is unavailable for the process, with the
+reason `GPU device creation did not finish in 30 s (<PREFIX>_GPU_INIT_TIMEOUT): …` reported like any
+other creation failure (`perf.gpuReason`, the no-GPU notice, the log), and the blocked thread is left
+behind. That thread, not the caller, holds what must last as long as the driver work does: its share
+of the GPU work in flight, so a quit meanwhile finds the GPU busy (`gpu::wait_idle` returns `false` at
+its own deadline, *Quitting* below), and the crash sentinel, so a quit meanwhile leaves the marker and
+the next launch starts on the CPU (*Crash sentinel* below). While it is left behind, creating another
+kind of device fails at once with the same reason rather than leave a second thread behind; if the
+driver ever answers, the marker is removed, its late device is leaked, not dropped, and later
+creations are tried again. The desktop window's own device is not covered (#410).
+
 **Quitting.** The devices are never dropped, and renders run on worker threads: a render still inside
 the driver while the process exits crashes there (a SIGSEGV in the NVIDIA Vulkan driver on Linux,
 issue #620), which no panic hook catches. So every entry into a device counts as work in flight
@@ -104,7 +125,9 @@ Mac). A kernel the driver refuses without crashing is caught by wgpu error scope
 (`gpu: rendering on the CPU: …`) and renders stay on the CPU. `<PREFIX>_GPU=0` (or Settings ▸
 uncheck *Use the GPU for rendering*) forces the CPU path from the start. If the marker is still there at the next launch, the process died inside
 the driver: the app starts with GPU rendering off (the preference is saved unchecked), removes the
-marker and says so in a notice. Checking *Use the GPU for rendering* again tries the GPU once more
+marker and says so in a notice. The same happens after a quit while a device creation that passed its
+time limit was still inside the driver (above): the driver hung rather than crashed, but it would
+likely hang again, so the next launch starts on the CPU too. Checking *Use the GPU for rendering* again tries the GPU once more
 (and re-arms the sentinel). Not with `<PREFIX>_NO_PREFS` (tests, scripts), and not in a `--memory` session,
 which writes nothing: it neither arms the sentinel nor removes a marker it finds (it still starts with GPU
 rendering off when one is there, and the next ordinary launch reports and clears it). Killing the app during
