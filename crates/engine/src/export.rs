@@ -1446,6 +1446,9 @@ pub(crate) fn portable_stem(name: &str) -> String {
 
 /// Output sharpening of an 8-bit image: an unsharp mask on its luma ([`unsharp`]).
 pub fn output_sharpen(img: &mut Rgba8, target: SharpenFor, amount: SharpenAmount) {
+    if !sharpens(img.width, img.height, target) {
+        return;
+    }
     let src: Vec<[f32; 3]> = img.data.iter().map(|p| [p[0] as f32, p[1] as f32, p[2] as f32]).collect();
     if let Some(out) = unsharp(img.width, img.height, &src, target, amount) {
         for (p, v) in img.data.iter_mut().zip(out) {
@@ -1459,6 +1462,9 @@ pub fn output_sharpen(img: &mut Rgba8, target: SharpenFor, amount: SharpenAmount
 /// [`output_sharpen`] on a high-bit-depth image (float images are sharpened in linear light).
 pub fn output_sharpen_deep(img: &mut DeepImage, target: SharpenFor, amount: SharpenAmount) {
     let (w, h) = (img.width, img.height);
+    if !sharpens(w, h, target) {
+        return;
+    }
     match &mut img.samples {
         DeepSamples::U16(v) => {
             let src: Vec<[f32; 3]> = v.as_chunks::<3>().0.iter().map(|c| [c[0] as f32, c[1] as f32, c[2] as f32]).collect();
@@ -1478,6 +1484,12 @@ pub fn output_sharpen_deep(img: &mut DeepImage, target: SharpenFor, amount: Shar
             }
         }
     }
+}
+
+/// Whether output sharpening for `target` changes a `w × h` image ([`unsharp`] returns `None` otherwise):
+/// without it the float copy of the image is never made.
+fn sharpens(w: usize, h: usize, target: SharpenFor) -> bool {
+    target != SharpenFor::None && w >= 3 && h >= 3
 }
 
 /// How far a sharpened pixel may pass the darkest and lightest of its 3×3 neighbours, as a share
@@ -1611,8 +1623,12 @@ fn encode_jpeg_with_limit(o: &ExportOptions, jpeg: impl Fn(u8) -> lcc_codecs::Re
     best.ok_or_else(|| format!("cannot fit within {kb} KB"))
 }
 
-/// Output sharpening and the watermark on an 8-bit render in `o.effective_space()`.
-fn finish_8bit(img: &Rgba8, o: &ExportOptions) -> Rgba8 {
+/// Output sharpening and the watermark on an 8-bit render in `o.effective_space()`: the render itself when
+/// there is neither (a copy is ~100 MB at 24 MP).
+fn finish_8bit<'a>(img: &'a Rgba8, o: &ExportOptions) -> std::borrow::Cow<'a, Rgba8> {
+    if o.watermark.is_none() && !sharpens(img.width, img.height, o.sharpen) {
+        return std::borrow::Cow::Borrowed(img);
+    }
     let mut img = img.clone();
     output_sharpen(&mut img, o.sharpen, o.sharpen_amount);
     let space = o.effective_space();
@@ -1620,23 +1636,26 @@ fn finish_8bit(img: &Rgba8, o: &ExportOptions) -> Rgba8 {
         let wm = Watermark { color: srgb8_in(space, wm.color), target: Some(space), ..wm.clone() };
         draw_watermark(&mut img, &wm);
     }
-    img
+    std::borrow::Cow::Owned(img)
 }
 
-/// Output sharpening and the watermark on a high-bit-depth render.
-fn finish_deep(img: &DeepImage, o: &ExportOptions) -> DeepImage {
+/// Output sharpening and the watermark on a high-bit-depth render (the render itself when there is neither).
+fn finish_deep<'a>(img: &'a DeepImage, o: &ExportOptions) -> std::borrow::Cow<'a, DeepImage> {
     finish_deep_over(img, None, o)
 }
 
 /// [`finish_deep`] of an image with straight alpha `alpha`, which the watermark raises.
-fn finish_deep_over(img: &DeepImage, alpha: Option<&mut Plane>, o: &ExportOptions) -> DeepImage {
+fn finish_deep_over<'a>(img: &'a DeepImage, alpha: Option<&mut Plane>, o: &ExportOptions) -> std::borrow::Cow<'a, DeepImage> {
+    if o.watermark.is_none() && !sharpens(img.width, img.height, o.sharpen) {
+        return std::borrow::Cow::Borrowed(img);
+    }
     let mut img = img.clone();
     output_sharpen_deep(&mut img, o.sharpen, o.sharpen_amount);
     if let Some(wm) = &o.watermark {
         let wm = Watermark { color: srgb8_in(img.space, wm.color), target: Some(img.space), ..wm.clone() };
         draw_watermark_deep_over(&mut img, alpha, &wm);
     }
-    img
+    std::borrow::Cow::Owned(img)
 }
 
 /// Encode an ISO 21496-1 gain map JPEG from the SDR rendition `sdr` (8-bit, in the output space)
@@ -2960,6 +2979,20 @@ mod tests {
             assert_eq!(bounds, expected, "{anchor:?}, {rotation} degrees");
         }
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// With no output sharpening and no watermark an export encodes the render itself (no ~100 MB
+    /// copy at 24 MP), and the image is left as it is; either one still gets its own copy.
+    #[test]
+    fn an_unsharpened_unwatermarked_render_is_not_copied() {
+        let img = test_image();
+        let plain = ExportOptions { sharpen: SharpenFor::None, watermark: None, ..ExportOptions::default() };
+        assert!(matches!(finish_8bit(&img, &plain), std::borrow::Cow::Borrowed(_)));
+        let mut same = test_image();
+        output_sharpen(&mut same, SharpenFor::None, SharpenAmount::High);
+        assert_eq!(same.data, img.data);
+        let sharpened = ExportOptions { sharpen: SharpenFor::Screen, ..plain };
+        assert!(matches!(finish_8bit(&img, &sharpened), std::borrow::Cow::Owned(_)));
     }
 
     #[test]

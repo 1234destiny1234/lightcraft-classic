@@ -411,6 +411,10 @@ pub static INDEXED: &[ControlSpec] = &[
 fn split_indexed(id: &str) -> Option<(&str, usize, &str)> {
     let mut it = id.splitn(3, '.');
     let (fam, i, field) = (it.next()?, it.next()?, it.next()?);
+    // digits only: `usize::from_str` also takes a leading `+`, so `pointColor.+0.hueShift` named list item 0
+    if i.is_empty() || !i.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
     Some((fam, i.parse().ok()?, field))
 }
 
@@ -493,6 +497,18 @@ pub fn in_section(section: Section) -> impl Iterator<Item = &'static ControlSpec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signed_indexes_are_unknown_ids() {
+        let mut s = DevelopSettings::default();
+        s.point_colors.push(Default::default());
+        let before = s.point_colors[0].hue_shift;
+        assert!(!set(&mut s, "pointColor.+0.hueShift", 10.0), "signed index");
+        assert_eq!(s.point_colors[0].hue_shift, before);
+        assert_eq!(get(&s, "pointColor.+0.hueShift"), None);
+        assert!(find("pointColor.+0.hueShift").is_none());
+        assert!(find("redEye.+0.darken").is_none());
+    }
 
     #[test]
     fn every_control_reads_its_default() {

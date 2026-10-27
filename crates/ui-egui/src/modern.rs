@@ -411,6 +411,8 @@ pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
     }
     if app.ui.modern.filters {
         app.ui.modern.filters = false;
+        // the filter bar's Metadata column searches go with it
+        app.ui.filter_column_search.clear();
         return Some("filters");
     }
     None
@@ -665,6 +667,9 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
         }
         if button(Icon::Filter, "modern:filters", "Filter", app.ui.modern.filters) {
             app.ui.modern.filters = !app.ui.modern.filters;
+            if !app.ui.modern.filters {
+                app.ui.filter_column_search.clear();
+            }
         }
         if app.ui.modern.import_menu && !opened {
             import_menu(app, ui, pos2(r.right() - 8.0, r.bottom() + 4.0));

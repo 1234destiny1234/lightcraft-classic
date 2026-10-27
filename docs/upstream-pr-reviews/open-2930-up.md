@@ -150,3 +150,51 @@ Closed upstream without merging.
 | 3117 | GPU device creation gives up after a time limit (#3068) | ADOPT | hang fix | this bundle |
 | 3118 | Memory sizing honours cgroup limits (#3072) | ADOPT | containers, Flatpak, systemd scopes | this bundle |
 | 3119 | A cut-short folder move resumes at the next open | SKIP | stacked on #2914 / #1925 | — |
+| 3120 | Issue #3063: a test settle that times out fails with what was still busy; settle is must_use | SKIP | upstream test harness | — |
+| 3121 | PERF-CATALOG: a smart album's per-photo test stops storing an answer nothing can read | LEARN | smart album perf | — |
+| 3122 | LC-002: reject non-object script parameters | ADOPT | non-object script params refused | branch `upr/hardening-3122-3165` |
+| 3123 | LC-001: stop commands after failed imports | LEARN | stop a script after a failed import: worth a fork take | — |
+| 3124 | LC-003: reject non-UTF-8 CLI arguments without panicking | ADOPT | non-UTF-8 CLI argument refused, not a panic (desktop app too) | branch `upr/hardening-3122-3165` |
+| 3125 | MENU-BAR: fix macOS clippy failure | SKIP | closed upstream | — |
+| 3126 | Issue #3071: rayon's global pool and the ad-hoc worker threads have names | SKIP | thread names: minor | — |
+| 3134 | fix(meta): read the DateTime offset with unsigned_abs (#3132) | SKIP | already in the fork (`unsigned_abs`) | — |
+| 3135 | fix(meta): cap Rational and SRational tag rows at 16 values like every array (#3133) | SKIP | the fork has no `file_tag_rows` value formatter | — |
+| 3136 | LR-CI: fix Rust 1.95 lints and standard-font menu hints | SKIP | upstream lints / UI hints | — |
+| 3137 | LR-IMP-LOCAL: update capture time on reload and auto-reload changed files in local folders | LEARN | reload updates capture time | — |
+| 3138 | LR-PROF-CAMERACOLOR: align CR3 calibration through resolved lens profiles | LEARN | CR3 calibration via lens profiles | — |
+| 3139 | Add GFX100S II to the spectral camera matrix table | LEARN | GFX100S II spectral matrix: check against camdb sources | — |
+| 3141 | Issue #2589: a Lightroom import never creates a photo already in Recently Deleted | LEARN | Lightroom import vs Recently Deleted | — |
+| 3142 | Issue #2589: a Lightroom import says where each catalog photo went | LEARN | Lightroom import reports placements | — |
+| 3143 | Issue #3114: Lightroom catalogs import into libraries on exFAT drives | LEARN | Lightroom import on exFAT | — |
+| 3144 | LR-EDIT-OPTICS-PROFILE: enable Sony ILCE-7M3 embedded distortion correction (rebase of #1384) | LEARN | Sony ILCE-7M3 embedded distortion | — |
+| 3145 | Issue #2165: a Lightroom collection that can't nest goes under the nearest set instead of failing the import | LEARN | Lightroom collection nesting fallback | — |
+| 3146 | LR-BEHAV-LOCALE: the desktop app starts in the system's language | LEARN | start in system language | — |
+| 3147 | i18n(ru): 217 strings the Russian catalog was missing | SKIP | translation for upstream's catalogs | — |
+| 3148 | Issue #3056: Paste Selected Settings pastes crop and Remove left out of the copy | LEARN | Paste Selected Settings crop / Remove: engine fix worth porting; touches 30 files incl. UI | — |
+| 3150 | LR-BEHAV-BG-TASKS: exports and imports say how they ended (stacked on #1711) | SKIP | stacked (#1711) | — |
+| 3151 | LR-BEHAV-BG-TASKS: every other job says how it ended (stacked on #3150) | SKIP | stacked (#3150) | — |
+| 3152 | Issue #1588: one bad Lightroom record costs that record, not the import | LEARN | one bad Lightroom record costs only that record | — |
+| 3154 | fix(ui): dropdown menus grow back after a search with no matches | SKIP | upstream album_picker widget, not in the fork | — |
+| 3155 | LR-UI-DENSE-ROWS: one-line slider rows with a fitted, right-aligned name column | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3156 | LR-BEHAV-TEXTFIELD: an edit in progress is saved however its field is left, except Esc | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3157 | LRC-LIB-FILTERBAR: every filter change goes through one step that leaves out what the source shown owns | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3158 | LR-UI-TOOL-ROW: tools in a row under the histogram, histogram fixed above the scrolling panel | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3162 | Integration: 7 approved PRs (catalog, import and folders) | SKIP | integration batch | — |
+| 3163 | Integration: 6 approved PRs (drag and drop, filmstrip and panels) | SKIP | integration batch | — |
+| 3164 | LR-UI-TRACK-SHADE: grey slider tracks show which way they take the photo | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3165 | Reject signed list indexes in indexed develop control ids | ADOPT | signed list index in a control id refused | branch `upr/hardening-3122-3165` |
+| 3166 | LRC-LIB-LIBFOLDERS: a folder made with New Folder on Disk… appears in Folders at once | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3167 | LR-BEHAV-DIALOGS: a one-line prompt that's refused stays open and says why | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3168 | Speed up full-size exports by removing copies and serial passes | ADOPT | export perf (2 of 3 commits; see upstream-main-commits.md) | branch `upr/export-perf-3168` |
+| 3169 | LRC-LIB-DUPLICATES: Find Duplicates (exact copies and same-picture-saved-again, no AI model) | LEARN | Find Duplicates: large feature | — |
+| 3170 | Integration: 7 approved PRs (catalog, import and folders, round 2) | SKIP | integration batch of other PRs | — |
+| 3171 | MENU-APP-UPDATES: --no-update-check skips the startup update check | LEARN | --no-update-check | — |
+| 3176 | LR-IMP-ADD-DIALOG: an import's probe opens each file once | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3179 | LR-BEHAV-SIDEBAR-KEYS: the keys' model for the left sidebar: the mode, its cursor and its ring (no caller yet) | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3180 | LR-BEHAV-SIDEBAR-KEYS: the left sidebar from the keyboard (stacked on #3179) | SKIP | stacked on #3179 | — |
+| 3181 | feat(upstream OCR crate): ONNX runner and pinned PP-OCRv6 models for reading text in photos (part 1a) | SKIP | OCR model chain (ONNX, stacked) | — |
+| 3182 | Disarm color picking when adding mask components | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3183 | Add Lithuanian interface translation. | SKIP | translation for upstream's catalogs | — |
+| 3185 | Hidden entries: folder walks read no extra metadata on macOS; auto-import skips hidden files (follow-up to #3045) | LEARN | hidden-entry follow-up to #3045 (macOS) | — |
+| 3186 | feat(upstream OCR crate): read text with PP-OCRv6 and a HierText benchmark example (part 1b, stacked on #3181) | SKIP | stacked on #3181 | — |
+| 3188 | Drop the sign from slider text that rounds to zero | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
