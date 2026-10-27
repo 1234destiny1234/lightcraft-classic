@@ -7,7 +7,8 @@
 //! CPU inside the same render (per-stage hybrid); see `docs/gpu-pipeline.md`.
 //!
 //! Which backends wgpu may load (DX12 only on Windows; `{ENV_PREFIX}_GPU_BACKEND`, `WGPU_BACKEND`) and
-//! the crash sentinel around device creation: [`backend`] (issue #136).
+//! the crash sentinel around device creation: [`backend`] (issue #136). Device creation has a time
+//! limit (`{ENV_PREFIX}_GPU_INIT_TIMEOUT`, issue #3068, see `init.rs`).
 //!
 //! Use [`render`]: it returns `None` when the GPU is unavailable, disabled (`{ENV_PREFIX}_GPU=0`,
 //! `{ENV_PREFIX}_GPU_BACKEND=off` or [`set_enabled`]), the render does not fit the device, or the device reported an error, ran out
@@ -41,6 +42,8 @@ mod ctx;
 mod exit;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod faces;
+#[cfg(not(target_arch = "wasm32"))]
+mod init;
 #[cfg(all(feature = "denoise", not(target_arch = "wasm32")))]
 pub mod nn;
 #[cfg(not(target_arch = "wasm32"))]
@@ -297,9 +300,10 @@ pub(crate) fn device() -> Option<&'static ctx::Gpu> {
     let _work = exit::enter()?;
     GPU.get_or_init(|| {
         let Some(backends) = backend::compute_backends() else { return Err(format!("disabled by {}=off", lcc_brand::env_var("GPU_BACKEND"))) };
-        let r = backend::with_init_marker(backends, || {
-            std::panic::catch_unwind(|| ctx::Gpu::new(backends)).unwrap_or_else(|_| Err("device creation panicked".into()))
-        });
+        // on a thread of its own (under the crash sentinel, counted as GPU work), waited for at most
+        // `init::limit()`: a driver or display server that never answers leaves the GPU unavailable
+        // instead of every render waiting forever (#3068)
+        let r = init::create(backends, move || ctx::Gpu::new(backends));
         if let Err(why) = &r {
             log::warn!("gpu: rendering on the CPU: {why}");
         }

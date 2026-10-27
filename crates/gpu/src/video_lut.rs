@@ -271,15 +271,20 @@ mod tests {
     use super::*;
     use lcc_pipeline::Quality;
 
+    // on a thread of its own with a time limit (#3068, `init.rs`): a driver or display server
+    // that never answers skips the test instead of hanging it
     fn device() -> Option<(wgpu::Device, wgpu::Queue)> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).ok()?;
-        // the sRGB view of the frame needs view formats, which downlevel (GL) adapters lack;
-        // the app grades on the CPU there
-        if !adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VIEW_FORMATS) {
-            return None;
-        }
-        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()
+        crate::init::create(wgpu::Backends::all(), || {
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+            let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).map_err(|e| e.to_string())?;
+            // the sRGB view of the frame needs view formats, which downlevel (GL) adapters lack;
+            // the app grades on the CPU there
+            if !adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VIEW_FORMATS) {
+                return Err("no view formats".into());
+            }
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).map_err(|e| e.to_string())
+        })
+        .ok()
     }
 
     #[test]

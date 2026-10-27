@@ -12,6 +12,8 @@ workspace = true
 serde_json = { workspace = true }
 # release notes: `cargo xtask notes`
 lcc-notes = { workspace = true }
+# the RAM `ci` sizes build jobs and test threads for, cgroup limits included (no dependencies)
+lcc-sysmem = { workspace = true }
 # corpus download checksums
 sha2 = { workspace = true }
 # precompressed web bundle (`cargo xtask web`); pure Rust
