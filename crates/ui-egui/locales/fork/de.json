@@ -1358,6 +1358,11 @@
   "Install a newer version of the app to use it.": "Installiere eine neuere Version der App, um es zu verwenden.",
   "It can't be installed:": "Es kann nicht installiert werden:",
   "Install Older Version": "Ältere Version installieren",
+  "Start the program": "Programm starten",
+  "not installed": "nicht installiert",
+  "checking…": "wird geprüft …",
+  "installed:": "installiert:",
+  "Waiting for a plug-in's program": "Warten auf das Programm eines Plug-ins",
   "Plug-in Settings": "Zusatzmodul-Einstellungen",
   "this plug-in has no settings": "dieses Zusatzmodul hat keine Einstellungen"
 }

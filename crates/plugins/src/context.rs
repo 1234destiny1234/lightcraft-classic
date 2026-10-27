@@ -12,6 +12,8 @@
 //! | `fs.readBytes`, `fs.writeBytes` | as the text calls; contents as base64 | std::fs              |
 //! | `fs.remove`           | a file below a writable root (never a lent file) | std::fs            |
 //! | `http.request`        | the URL's host in `network` | `lcc-net` (native only)                 |
+//! | `program.list`        | none (declared programs only) | [`HostApi::find_program`]             |
+//! | `program.start`       | the program in `programs`   | [`HostApi::start_program`] (native only) |
 
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
@@ -27,6 +29,8 @@ use crate::store::NamespaceStore;
 pub const MAX_IO_BYTES: usize = 8 << 20;
 /// Most entries `fs.list` returns.
 pub const MAX_LIST: usize = 10_000;
+/// Most lines one call adds to the plug-in's log about what the host did for it.
+pub const MAX_NOTES: usize = 20;
 
 /// Catalog access the application provides. The default methods refuse, so a host without a
 /// catalog (tests, the CLI before a library is open) only implements what it has.
@@ -42,6 +46,22 @@ pub trait HostApi {
         let _ = params;
         Err("metadata.setStandard: not available".into())
     }
+
+    /// Where `program` is installed on this system (none: not installed). Read-only; never
+    /// starts anything.
+    fn find_program(&mut self, program: &crate::ProgramDecl) -> Vec<crate::Found> {
+        let _ = program;
+        Vec::new()
+    }
+
+    /// Starts a run ([`crate::StartRequest`]: the program's arguments and folder are ready) and
+    /// watches it: when it exits, or the user stops waiting, the host calls the plug-in's
+    /// `program.end` ([`crate::Manager::program_end_call`]), drops the reservation, and deletes
+    /// the folder once the program has exited (by dropping the request). An error means nothing
+    /// started, and the dropped request has deleted the folder.
+    fn start_program(&mut self, _run: crate::StartRequest) -> Result<(), String> {
+        Err("starting programs is not available here".into())
+    }
 }
 
 /// A host with no catalog.
@@ -50,11 +70,22 @@ impl HostApi for NoHost {}
 
 /// Everything one plug-in call may reach.
 pub(crate) struct CallContext<'a> {
+    /// The plug-in's id.
+    pub plugin: &'a str,
+    /// What its manifest asks for (`program.list` answers for declared programs).
+    pub requested: &'a Permissions,
+    /// What it may do (granted ∩ requested).
     pub perms: &'a Permissions,
     /// Files lent for this call only (read and write), e.g. the exported file a hook post-processes.
     pub lent: &'a [PathBuf],
+    /// Folders lent for this call only, for reading (a program run's folder in `program.end`).
+    pub lent_dirs: &'a [PathBuf],
+    /// Where `program.start` makes run folders (`None`: [`crate::programs::runs_root`]).
+    pub runs_root: Option<&'a std::path::Path>,
     pub host: &'a mut dyn HostApi,
     pub store: &'a mut NamespaceStore,
+    /// Lines for the plug-in's log about what the host did for it (a program that didn't start).
+    pub notes: Vec<String>,
     /// The plug-in's settings (shared: the Plugin Manager may read them while a call runs).
     pub settings: &'a Mutex<SettingsStore>,
     /// The settings the manifest declares.
@@ -81,6 +112,16 @@ fn str_arg<'v>(p: &'v Value, key: &str) -> Result<&'v str, String> {
 }
 
 impl CallContext<'_> {
+    /// Adds a line for the plug-in's log, up to [`MAX_NOTES`] per call (a plug-in that fails in a
+    /// loop can't flood it).
+    fn note(&mut self, line: String) {
+        match self.notes.len() {
+            n if n < MAX_NOTES => self.notes.push(line),
+            n if n == MAX_NOTES => self.notes.push("more of the same in this call are left out".into()),
+            _ => {}
+        }
+    }
+
     pub fn dispatch(&mut self, method: &str, p: &Value) -> Result<Value, String> {
         if self.read_only && writes(method, p) {
             return Err(format!("{method}: a prepare step can only read"));
@@ -118,7 +159,7 @@ impl CallContext<'_> {
                 Ok(v.unwrap_or_else(|| f.default_value()))
             }
             "fs.readText" => {
-                let path = self.perms.check_path(str_arg(p, "path")?, false, self.lent)?;
+                let path = self.perms.check_path_in(str_arg(p, "path")?, false, self.lent, self.lent_dirs)?;
                 let bytes = crate::safe_io::read_checked(&path, MAX_IO_BYTES as u64).map_err(|e| format!("{}: {e}", path.display()))?;
                 String::from_utf8(bytes).map(Value::from).map_err(|_| format!("{}: not UTF-8 text", path.display()))
             }
@@ -131,7 +172,7 @@ impl CallContext<'_> {
                 crate::safe_io::write_checked(&path, text.as_bytes()).map(|_| Value::Null).map_err(|e| format!("{}: {e}", path.display()))
             }
             "fs.readBytes" => {
-                let path = self.perms.check_path(str_arg(p, "path")?, false, self.lent)?;
+                let path = self.perms.check_path_in(str_arg(p, "path")?, false, self.lent, self.lent_dirs)?;
                 crate::safe_io::read_checked(&path, MAX_IO_BYTES as u64)
                     .map(|b| Value::from(crate::b64::encode(&b)))
                     .map_err(|e| format!("{}: {e}", path.display()))
@@ -153,11 +194,11 @@ impl CallContext<'_> {
                 std::fs::remove_file(&path).map(|_| Value::Null).map_err(|e| format!("{}: {e}", path.display()))
             }
             "fs.exists" => {
-                let path = self.perms.check_path(str_arg(p, "path")?, false, self.lent)?;
+                let path = self.perms.check_path_in(str_arg(p, "path")?, false, self.lent, self.lent_dirs)?;
                 Ok(Value::from(path.exists()))
             }
             "fs.list" => {
-                let path = self.perms.check_path(str_arg(p, "path")?, false, self.lent)?;
+                let path = self.perms.check_path_in(str_arg(p, "path")?, false, self.lent, self.lent_dirs)?;
                 let rd = std::fs::read_dir(&path).map_err(|e| format!("{}: {e}", path.display()))?;
                 let mut names: Vec<Value> = rd
                     .filter_map(|e| e.ok())
@@ -168,8 +209,88 @@ impl CallContext<'_> {
                 Ok(Value::Array(names))
             }
             "http.request" => self.http(p),
+            "program.list" => Ok(self.program_list()),
+            "program.start" => {
+                let r = self.program_start(p);
+                if let Err(e) = &r {
+                    self.note(format!("program.start failed: {e}"));
+                }
+                r
+            }
             _ => Err(format!("unknown host method {method:?}")),
         }
+    }
+
+    /// Each declared program: `{program, name, granted, installed: [{bundleId?, path?, version?}]}`,
+    /// `path` only once the program is granted (before, the plug-in learns what is installed, not
+    /// where).
+    fn program_list(&mut self) -> Value {
+        let list: Vec<Value> = self
+            .requested
+            .programs
+            .iter()
+            .map(|d| {
+                let granted = self.perms.program(&d.id).is_some();
+                let installed: Vec<Value> = installs(d, self.host.find_program(d))
+                    .into_iter()
+                    .map(|f| json!({"bundleId": f.bundle_id, "path": granted.then_some(f.path), "version": f.version}))
+                    .map(|mut f| {
+                        if let Some(o) = f.as_object_mut() {
+                            o.retain(|_, v| !v.is_null());
+                        }
+                        f
+                    })
+                    .collect();
+                json!({"program": d.id, "name": d.name, "granted": granted, "installed": installed})
+            })
+            .collect();
+        Value::Array(list)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn program_start(&mut self, p: &Value) -> Result<Value, String> {
+        use crate::programs::{Found, Reservation, RunDir, StartRequest, expand_args, runs_root};
+        let id = str_arg(p, "program")?;
+        if self.requested.program(id).is_none() {
+            return Err(format!("{id:?} is not one of this plug-in's programs"));
+        }
+        let decl = self.perms.program(id).ok_or_else(|| format!("{id}: {}", denied("programs")))?.clone();
+        let files = match p.get("files") {
+            None | Some(Value::Null) => serde_json::Map::new(),
+            Some(Value::Object(m)) => m.clone(),
+            Some(_) => return Err("`files` must be an object {name: text}".into()),
+        };
+        // everything the plug-in sent is checked before a folder is made or a program looked up
+        crate::programs::checked_files(&files)?;
+        expand_args(p.get("args").unwrap_or(&Value::Null), std::path::Path::new(""))?;
+        let wanted = match p.get("bundleId") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(b)) if !cfg!(target_os = "macos") => return Err(format!("bundleId {b:?}: bundle ids are for macOS only")),
+            Some(Value::String(b)) if !decl.mac_bundle_ids.contains(b) => return Err(format!("bundleId {b:?} is not one of {id}'s")),
+            Some(Value::String(b)) => Some(b.clone()),
+            Some(_) => return Err("`bundleId` must be a string".into()),
+        };
+        let found: Vec<Found> = installs(&decl, self.host.find_program(&decl));
+        let found = match &wanted {
+            Some(b) => found.into_iter().find(|f| f.bundle_id.as_deref() == Some(b)),
+            None => found.into_iter().next(),
+        }
+        .ok_or_else(|| format!("{} is not installed{}", decl.name, wanted.as_deref().map(|b| format!(" ({b})")).unwrap_or_default()))?;
+        let reservation = Reservation::take(self.plugin, id)?;
+        let dir = RunDir::create(&self.runs_root.map_or_else(runs_root, std::path::Path::to_path_buf))?;
+        // on an error from here on, dropping `dir` deletes the folder
+        dir.write_files(&files)?;
+        let args = expand_args(p.get("args").unwrap_or(&Value::Null), dir.path())?;
+        let tmp = dir.path().to_path_buf();
+        let run_id = reservation.run().to_string();
+        let req = StartRequest { plugin: self.plugin.to_string(), program: decl, found, args, dir, reservation };
+        self.host.start_program(req)?;
+        Ok(json!({"run": run_id, "tmpDir": tmp}))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn program_start(&mut self, _: &Value) -> Result<Value, String> {
+        Err("program.start is not available in the web build".into())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -225,6 +346,16 @@ impl CallContext<'_> {
     fn http(&mut self, _: &Value) -> Result<Value, String> {
         Err("http.request is not available in the web build".into())
     }
+}
+
+/// What the app found of `decl`, in the entry's order: on macOS by bundle id, and only the
+/// entry's bundle ids.
+fn installs(decl: &crate::ProgramDecl, mut found: Vec<crate::Found>) -> Vec<crate::Found> {
+    if !decl.mac_bundle_ids.is_empty() && found.iter().any(|f| f.bundle_id.is_some()) {
+        found.retain(|f| f.bundle_id.as_ref().is_some_and(|b| decl.mac_bundle_ids.contains(b)));
+        found.sort_by_key(|f| decl.mac_bundle_ids.iter().position(|b| Some(b) == f.bundle_id.as_ref()));
+    }
+    found
 }
 
 fn denied(cap: &str) -> String {

@@ -9,12 +9,13 @@
 //! - **one narrow door to the host**: the only imports a module may have are `host.call`,
 //!   `host.response` and `host.log`. Every request through `host.call` is a JSON message that the
 //!   host checks against the plug-in's **granted capabilities** ([`Permissions`]: catalog read,
-//!   standard-metadata write, network hosts, filesystem roots) before doing anything.
+//!   standard-metadata write, network hosts, filesystem roots, programs) before doing anything.
 //!
 //! What a plug-in can contribute (declared in its [`Manifest`]): menu commands with an optional
 //! declarative dialog, export post-process hooks, metadata/keyword providers and publish services
 //! (through the [`publish::PublishProvider`] trait boundary), settings kept for the whole app
-//! ([`SettingsStore`]). The [`Manager`] keeps the installed plug-ins, their grants (given on
+//! ([`SettingsStore`]), and programs installed on the computer that it starts ([`programs`]: only
+//! the user grants one). The [`Manager`] keeps the installed plug-ins, their grants (given on
 //! install, revocable), enabled state, settings and logs.
 //!
 //! Every failure (malformed module, trap, exhausted budget, denied capability, bad output) is an
@@ -30,6 +31,7 @@ mod context;
 pub mod manager;
 pub mod manifest;
 pub mod permissions;
+pub mod programs;
 pub mod publish;
 mod runtime;
 mod safe_io;
@@ -40,6 +42,7 @@ pub use context::{HostApi, NoHost};
 pub use manager::{Failed, Installed, Manager, PendingCall, Prepared, SettingsView};
 pub use manifest::{CommandDecl, DestinationDecl, Field, FieldKind, HOST_FEATURES, Hooks, Manifest, MetadataField, PublishDecl};
 pub use permissions::{FsRoot, Permissions};
+pub use programs::{EndStatus, Exit, Found, ProgramDecl, Reservation, RunDir, Running, StartRequest};
 pub use runtime::{ABI_VERSION, Limits, Outcome, Plugin};
 pub use settings::SettingsStore;
 pub use store::NamespaceStore;
