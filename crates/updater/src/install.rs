@@ -212,7 +212,7 @@ pub fn unpacked_copy() -> Option<(PathBuf, String)> {
 }
 
 /// [`unpacked_copy`], when its folder can be written: the copy replaces its own files.
-fn self_updating_copy() -> Option<(PathBuf, String)> {
+pub(crate) fn self_updating_copy() -> Option<(PathBuf, String)> {
     unpacked_copy().filter(|(dir, name)| zipswap::writable(dir, name))
 }
 

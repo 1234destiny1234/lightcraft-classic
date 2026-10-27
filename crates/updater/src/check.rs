@@ -163,7 +163,7 @@ pub fn from_release(opts: &Options, target: Target, release: Release, _cancel: O
         sha256,
         published: release.published.clone(),
         notes: release.notes.clone(),
-        action: if opts.portable && asset_kind == Kind::Archive && crate::install::unpacked_copy().is_some() {
+        action: if opts.portable && asset_kind == Kind::Archive && crate::install::self_updating_copy().is_some() {
             "download it, replace this copy's files with the new ones and start the app again".into()
         } else if opts.portable && asset_kind == Kind::Archive {
             "download it and open the folder it is in, so you can unpack it over this copy".into()

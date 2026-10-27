@@ -19,7 +19,8 @@
 //!    [`WAIT_FOR_EXIT`] (the user cancelled quitting), the new one ends without opening anything.
 //!    If it can't be started, the swap is undone.
 //!
-//! On the next start, [`clean_up`] deletes whatever `.update-old` files and unpack folders are left.
+//! On the next start, [`clean_up`] deletes whatever `.update-old` files and unpack folders are left,
+//! and puts back a `.update-old` file whose replacement never arrived (an update cut off half way).
 //!
 //! The steps use only renames and file copies, so they run (and are tested) on every system; only
 //! Windows uses them.
@@ -178,7 +179,10 @@ fn unpack(zip: &Path, stage: &Path, exe_name: &str) -> Result<Vec<PathBuf>, Upda
         left -= n;
         file.sync_all().map_err(|e| install_error(format!("could not write {}: {e}", out.display())))?;
     }
-    Ok(files.into_iter().map(|(_, p)| p).collect())
+    // the program last: an update stopped half way still has a program to start
+    let (program, mut rest): (Vec<_>, Vec<_>) = files.into_iter().map(|(_, p)| p).partition(|p| is_program(p, exe_name));
+    rest.extend(program);
+    Ok(rest)
 }
 
 /// The one folder every path starts in, when they all sit inside the same one.
@@ -233,6 +237,8 @@ fn swap(stage: &Path, dir: &Path, files: &[PathBuf], moved: &mut Vec<Moved>) -> 
                 })?;
             }
             retry(|| fs::rename(&target, &old)).map_err(|e| install_error(format!("could not move {} aside: {e}", target.display())))?;
+            // a read-only file can't be deleted later, by the new version's wait or the clean-up
+            clear_read_only(&old);
             Some(old)
         } else {
             None
@@ -244,6 +250,23 @@ fn swap(stage: &Path, dir: &Path, files: &[PathBuf], moved: &mut Vec<Moved>) -> 
         }
     }
     Ok(())
+}
+
+/// Clear `file`'s read-only attribute (Windows refuses to delete a read-only file); a file that
+/// isn't read-only, or can't be changed, is left as it is.
+fn clear_read_only(file: &Path) {
+    let Ok(meta) = fs::metadata(file) else { return };
+    let mut perms = meta.permissions();
+    if perms.readonly() {
+        // on Windows this clears FILE_ATTRIBUTE_READONLY only; on Unix (where the copy is never
+        // swapped outside the tests) it makes the file writable by its owner's group and others too,
+        // which doesn't matter for a file about to be deleted
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        if let Err(e) = fs::set_permissions(file, perms) {
+            log::debug!("updates: {} stays read-only: {e}", file.display());
+        }
+    }
 }
 
 /// Undo `moved`, newest first: delete each new file and rename the previous one back. What could
@@ -317,10 +340,23 @@ fn clean_dir(dir: &Path, prefix: &str, ours: &str, depth: usize) {
         let path = entry.path();
         let Ok(kind) = entry.file_type() else { continue };
         if kind.is_file() && name.ends_with(OLD_SUFFIX) {
+            // an update stopped between moving a file aside and putting the new one in (the power
+            // went off): the previous file is all there is, so it goes back
+            let original = path.with_file_name(name.trim_end_matches(OLD_SUFFIX));
+            if !original.exists() {
+                match fs::rename(&path, &original) {
+                    Ok(()) => log::warn!("updates: an interrupted update left {} aside; put back", original.display()),
+                    Err(e) => log::warn!("updates: {} could not be put back as {}: {e}", path.display(), original.display()),
+                }
+                continue;
+            }
             match fs::remove_file(&path) {
                 Ok(()) => log::info!("updates: deleted the previous version's {}", path.display()),
                 Err(e) => log::debug!("updates: {} is still in use ({e}); deleted next time", path.display()),
             }
+        } else if kind.is_file() && depth == 0 && name.starts_with(&format!("{prefix}probe-")) {
+            // a write probe left by a process that ended before deleting it
+            let _ = fs::remove_file(&path);
         } else if kind.is_dir() && depth == 0 && name.starts_with(prefix) && name != ours {
             if let Err(e) = fs::remove_dir_all(&path) {
                 log::debug!("updates: could not delete {}: {e}", path.display());
@@ -516,6 +552,65 @@ mod tests {
         assert!(!dir.join(".app-update-1").exists());
         assert!(ours.exists(), "this process's own unpack folder is left alone");
         assert!(dir.join("notes.old").exists() && dir.join("app.exe").exists());
+    }
+
+    #[test]
+    fn the_program_is_swapped_last() {
+        let root = scratch("order");
+        let stage = root.join("stage");
+        fs::create_dir_all(&stage).unwrap();
+        let zip = root.join("u.zip");
+        zip_of(&zip, &[("top/app.exe", "new"), ("top/a.txt", "a"), ("top/z.txt", "z")]);
+        let files = unpack(&zip, &stage, "app.exe").unwrap();
+        assert_eq!(files.last().map(PathBuf::as_path), Some(Path::new("app.exe")), "{files:?}");
+        assert_eq!(files.len(), 3);
+    }
+
+    /// The power went off between moving a file aside and putting its replacement in: the next
+    /// start puts the previous file back instead of deleting the only copy.
+    #[test]
+    fn clean_up_puts_back_a_file_an_interrupted_update_left_aside() {
+        let dir = scratch("interrupted");
+        fs::write(dir.join("app-cli.exe.update-old"), "old cli").unwrap();
+        fs::write(dir.join("app.exe"), "app").unwrap();
+        fs::write(dir.join("app.exe.update-old"), "old app").unwrap();
+        clean_up(&dir, "app.exe");
+        assert_eq!(read(&dir.join("app-cli.exe")), "old cli", "the file with no replacement is back");
+        assert!(!dir.join("app-cli.exe.update-old").exists());
+        assert!(!dir.join("app.exe.update-old").exists(), "a replaced file's previous copy is deleted");
+        assert_eq!(read(&dir.join("app.exe")), "app");
+    }
+
+    #[test]
+    fn clean_up_deletes_a_write_probe_left_behind() {
+        let dir = scratch("probe");
+        fs::write(dir.join(".app-update-probe-1"), "").unwrap();
+        clean_up(&dir, "app.exe");
+        assert!(!dir.join(".app-update-probe-1").exists());
+        assert!(writable(&dir, "app.exe"));
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0, "the probe deletes itself");
+    }
+
+    /// A read-only previous file (a copy restored from a backup) is made deletable when it is moved
+    /// aside, so the new version's wait and the clean-up can delete it.
+    #[test]
+    fn a_read_only_file_is_replaced_and_its_previous_copy_deleted() {
+        let root = scratch("readonly");
+        let dir = root.join("copy");
+        fs::create_dir_all(&dir).unwrap();
+        copy_in(&dir);
+        for f in ["app.exe", "LICENSE.txt"] {
+            let mut p = fs::metadata(dir.join(f)).unwrap().permissions();
+            p.set_readonly(true);
+            fs::set_permissions(dir.join(f), p).unwrap();
+        }
+        let zip = root.join("u.zip");
+        zip_of(&zip, &[("top/app.exe", "new app"), ("top/LICENSE.txt", "new licence")]);
+        swap_in(&zip, &dir, "app.exe", &mut |_| Ok(())).unwrap();
+        assert_eq!(read(&dir.join("app.exe")), "new app");
+        assert!(finish_previous(&dir.join("app.exe"), Duration::ZERO), "the read-only program is deleted at once");
+        clean_up(&dir, "app.exe");
+        assert!(!dir.join("LICENSE.txt.update-old").exists());
     }
 
     #[test]
