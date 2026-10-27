@@ -1499,5 +1499,7 @@
   "It needs features this version of the app doesn't have:": "它需要此版本 App 沒有的功能：",
   "Install a newer version of the app to use it.": "請安裝較新版本的 App 以使用它。",
   "It can't be installed:": "無法安裝：",
-  "Install Older Version": "安裝舊版本"
+  "Install Older Version": "安裝舊版本",
+  "Plug-in Settings": "增效模組設定",
+  "this plug-in has no settings": "此增效模組沒有設定"
 }
