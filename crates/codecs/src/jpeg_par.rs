@@ -768,7 +768,12 @@ mod tests {
             let px = jpeg_decoder::Decoder::new(&jpg[..]).decode().unwrap();
             assert_eq!(px.len(), want.len(), "{ch} channels, {sub:?}");
             // the worst 8-pixel row run anywhere stays close: a misplaced band would differ by far more
-            let worst = px.chunks(24).zip(want.chunks(24)).map(|(a, b)| a.iter().zip(b).map(|(&x, &y)| x.abs_diff(y) as u32).sum::<u32>() / a.len() as u32).max().unwrap();
+            let worst = px
+                .chunks(24)
+                .zip(want.chunks(24))
+                .map(|(a, b)| a.iter().zip(b).map(|(&x, &y)| x.abs_diff(y) as u32).sum::<u32>() / a.len() as u32)
+                .max()
+                .unwrap();
             assert!(worst < 24, "{ch} channels, {sub:?}, quality {q}: worst run differs by {worst}");
         }
     }
