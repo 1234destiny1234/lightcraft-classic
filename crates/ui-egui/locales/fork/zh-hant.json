@@ -1500,6 +1500,11 @@
   "Install a newer version of the app to use it.": "請安裝較新版本的 App 以使用它。",
   "It can't be installed:": "無法安裝：",
   "Install Older Version": "安裝舊版本",
+  "Start the program": "啟動程式",
+  "not installed": "未安裝",
+  "checking…": "檢查中…",
+  "installed:": "已安裝：",
+  "Waiting for a plug-in's program": "正在等待外掛程式的程式",
   "Plug-in Settings": "增效模組設定",
   "this plug-in has no settings": "此增效模組沒有設定"
 }

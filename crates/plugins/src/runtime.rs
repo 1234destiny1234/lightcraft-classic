@@ -16,6 +16,7 @@
 use std::fmt;
 
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use wasmi::{
     Caller, Config, EnforcedLimits, Engine, Extern, Instance, Linker, Memory, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
     TypedResumableCall, Val, WasmParams, WasmResults,
@@ -77,6 +78,8 @@ pub struct Plugin {
     module: Module,
     limits: Limits,
     size: usize,
+    /// SHA-256 of the module's bytes: whether an update changed the code.
+    digest: [u8; 32],
 }
 
 impl fmt::Debug for Plugin {
@@ -188,7 +191,8 @@ impl Plugin {
                 imp.name()
             )));
         }
-        let mut p = Plugin { manifest: placeholder_manifest(), engine, module, limits, size: bytes.len() };
+        let digest = Sha256::digest(bytes).into();
+        let mut p = Plugin { manifest: placeholder_manifest(), engine, module, limits, size: bytes.len(), digest };
         let deadline = Deadline::new(&p.limits);
         let mut live = p.instantiate()?;
         let version: TypedFunc<(), i32> = live.func("lcc_abi_version")?;
@@ -219,6 +223,10 @@ impl Plugin {
     /// Module size in bytes.
     pub fn size(&self) -> usize {
         self.size
+    }
+    /// SHA-256 of the module's bytes.
+    pub fn digest(&self) -> &[u8; 32] {
+        &self.digest
     }
 
     fn instantiate(&self) -> Result<Live> {
