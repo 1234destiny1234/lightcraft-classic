@@ -49,6 +49,32 @@ impl Buf {
     }
 }
 
+/// Divide associated alpha out of the colour samples of interleaved pixels of `ch` channels, the
+/// last of which is alpha (integer colour is capped at full scale; zero alpha leaves the colour).
+fn unpremultiply(buf: &mut Buf, ch: usize) {
+    fn each<T: Copy>(v: &mut [T], ch: usize, f: impl Fn(T, T) -> T) {
+        if ch < 2 {
+            return;
+        }
+        for px in v.chunks_exact_mut(ch) {
+            if let Some((&mut a, colour)) = px.split_last_mut() {
+                for c in colour {
+                    *c = f(*c, a);
+                }
+            }
+        }
+    }
+    match buf {
+        Buf::U8(v) => each(v, ch, |c, a| if a == 0 { c } else { ((c as u32 * 255 + a as u32 / 2) / a as u32).min(255) as u8 }),
+        Buf::U16(v) => each(v, ch, |c, a| if a == 0 { c } else { ((c as u64 * 65535 + a as u64 / 2) / a as u64).min(65535) as u16 }),
+        // (non-finite samples clipped first, as the colour conversion and the alpha plane clip them)
+        Buf::F32(v) => each(v, ch, |c, a| {
+            let (c, a) = (normalize_float(c), normalize_float(a).clamp(0.0, 1.0));
+            if a > 0.0 { c / a } else { c }
+        }),
+    }
+}
+
 /// Clip non-finite device samples before colour conversion, preserving finite extended range.
 #[inline]
 fn normalize_float(value: f32) -> f32 {
@@ -125,11 +151,16 @@ pub(crate) fn check_size(format: Format, w: u64, h: u64, opts: &DecodeOptions) -
     Ok(())
 }
 
-pub(crate) fn finish(format: Format, raw: Raw, meta: Meta, source_dims: (u32, u32), opts: &DecodeOptions) -> Result<Decoded> {
+pub(crate) fn finish(format: Format, mut raw: Raw, meta: Meta, source_dims: (u32, u32), opts: &DecodeOptions) -> Result<Decoded> {
     let ch = raw.model.channels() + raw.alpha as usize;
     let n = crate::checked_samples(raw.width, raw.height, 1)?;
     if n == 0 || raw.buf.len() < crate::checked_samples(raw.width, raw.height, ch)? {
         return Err(Error::Malformed(format, "sample buffer too short".into()));
+    }
+    // Associated alpha is multiplied into the stored (encoded) colour values, as image editors and
+    // our TIFF export write it: divide it out before those values are decoded to linear light.
+    if raw.premultiplied && raw.alpha {
+        unpremultiply(&mut raw.buf, ch);
     }
     let float = matches!(raw.buf, Buf::F32(_));
 
@@ -152,17 +183,6 @@ pub(crate) fn finish(format: Format, raw: Raw, meta: Meta, source_dims: (u32, u3
     } else {
         rgb_or_gray(&raw, ch, &meta, parsed_icc.as_ref(), float)?
     };
-
-    let mut image = image;
-    if raw.premultiplied
-        && let Some(a) = &alpha
-    {
-        for (p, &av) in image.data.iter_mut().zip(&a.data) {
-            if av > 0.0 {
-                *p = p.map(|c| c / av);
-            }
-        }
-    }
 
     let summary = meta.exif.as_deref().map(exif::summarize).unwrap_or_default();
     let orientation = meta.orientation.or(summary.orientation).filter(|o| (1..=8).contains(o)).unwrap_or(1);

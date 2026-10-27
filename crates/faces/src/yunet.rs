@@ -1,10 +1,12 @@
 //! The YuNet face detector (232 KB, MIT, downloaded by the user in Settings ▸ Faces), run by the app's own small
 //! interpreter ([`crate::net`]): no extra runtime.
 //!
-//! A photo is letterboxed (aspect ratio kept, padded at the right and bottom) into the network's square
-//! input, the network gives a score, a box and five landmarks for every cell of three grids (strides 8, 16 and
-//! 32), and the cells above the score threshold are decoded, de-duplicated by non-maximum suppression and
-//! mapped back to the photo as fractions of its width and height.
+//! A photo is shrunk (never enlarged) until its long edge fits [`Options::long_edge`], padded at the right and bottom
+//! to a multiple of 32 (the network is fully convolutional, so the input needn't be its file's 640 × 640 square: this
+//! is how OpenCV's `FaceDetectorYN` and the published WIDER FACE figures run it), the network gives a score, a box
+//! and five landmarks for every cell of three grids (strides 8, 16 and 32), and the cells above the score threshold
+//! are decoded, de-duplicated by non-maximum suppression and mapped back to the photo as fractions of its width and
+//! height.
 //!
 //! The pixels come from the caller as plain 8-bit RGB; this module has no image types of its own.
 
@@ -15,7 +17,14 @@ const STRIDES: [usize; 3] = [8, 16, 32];
 /// Largest photo side we accept.
 const MAX_SIDE: usize = 65_536;
 /// Candidate cells kept before suppression, so a hostile or noisy output cannot make it slow.
-const MAX_CANDIDATES: usize = 4000;
+const MAX_CANDIDATES: usize = 5000;
+/// Largest network input side: memory for the stride-8 feature maps grows with its square.
+pub const MAX_INPUT: usize = 4096;
+/// The long edge a scan gives the network. YuNet finds faces down to about 10 px, so the input size decides how small
+/// a face it can find: squeezed into its file's 640 × 640 square it missed the back rows of group photos (WIDER FACE
+/// hard 59.8 against the published 75.0, which OpenCV measures at each photo's own size, 1024 px wide); at 1024 px it
+/// reaches the published figures (hard 76.6) for about 1.5 times the time (docs/faces.md).
+pub const SCAN_LONG_EDGE: usize = 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DetectError {
@@ -39,11 +48,13 @@ pub struct Options {
     pub nms_iou: f32,
     /// Most faces returned.
     pub max_faces: usize,
+    /// The network input's longest side: a larger photo is shrunk to fit, a smaller one is looked at as it is.
+    pub long_edge: usize,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { score: 0.6, nms_iou: 0.3, max_faces: 200 }
+        Options { score: 0.6, nms_iou: 0.3, max_faces: 200, long_edge: SCAN_LONG_EDGE }
     }
 }
 
@@ -112,9 +123,18 @@ impl Detector {
         self.net.attach_checked(accelerator, &probe, ACCELERATOR_TOLERANCE, require_faster)
     }
 
-    /// The square input side, used to check an installed manifest.
+    /// The square input side the model file declares, used to check an installed manifest.
     pub fn input_side(&self) -> usize {
         self.side
+    }
+
+    /// The network input for a `width` × `height` photo with `long_edge`: the photo's size there, and the padded input.
+    fn input_size(width: usize, height: usize, long_edge: usize) -> ((usize, usize), (usize, usize)) {
+        let long = long_edge.clamp(32, MAX_INPUT);
+        let scale = (long as f64 / width.max(height).max(1) as f64).min(1.0);
+        let nw = ((width as f64 * scale).round() as usize).clamp(1, long);
+        let nh = ((height as f64 * scale).round() as usize).clamp(1, long);
+        ((nw, nh), (nw.div_ceil(32) * 32, nh.div_ceil(32) * 32))
     }
 
     /// Find faces in an upright `width` × `height` photo of 8-bit RGB pixels (`rgb` is `width * height * 3` bytes).
@@ -129,9 +149,12 @@ impl Detector {
             score: if opts.score.is_finite() { opts.score.clamp(0.0, 1.0) } else { 0.6 },
             nms_iou: if opts.nms_iou.is_finite() { opts.nms_iou.clamp(0.0, 1.0) } else { 0.3 },
             max_faces: opts.max_faces.min(10_000),
+            long_edge: opts.long_edge,
         };
-        let scale = (self.side as f32 / width as f32).min(self.side as f32 / height as f32);
-        let input = self.letterbox(rgb, width, height, scale)?;
+        let ((nw, nh), (iw, ih)) = Self::input_size(width, height, opts.long_edge);
+        // input pixels per photo pixel, along each axis
+        let (sx, sy) = (nw as f32 / width as f32, nh as f32 / height as f32);
+        let input = letterbox(rgb, width, height, (nw, nh), (iw, ih))?;
         let outputs = self.net.run(input)?;
         let find = |name: String| {
             outputs.iter().find(|(n, _)| *n == name).map(|(_, t)| t).ok_or_else(|| DetectError::Model(format!("the model has no output `{name}`")))
@@ -140,8 +163,8 @@ impl Detector {
         for stride in STRIDES {
             let (cls, obj) = (find(format!("cls_{stride}"))?, find(format!("obj_{stride}"))?);
             let (bbox, kps) = (find(format!("bbox_{stride}"))?, find(format!("kps_{stride}"))?);
-            let cols = self.side / stride;
-            let cells = cols * cols;
+            let cols = iw / stride;
+            let cells = cols * (ih / stride);
             if cls.data.len() != cells || obj.data.len() != cells || bbox.data.len() != cells * 4 || kps.data.len() != cells * 10 {
                 return Err(DetectError::Model(format!("the outputs for stride {stride} have the wrong size")));
             }
@@ -158,13 +181,13 @@ impl Detector {
                 let mut landmarks = [(0.0, 0.0); 5];
                 for (n, l) in landmarks.iter_mut().enumerate() {
                     let (lx, ly) = (k.get(n * 2).copied().unwrap_or(0.0), k.get(n * 2 + 1).copied().unwrap_or(0.0));
-                    *l = (((lx + col) * s) / scale / width as f32, ((ly + row) * s) / scale / height as f32);
+                    *l = (((lx + col) * s) / sx / width as f32, ((ly + row) * s) / sy / height as f32);
                 }
                 candidates.push(Face {
-                    x0: (cx - w / 2.0) / scale / width as f32,
-                    y0: (cy - h / 2.0) / scale / height as f32,
-                    x1: (cx + w / 2.0) / scale / width as f32,
-                    y1: (cy + h / 2.0) / scale / height as f32,
+                    x0: (cx - w / 2.0) / sx / width as f32,
+                    y0: (cy - h / 2.0) / sy / height as f32,
+                    x1: (cx + w / 2.0) / sx / width as f32,
+                    y1: (cy + h / 2.0) / sy / height as f32,
                     score,
                     landmarks,
                 });
@@ -186,53 +209,51 @@ impl Detector {
         }
         Ok(kept)
     }
+}
 
-    /// The photo scaled by `scale` into the top left of a zero-filled square, as BGR 0..255 (the model's own input).
-    fn letterbox(&self, rgb: &[u8], width: usize, height: usize, scale: f32) -> Result<Tensor, DetectError> {
-        let side = self.side;
-        let nw = ((width as f32 * scale).round() as usize).clamp(1, side);
-        let nh = ((height as f32 * scale).round() as usize).clamp(1, side);
-        let (xt, yt) = (taps(width, nw), taps(height, nh));
-        // horizontal pass: every source row, nw columns, three channels
-        let mut mid = vec![0.0f32; height * nw * 3];
-        for (src_row, mid_row) in rgb.chunks_exact(width * 3).zip(mid.chunks_exact_mut(nw * 3)) {
-            for (x, tap) in xt.iter().enumerate() {
-                let mut acc = [0.0f32; 3];
-                for (j, wt) in tap.weights.iter().enumerate() {
-                    if let Some(px) = src_row.get((tap.start + j) * 3..(tap.start + j) * 3 + 3) {
-                        acc[0] += wt * f32::from(px[0]);
-                        acc[1] += wt * f32::from(px[1]);
-                        acc[2] += wt * f32::from(px[2]);
-                    }
-                }
-                if let Some(o) = mid_row.get_mut(x * 3..x * 3 + 3) {
-                    o.copy_from_slice(&acc);
+/// The photo resized to `nw` × `nh` into the top left of a zero-filled `iw` × `ih` input, as BGR 0..255 (the model's
+/// own input).
+fn letterbox(rgb: &[u8], width: usize, height: usize, (nw, nh): (usize, usize), (iw, ih): (usize, usize)) -> Result<Tensor, DetectError> {
+    let (xt, yt) = (taps(width, nw), taps(height, nh));
+    // horizontal pass: every source row, nw columns, three channels
+    let mut mid = vec![0.0f32; height * nw * 3];
+    for (src_row, mid_row) in rgb.chunks_exact(width * 3).zip(mid.chunks_exact_mut(nw * 3)) {
+        for (x, tap) in xt.iter().enumerate() {
+            let mut acc = [0.0f32; 3];
+            for (j, wt) in tap.weights.iter().enumerate() {
+                if let Some(px) = src_row.get((tap.start + j) * 3..(tap.start + j) * 3 + 3) {
+                    acc[0] += wt * f32::from(px[0]);
+                    acc[1] += wt * f32::from(px[1]);
+                    acc[2] += wt * f32::from(px[2]);
                 }
             }
-        }
-        // vertical pass into the planes B, G, R
-        let plane = side * side;
-        let mut data = vec![0.0f32; 3 * plane];
-        for (y, tap) in yt.iter().enumerate() {
-            for x in 0..nw {
-                let mut acc = [0.0f32; 3];
-                for (j, wt) in tap.weights.iter().enumerate() {
-                    if let Some(px) = mid.get(((tap.start + j) * nw + x) * 3..((tap.start + j) * nw + x) * 3 + 3) {
-                        acc[0] += wt * px[0];
-                        acc[1] += wt * px[1];
-                        acc[2] += wt * px[2];
-                    }
-                }
-                let at = y * side + x;
-                for (c, v) in [acc[2], acc[1], acc[0]].into_iter().enumerate() {
-                    if let Some(o) = data.get_mut(c * plane + at) {
-                        *o = v;
-                    }
-                }
+            if let Some(o) = mid_row.get_mut(x * 3..x * 3 + 3) {
+                o.copy_from_slice(&acc);
             }
         }
-        Ok(Tensor::new(vec![1, 3, side, side], data)?)
     }
+    // vertical pass into the planes B, G, R
+    let plane = iw * ih;
+    let mut data = vec![0.0f32; 3 * plane];
+    for (y, tap) in yt.iter().enumerate() {
+        for x in 0..nw {
+            let mut acc = [0.0f32; 3];
+            for (j, wt) in tap.weights.iter().enumerate() {
+                if let Some(px) = mid.get(((tap.start + j) * nw + x) * 3..((tap.start + j) * nw + x) * 3 + 3) {
+                    acc[0] += wt * px[0];
+                    acc[1] += wt * px[1];
+                    acc[2] += wt * px[2];
+                }
+            }
+            let at = y * iw + x;
+            for (c, v) in [acc[2], acc[1], acc[0]].into_iter().enumerate() {
+                if let Some(o) = data.get_mut(c * plane + at) {
+                    *o = v;
+                }
+            }
+        }
+    }
+    Ok(Tensor::new(vec![1, 3, ih, iw], data)?)
 }
 
 struct Tap {
@@ -315,7 +336,7 @@ mod tests {
         assert!(d.detect(&[0; 12], 2, 3, &o).is_err(), "wrong byte count");
         assert!(d.detect(&[0; 3], usize::MAX, 2, &o).is_err(), "overflowing size");
         assert!(d.detect(&[0; 3], MAX_SIDE + 1, 1, &o).is_err());
-        let nan = Options { score: f32::NAN, nms_iou: f32::INFINITY, max_faces: usize::MAX };
+        let nan = Options { score: f32::NAN, nms_iou: f32::INFINITY, max_faces: usize::MAX, long_edge: usize::MAX };
         assert!(d.detect(&vec![0u8; 12 * 12 * 3], 12, 12, &nan).is_ok(), "non-finite options fall back to defaults");
     }
 
@@ -366,6 +387,30 @@ mod tests {
             let worst = t.data.iter().zip(&want).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
             println!("{name}: {} values, worst difference {worst:e}", want.len());
             assert!(worst < 2e-3, "{name} differs by {worst}");
+        }
+    }
+
+    #[test]
+    fn the_input_keeps_the_photo_shape_and_never_enlarges_it() {
+        // a 24 MP photo shrinks to the long edge, padded to a multiple of 32
+        assert_eq!(Detector::input_size(6000, 4000, 1280), ((1280, 853), (1280, 864)));
+        // a WIDER FACE photo smaller than the long edge is looked at at its own size (the published protocol)
+        assert_eq!(Detector::input_size(1024, 683, 1280), ((1024, 683), (1024, 704)));
+        assert_eq!(Detector::input_size(683, 1024, 640), ((427, 640), (448, 640)));
+        // tiny pictures and silly long edges stay inside the network's limits
+        assert_eq!(Detector::input_size(1, 1, 1280), ((1, 1), (32, 32)));
+        assert_eq!(Detector::input_size(100, 100, 0), ((32, 32), (32, 32)));
+        assert_eq!(Detector::input_size(65_536, 10, usize::MAX), ((MAX_INPUT, 1), (MAX_INPUT, 32)));
+        // a scan looks at 1024 px
+        assert_eq!(Options::default().long_edge, 1024);
+    }
+
+    #[test]
+    fn every_input_size_runs_and_a_blank_photo_stays_blank() {
+        let d = Detector::new(&crate::synthetic::tiny_detector_model()).unwrap();
+        for (w, h, long) in [(900, 600, 320), (900, 600, 640), (900, 600, 1280), (600, 900, 1024), (37, 41, 1024)] {
+            let o = Options { long_edge: long, ..Options::default() };
+            assert!(d.detect(&vec![128u8; w * h * 3], w, h, &o).unwrap().is_empty(), "{w}×{h} at {long}");
         }
     }
 

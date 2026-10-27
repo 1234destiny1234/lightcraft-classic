@@ -46,7 +46,8 @@ mod webp;
 
 pub use encode::{
     ChromaSubsampling, EncodeImage, EncodeMeta, HDR_REFERENCE_WHITE_NITS, HLG_REFERENCE_PEAK_NITS, HdrTransfer, Samples, TiffCompression,
-    encode_avif, encode_avif_hdr, encode_avif_pq, encode_jpeg, encode_png, encode_png_pq, encode_psd, encode_tiff, encode_webp_lossless, hlg_signal,
+    encode_avif, encode_avif_hdr, encode_avif_pq, encode_jpeg, encode_png, encode_png_pq, encode_psd, encode_tiff, encode_tiff_associated,
+    encode_webp_lossless, hlg_signal,
 };
 pub use jxl_encode::{JxlColour, JxlEffort, JxlOptions, encode_jxl};
 pub use sniff::{Format, sniff};
@@ -283,13 +284,42 @@ pub fn decode_unguarded(bytes: &[u8], format: Format, opts: &DecodeOptions) -> R
         Format::Avif => unsupported(),
         Format::RawTiffLike | Format::RawOther => unsupported(),
     }?;
-    // an image with no pixels (a malformed header claiming zero width or height, or a buffer
-    // shorter than its size) is refused here, so nothing downstream sees an empty image
-    let (w, h) = (d.image.width, d.image.height);
-    if w == 0 || h == 0 || w.checked_mul(h).is_none_or(|n| d.image.data.len() < n) {
+    check_has_pixels(format, &d.image)?;
+    Ok(d)
+}
+
+/// An image with no pixels (a malformed header claiming zero width or height, a `w × h` that
+/// overflows, or a buffer shorter than its size) is refused, so nothing downstream sees an empty
+/// image.
+fn check_has_pixels(format: Format, image: &Rgb32f) -> Result<()> {
+    let (w, h) = (image.width, image.height);
+    if w == 0 || h == 0 || w.checked_mul(h).is_none_or(|n| image.data.len() < n) {
         return Err(Error::Malformed(format, "image has no pixels".into()));
     }
-    Ok(d)
+    Ok(())
+}
+
+#[cfg(test)]
+mod has_pixels_tests {
+    use super::*;
+
+    fn image(width: usize, height: usize, len: usize) -> Rgb32f {
+        Rgb32f { width, height, data: vec![[0.0; 3]; len] }
+    }
+
+    #[test]
+    fn decoded_image_without_pixels_is_refused() {
+        for (w, h, len) in [(0, 4, 0), (4, 0, 0), (usize::MAX, 2, 1), (4, 4, 15)] {
+            let r = check_has_pixels(Format::Png, &image(w, h, len));
+            assert!(matches!(r, Err(Error::Malformed(Format::Png, _))), "{w}x{h} with {len} pixels");
+        }
+    }
+
+    #[test]
+    fn decoded_image_with_all_pixels_is_accepted() {
+        assert!(check_has_pixels(Format::Png, &image(4, 4, 16)).is_ok());
+        assert!(check_has_pixels(Format::Png, &image(1, 1, 1)).is_ok());
+    }
 }
 
 /// Convert a decode result to linear Rec.2020 D65 (Bradford-adapted), the develop working space.
@@ -311,6 +341,27 @@ pub fn to_working(d: &Decoded) -> Rgb32f {
         }
     }
     img
+}
+
+/// Undo [`to_working`]'s flatten onto white for an output that keeps transparency (issue #2976):
+/// the straight colour `c` from the flattened `f = c·a + (1 − a)` and the alpha `a` it was flattened
+/// with. Exact in linear light, and after any linear resample of both (fitting, orienting), where it
+/// gives the alpha-weighted colour. Pixels with almost no alpha keep the white: their colour is not
+/// recoverable, and white is what edits around them saw before. `None` when `alpha` does not match
+/// `img`.
+pub fn unflatten(img: &Rgb32f, alpha: &Plane) -> Option<Rgb32f> {
+    if (alpha.width, alpha.height) != (img.width, img.height) || alpha.data.len() != img.data.len() {
+        return None;
+    }
+    const VISIBLE: f32 = 1.0 / 1024.0;
+    let mut out = img.clone();
+    for (p, &av) in out.data.iter_mut().zip(&alpha.data) {
+        if av.is_finite() && av >= VISIBLE {
+            let av = av.min(1.0);
+            *p = p.map(|f| (f - (1.0 - av)) / av);
+        }
+    }
+    Some(out)
 }
 
 /// Where a thumbnail came from.

@@ -277,6 +277,12 @@ impl Entry {
         }
         if let Some(w) = self.white {
             raw.white = vec![w; cpp];
+            // the entry's white level replaces any the decoder raised to the sensor's saturation point (CR3), and with
+            // it the baseline exposure that raise added
+            if raw.color.white_extension_ev.is_finite() {
+                raw.color.baseline_exposure -= raw.color.white_extension_ev;
+            }
+            raw.color.white_extension_ev = 0.0;
             applied.levels = true;
         }
         applied

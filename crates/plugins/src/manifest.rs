@@ -1,5 +1,5 @@
 //! The plug-in manifest (`lcc_manifest`, UTF-8 JSON): identity, requested capabilities and what
-//! the plug-in contributes (commands with declarative dialogs, hooks, a publish service).
+//! the plug-in contributes (commands with declarative dialogs, hooks, a publish service, settings).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -21,12 +21,22 @@ pub const MAX_METADATA_FIELDS: usize = 32;
 pub const MAX_REQUIRES: usize = 64;
 /// Longest `version` the host reads.
 pub const MAX_VERSION_BYTES: usize = 64;
+/// Most options a choice field may have.
+pub const MAX_OPTIONS: usize = 64;
+/// Longest option of a choice field filled at run time.
+pub const MAX_OPTION_BYTES: usize = 1024;
+/// Longest text value a field takes.
+pub const MAX_TEXT_BYTES: usize = 64 * 1024;
 
 /// The host features this version of the app has, by name. A plug-in lists the ones it uses in
 /// `requires` and isn't installed (or loaded) where one is missing. Every manifest field,
 /// permission group or host call added from now on gets a name here; what the host had before
 /// `requires` existed is the baseline and has none.
-pub const HOST_FEATURES: &[&str] = &[];
+pub const HOST_FEATURES: &[&str] = &[
+    // `settings` in the manifest, `settings.get` / `settings.set`, dialogs that remember their
+    // values (`remember`), and the `command.prepare` / `settings.prepare` hooks
+    "settings",
+];
 
 /// The manifest a plug-in returns from `lcc_manifest`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -65,6 +75,10 @@ pub struct Manifest {
     /// own namespace (the key is the field key).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub metadata_fields: Vec<MetadataField>,
+    /// Settings, shown on the plug-in's page and kept for the whole app (`settings.get`); a field
+    /// with `prepare` has its options filled by the `settings.prepare` hook.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<Field>,
 }
 
 /// An export destination ("Upload to my server").
@@ -96,7 +110,7 @@ pub struct MetadataField {
 impl MetadataField {
     /// The field as a dialog field (same checks, same coercion).
     pub fn as_field(&self) -> Field {
-        Field { key: self.key.clone(), label: self.label.clone(), kind: self.kind.clone() }
+        Field { key: self.key.clone(), label: self.label.clone(), kind: self.kind.clone(), remember: true, prepare: false }
     }
 }
 
@@ -113,6 +127,10 @@ pub struct CommandDecl {
     /// A dialog asked before the command runs; its values arrive as `args`.
     #[serde(default)]
     pub dialog: Vec<Field>,
+    /// Ask the plug-in first (`{"hook": "command.prepare"}`): it shows the dialog with options
+    /// and defaults of its own, runs the command without it, or explains why it can't run.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub prepare: bool,
 }
 
 /// Which hooks the plug-in implements.
@@ -137,7 +155,7 @@ pub struct PublishDecl {
     pub name: String,
 }
 
-/// One dialog field.
+/// One dialog or settings field.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Field {
@@ -145,6 +163,24 @@ pub struct Field {
     pub label: String,
     #[serde(flatten)]
     pub kind: FieldKind,
+    /// A dialog field opens with the value it was last run with (`false`: always its default).
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub remember: bool,
+    /// A settings field whose options and default the `settings.prepare` hook fills.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub prepare: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_true(b: &bool) -> bool {
+    *b
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// A field's type and default.
@@ -164,7 +200,10 @@ pub enum FieldKind {
         #[serde(default)]
         default: bool,
     },
+    /// `options` may be empty in a `prepare` command's dialog or a `prepare` settings field: the
+    /// plug-in gives them at run time.
     Choice {
+        #[serde(default)]
         options: Vec<String>,
         #[serde(default)]
         default: Option<String>,
@@ -236,7 +275,10 @@ impl Manifest {
                 return bad(format!("command {:?}: at most {MAX_FIELDS} dialog fields", c.id));
             }
             for f in &c.dialog {
-                f.validate().map_err(|e| Error::Manifest(format!("command {:?}: {e}", c.id)))?;
+                f.validate(c.prepare).map_err(|e| Error::Manifest(format!("command {:?}: {e}", c.id)))?;
+                if f.prepare {
+                    return bad(format!("command {:?}: field {:?}: `prepare` is for settings fields (a command takes `prepare: true`)", c.id, f.key));
+                }
             }
         }
         if let Some(p) = &self.publish
@@ -256,7 +298,10 @@ impl Manifest {
                 return bad(format!("export destination {:?}: at most {MAX_FIELDS} dialog fields", d.id));
             }
             for f in &d.dialog {
-                f.validate().map_err(|e| Error::Manifest(format!("export destination {:?}: {e}", d.id)))?;
+                f.validate(false).map_err(|e| Error::Manifest(format!("export destination {:?}: {e}", d.id)))?;
+                if f.prepare {
+                    return bad(format!("export destination {:?}: field {:?}: `prepare` is for settings fields", d.id, f.key));
+                }
             }
         }
         if self.metadata_fields.len() > MAX_METADATA_FIELDS {
@@ -267,7 +312,17 @@ impl Manifest {
             if !seen.insert(f.key.as_str()) || f.label.trim().is_empty() {
                 return bad(format!("metadata field {:?}: needs a unique key and a label", f.key));
             }
-            f.as_field().validate().map_err(|e| Error::Manifest(format!("metadata field: {e}")))?;
+            f.as_field().validate(false).map_err(|e| Error::Manifest(format!("metadata field: {e}")))?;
+        }
+        if self.settings.len() > MAX_FIELDS {
+            return bad(format!("at most {MAX_FIELDS} settings"));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for f in &self.settings {
+            if !seen.insert(f.key.as_str()) || f.label.trim().is_empty() {
+                return bad(format!("setting {:?}: needs a unique key and a label", short(&f.key)));
+            }
+            f.validate(f.prepare).map_err(|e| Error::Manifest(format!("setting: {e}")))?;
         }
         Ok(())
     }
@@ -293,25 +348,84 @@ impl Manifest {
     pub fn metadata_field(&self, key: &str) -> Option<&MetadataField> {
         self.metadata_fields.iter().find(|f| f.key == key)
     }
+
+    pub fn setting(&self, key: &str) -> Option<&Field> {
+        self.settings.iter().find(|f| f.key == key)
+    }
 }
 
 impl Field {
-    fn validate(&self) -> std::result::Result<(), String> {
+    /// `run_time`: the plug-in may give a choice's options at run time, so it may declare none.
+    fn validate(&self, run_time: bool) -> std::result::Result<(), String> {
         if !valid_id(&self.key) || self.label.len() > 128 {
-            return Err(format!("field {:?}: bad key or label", self.key));
+            return Err(format!("field {:?}: bad key or label", short(&self.key)));
         }
         match &self.kind {
             FieldKind::Number { min, max, default } if !(min.is_finite() && max.is_finite() && min <= max && (min..=max).contains(&default)) => {
                 Err(format!("field {:?}: needs finite min <= default <= max", self.key))
             }
-            FieldKind::Choice { options, default }
-                if options.is_empty() || options.len() > 64 || default.as_ref().is_some_and(|d| !options.contains(d)) =>
-            {
-                Err(format!("field {:?}: 1-64 options, default among them", self.key))
+            FieldKind::Choice { options, .. } if options.is_empty() && !run_time => {
+                Err(format!("field {:?}: 1-{MAX_OPTIONS} options (none only when the plug-in gives them at run time: `prepare`)", self.key))
+            }
+            FieldKind::Choice { options, default } if options.len() > MAX_OPTIONS || default.as_ref().is_some_and(|d| !options.contains(d)) => {
+                Err(format!("field {:?}: at most {MAX_OPTIONS} options, default among them", self.key))
             }
             FieldKind::Text { default } if default.len() > 4096 => Err(format!("field {:?}: default too long", self.key)),
             _ => Ok(()),
         }
+    }
+
+    /// A choice whose options the plug-in gives at run time (it declares none).
+    pub fn options_at_run_time(&self) -> bool {
+        matches!(&self.kind, FieldKind::Choice { options, .. } if options.is_empty())
+    }
+
+    /// The field with the options and default a `prepare` hook gave (`{options?, default?}`), or
+    /// why they don't fit it: options only for a choice (1-64 non-empty texts of at most 1024
+    /// bytes), a default the field (with those options) takes.
+    pub fn prepared(&self, o: &Value) -> std::result::Result<Field, String> {
+        let o = o.as_object().ok_or_else(|| format!("`{}`: expected {{options?, default?}}", self.key))?;
+        if let Some(k) = o.keys().find(|k| !matches!(k.as_str(), "options" | "default")) {
+            return Err(format!("`{}`: unknown key {:?}", self.key, short(k)));
+        }
+        if self.options_at_run_time() && !o.contains_key("options") {
+            return Err(format!("`{}`: no options given", self.key));
+        }
+        let mut f = self.clone();
+        if let Some(opts) = o.get("options") {
+            let FieldKind::Choice { options, default } = &mut f.kind else {
+                return Err(format!("`{}`: only a choice field takes options", self.key));
+            };
+            let list = opts.as_array().filter(|a| (1..=MAX_OPTIONS).contains(&a.len()));
+            let list = list.ok_or_else(|| format!("`{}`: options must be a list of 1-{MAX_OPTIONS} texts", self.key))?;
+            let mut new = Vec::with_capacity(list.len());
+            for v in list {
+                let t = v.as_str().filter(|t| !t.is_empty() && t.len() <= MAX_OPTION_BYTES);
+                new.push(t.ok_or_else(|| format!("`{}`: each option must be a text of 1-{MAX_OPTION_BYTES} bytes", self.key))?.to_string());
+            }
+            // the declared default stays only if it is still offered
+            if default.as_ref().is_some_and(|d| !new.contains(d)) {
+                *default = None;
+            }
+            *options = new;
+        }
+        if let Some(d) = o.get("default") {
+            let v = f.coerce(d)?;
+            match &mut f.kind {
+                FieldKind::Text { default } => {
+                    let t = v.as_str().unwrap_or_default();
+                    // the same cap as a declared default
+                    if t.len() > 4096 {
+                        return Err(format!("`{}`: default too long", self.key));
+                    }
+                    *default = t.to_string();
+                }
+                FieldKind::Number { default, .. } => *default = v.as_f64().unwrap_or(*default),
+                FieldKind::Bool { default } => *default = v.as_bool().unwrap_or(*default),
+                FieldKind::Choice { default, .. } => *default = v.as_str().map(str::to_string),
+            }
+        }
+        Ok(f)
     }
 
     pub fn default_value(&self) -> Value {
@@ -343,9 +457,13 @@ impl Field {
     pub fn coerce(&self, v: &Value) -> std::result::Result<Value, String> {
         let wrong = || format!("`{}` must be {}", self.key, self.kind_name());
         match &self.kind {
-            FieldKind::Text { .. } => v.as_str().filter(|s| s.len() <= 64 * 1024).map(Value::from).ok_or_else(wrong),
+            FieldKind::Text { .. } => v.as_str().filter(|s| s.len() <= MAX_TEXT_BYTES).map(Value::from).ok_or_else(wrong),
             FieldKind::Number { min, max, .. } => v.as_f64().filter(|x| x.is_finite()).map(|x| Value::from(x.clamp(*min, *max))).ok_or_else(wrong),
             FieldKind::Bool { .. } => v.as_bool().map(Value::from).ok_or_else(wrong),
+            // options given at run time: any option the plug-in could have given (it checks them)
+            FieldKind::Choice { options, .. } if options.is_empty() => {
+                v.as_str().filter(|s| !s.is_empty() && s.len() <= MAX_OPTION_BYTES).map(Value::from).ok_or_else(wrong)
+            }
             FieldKind::Choice { options, .. } => v.as_str().filter(|s| options.iter().any(|o| o == s)).map(Value::from).ok_or_else(wrong),
         }
     }
@@ -441,6 +559,55 @@ mod tests {
             json!({"id": "a", "name": "A", "metadataFields": [{"key": "k", "label": "K", "type": "text"}, {"key": "k", "label": "L", "type": "text"}]}),
             json!({"id": "a", "name": "A", "metadataFields": [{"key": "k k", "label": "K", "type": "text"}]}),
             json!({"id": "a", "name": "A", "metadataFields": [{"key": "c", "label": "C", "type": "choice", "options": []}]}),
+        ] {
+            assert!(Manifest::parse(bad.to_string().as_bytes()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn settings_prepare_and_remember() {
+        let m = Manifest::parse(
+            json!({"id": "a", "name": "A",
+                "commands": [{"id": "go", "label": "Go", "prepare": true, "dialog": [
+                    {"key": "v", "label": "V", "type": "choice", "options": []},
+                    {"key": "once", "label": "Once", "type": "bool", "remember": false}]}],
+                "settings": [{"key": "v", "label": "V", "type": "choice", "prepare": true},
+                    {"key": "n", "label": "N", "type": "number", "min": 0, "max": 1, "default": 0}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+        let go = m.command("go").unwrap();
+        assert!(go.prepare && go.dialog[0].remember && !go.dialog[1].remember);
+        let v = m.setting("v").unwrap();
+        assert!(v.prepare && v.options_at_run_time());
+        assert_eq!(Manifest::parse(&serde_json::to_vec(&m).unwrap()).unwrap(), m, "written back as read (plugin.list)");
+        // until the plug-in gives the options, any option it could give
+        assert_eq!(v.coerce(&json!("4.2")).unwrap(), "4.2");
+        assert!(v.coerce(&json!("")).is_err() && v.coerce(&json!("x".repeat(MAX_OPTION_BYTES + 1))).is_err());
+        // what a prepare step may give
+        let p = v.prepared(&json!({"options": ["1", "2"], "default": "2"})).unwrap();
+        assert_eq!(p.default_value(), "2");
+        assert!(p.coerce(&json!("3")).is_err(), "only what it offered");
+        for bad in [json!({"options": []}), json!({"options": [""]}), json!({"options": ["1"], "default": "3"}), json!({"extra": 1}), json!("1")] {
+            assert!(v.prepared(&bad).is_err(), "{bad}");
+        }
+        let n = m.setting("n").unwrap();
+        assert!(n.prepared(&json!({"options": ["a"]})).is_err(), "options only for a choice");
+        assert_eq!(n.prepared(&json!({"default": 5})).unwrap().default_value(), json!(1.0), "clamped");
+        let t: Field = serde_json::from_value(json!({"key": "t", "label": "T", "type": "text"})).unwrap();
+        assert_eq!(t.prepared(&json!({"default": "x".repeat(4096)})).unwrap().default_value(), json!("x".repeat(4096)));
+        assert!(t.prepared(&json!({"default": "x".repeat(4097)})).is_err(), "no longer than a declared default");
+
+        let choice = |options: Value| json!({"key": "c", "label": "C", "type": "choice", "options": options});
+        for bad in [
+            json!({"id": "a", "name": "A", "commands": [{"id": "go", "label": "Go", "dialog": [choice(json!([]))]}]}),
+            json!({"id": "a", "name": "A", "settings": [choice(json!([]))]}),
+            json!({"id": "a", "name": "A", "commands": [{"id": "go", "label": "Go", "prepare": true, "dialog": [{"key": "c", "label": "C", "type": "text", "prepare": true}]}]}),
+            json!({"id": "a", "name": "A", "exportDestinations": [{"id": "d", "name": "D", "dialog": [choice(json!([]))]}]}),
+            json!({"id": "a", "name": "A", "settings": [choice(json!(["x"])), choice(json!(["y"]))]}),
+            json!({"id": "a", "name": "A", "settings": [{"key": "t", "label": " ", "type": "text"}]}),
+            json!({"id": "a", "name": "A", "settings": (0..=MAX_FIELDS).map(|i| json!({"key": format!("k{i}"), "label": "K", "type": "bool"})).collect::<Vec<_>>()}),
         ] {
             assert!(Manifest::parse(bad.to_string().as_bytes()).is_err(), "{bad}");
         }

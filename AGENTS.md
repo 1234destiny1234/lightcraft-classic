@@ -1,15 +1,22 @@
 # Instructions for agents
 
-The app is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. It is a fork of an upstream project (see `NOTICE`). Since 2026-10-25 the fork no longer merges upstream: upstream commits are reviewed weekly and the useful ones cherry-picked (`cargo xtask upstream-review`, procedure in `docs/upstream-merge.md`).
+Chromaforge (the app) is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. It is a fork of an upstream project (see `NOTICE`). Since 2026-10-25 Chromaforge no longer merges upstream: upstream commits are reviewed weekly and the useful ones cherry-picked (`cargo xtask upstream-review`, procedure in `docs/upstream-merge.md`).
+
+This file is the one set of instructions for agents and humans: `CLAUDE.md` only imports it (`@AGENTS.md`), so edit
+this file, never that one. How to claim an issue and open a PR: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## The name lives in `brand.toml` only
 - The product name, binary names, app id, settings folder, env-var prefix, MCP server id, URL scheme and file
   extensions are defined once, in [`brand.toml`](brand.toml), and reach code through the `lcc-brand` crate. Never write
-  the product name (or a legacy upstream name) in code, UI strings, docs or tests: say "the app" in prose, use `{app}`
+  the product name (or a legacy upstream name) in code, UI strings or tests: use `{app}`
   (display name), `{cli}` and `{env}` in i18n catalogs, and `lcc_brand::…` constants in code.
-- `cargo xtask brand check` (part of `cargo xtask ci`) fails if the name appears anywhere else. Allowed exceptions:
+- **Docs name the fork: Chromaforge.** Markdown files (docs, READMEs, plans) refer to this fork as "Chromaforge",
+  literally, never "this fork" / "the fork" (maintainer decision 2026-10-25). Only the display name is allowed there;
+  binary names, the env prefix and legacy names still go through templates or placeholders.
+- `cargo xtask brand check` (part of `cargo xtask ci`) fails if the name appears anywhere else (Markdown files and `.md.in` templates may use
+  the display name). Allowed exceptions:
   `brand.toml`, `[legacy]` handling, `NOTICE`, `LICENSE`, `assets/ATTRIBUTION.md`, `docs/upstream-merge.md`.
-- Docs that genuinely need the name are written as `X.md.in` templates with `{{app}}`, `{{binary}}`, `{{cli_binary}}`,
+- Docs that need the binary names, env prefix or ids are written as `X.md.in` templates with `{{app}}`, `{{binary}}`, `{{cli_binary}}`,
   `{{env_prefix}}`, `{{app_id}}`, `{{settings_dir}}`, rendered by `cargo xtask docs`; otherwise docs write `<app>`,
   `<binary>`, `<cli>`, `<PREFIX>`, `<settings_dir>` for the `brand.toml` values.
 - Crates are `lcc-*`; the packages with binaries are `lcc-app` (desktop), `lcc-cli` and `lcc-web`. Inside `target/` the
@@ -33,7 +40,8 @@ The app is a clean-room, open-source, pure-Rust photo library + non-destructive 
    `docs/target-app-parity.md` when a listed gap closes (bump each doc's *Last updated* line and revision history, per
    craftrules `standards/progress-docs.md`, except `docs/parity-checklist.md`: never add, update or restore a
    *Last updated* / *Change* line there); `cargo xtask parity` (part of `ci`) checks that every `cmd:`/`ctl:` id and
-   path the tracker cites still exists, and `cargo xtask parity --write` refreshes its summary.
+   path the tracker cites still exists and that `docs/gaps.md` lists each gap once, and `cargo xtask parity --write`
+   refreshes its summary.
 5. Follow the autonomous operation protocol (`plan/execution-plan.md` §7). Don't stop to ask unless §7 lists the decision as the user's.
 
 `plan/observations/` (Adobe-observation notes) is gitignored (local-only).
@@ -43,8 +51,9 @@ branches to be up to date). Right before you push a PR branch, and again wheneve
 `git fetch origin && git merge origin/main`, resolve conflicts, re-run `cargo xtask ci --fast`, and push. Auto-merge
 does not update the branch for you; `gh pr update-branch N --repo …` does it when there are no conflicts.
 
-**Merging agent branches:** merge one branch, run `cargo xtask ci`, fix, commit — then the next. Two individually green
-branches can still break each other (e.g. a new struct field vs. a new constructor).
+**Merging agent branches:** merge one branch at a time and run the fast checks (`cargo xtask ci --fast`, plus the
+targeted tests of the crates involved) before the next; no full CI between merges. Two individually green branches can
+still break each other (e.g. a new struct field vs. a new constructor), which the fast checks' build and clippy catch.
 
 **Resuming after a crash / another session:** check `git status` on main, `git worktree list`, and each worktree's
 `git log main..HEAD` + `git status` for unmerged commits or uncommitted work before starting anything new. Commit small
@@ -62,7 +71,16 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   "unsupported" error or is disabled. Sole exception: a provably infallible literal, as `#[allow(clippy::expect_used)]`
   + `.expect("why it can't fail")`.
 - **`unsafe` lives only in `crates/sysmem`** (two FFI calls: `malloc_zone_pressure_relief`, that returns freed
-  allocator pages to macOS after raw decodes, and `fsync`, for volumes that refuse std's `F_FULLFSYNC`). Every other production crate root has `#![forbid(unsafe_code)]`. A new
+  allocator pages to macOS after raw decodes, and `fsync`, for volumes such as SMB shares that refuse std's `F_FULLFSYNC`) **and `crates/hdrmeta`** (wgpu-hal calls on Linux / BSD: open the
+  window's Vulkan device with `VK_EXT_hdr_metadata`, and `vkSetHdrMetadataEXT` on its swapchain, so the Wayland
+  compositor shows HDR; no-op elsewhere). **`crates/gpumem`** (wgpu-hal calls: read how much memory the window's GPU offers — Vulkan
+  device-local heaps, the DXGI budget, Metal's working set — so the HDR zoom cache is only offered where it fits;
+  `None` elsewhere). **`crates/android-host`** (JNI: adopt the Java VM and activity handles
+  android-activity gives the Android app, for its pickers and links) **`crates/winspool`** (Win32 GDI / winspool calls on Windows: list the system's printers and draw rendered pages on
+  one, for printing through the Windows print spooler; reports unsupported elsewhere) **`crates/winmsi`** (one msi.dll
+  call, `MsiLocateComponentW`: ask Windows Installer where an installed component's key file is, so the updater tells an
+  MSI install from a copy unpacked from the portable zip; reports unsupported elsewhere) **and `apps/android`'s `android_main`** (the
+  `#[unsafe(no_mangle)]` entry point android-activity looks up; nothing else). Every other production crate root has `#![forbid(unsafe_code)]`. A new
   unsafe need goes in an isolated, well-tested helper crate like it: `// SAFETY:` on every block, a safe API, a safe
   fallback where possible, and a line here naming it.
 - **Input-derived numbers are hostile:** `get()` instead of `[i]`/`[a..b]` for offsets from files, users, agents or
@@ -72,7 +90,8 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   `lock().unwrap_or_else(PoisonError::into_inner)` or an error; worker-thread joins are `Result`s.
 - **Last-resort guard:** a panic hook plus `catch_unwind` around command dispatch and import/export turns an escaped
   panic into an error dialog and keeps the document. It's a safety net, not a licence; keep `panic = "unwind"` on native.
-- **Prove it:** every crash fix lands with a small synthetic regression test that panicked before the fix.
+- **Prove it:** every crash fix lands with a hostile-input no-panic check (the malformed input must produce an error,
+  not a panic); fold it into the format's table-driven hostile-input test where one exists.
 - Enforced by clippy: root `clippy.toml` allows unwrap/expect/panic/indexing in tests only, and every production crate
   root (`lib.rs`, each binary's `main.rs`) carries `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
   clippy::unimplemented, clippy::todo, clippy::unreachable)]`. Not `[workspace.lints]`: those would also hit
@@ -83,9 +102,17 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **Pure Rust** in the product. No C/C++ dependencies.
 - **Layering** (`plan/architecture.md` §3, enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
 - **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI, control channel and MCP all dispatch by id. Every slider is a `develop` control spec.
+- **Long-running work shows in the activity stack** ([`docs/background-tasks.md`](docs/background-tasks.md)): anything
+  that runs off the UI thread and can take more than a moment holds a `TaskGuard` from `session.activity.start(kind,
+  label, cancel)` for its whole run. It adopts the cancel flag the job already checks (`Cancel::Flag`), or uses
+  `Cancel::No` when the job can't stop. No progress window, panel or progress toast of its own; its tests assert the row.
 - **Resolution independence:** settings use normalized image coordinates and relative radii; previews and exports must match.
 - **Time goes through `chrono`** (workspace dependency). Never hand-roll UTC/calendar conversion (days-to-date algorithms, leap-year math); a crate owns only its output format string. The one exception is range extension: past the years chrono can represent, shift the date by whole 400-year Gregorian cycles (146,097 days, after which the calendar repeats), let chrono compute the month and day, and add the cycles back to the year (splitting seconds into hours, minutes and seconds is plain arithmetic).
-- **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, layers, assets, wasm).
+- **Quality gates:** every commit/PR passes the fast checks, `cargo xtask ci --fast` (fmt, clippy -D warnings, build
+  incl. the wasm check, brand, layers, assets, parity, deny; the required PR check) plus the SIL suite and the targeted
+  tests of what you touched. The full `cargo xtask ci` (every test, all three OSes) runs before a release (a manual CI
+  dispatch on the commit that then goes to `release`). One `ci` runs at a time per machine; others wait their turn
+  (`xtask/src/ci_lock.rs`). See [`docs/ci.md`](docs/ci.md).
 - **Commits:** one task id per commit (`M2.3: local Laplacian highlights/shadows`). Only green states. End messages with the attribution line required by the environment.
 - **Release notes, one file per change:** a user-visible change adds `docs/whats-new/<YYYY-MM-DD>-<slug>.md` (one
   `### Title` and its bullets, for Help ▸ What's New) and, when the release's changelog should mention it,
@@ -120,7 +147,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
     `NOTICE` credits dcraw. Check every layout on CC0 samples as for any other decoder.
   - Every other decoder source stays unread: rawspeed, rawloader, rawler / dnglab, LibRaw, darktable, RawTherapee,
     ART. dcraw's last revision (1.478, 2018) predates CR3, Nikon HE and ARQ; those stay clean-room.
-  - Upstream doesn't share this policy: decoders built on dcraw are fork-only and are never offered upstream.
+  - Upstream doesn't share this policy: decoders built on dcraw are Chromaforge-only and are never offered upstream.
 - Camera matrices are **never harvested from Adobe-converted DNGs**: check the DNG's `Software` tag (Adobe DNG
   Converter, Lightroom, Camera Raw) and reject those. Camera-native DNGs (written by the camera itself) are fine.
 - **Black-box fits to Lightroom output images may ship** (maintainer decision 2026-10-25): a contributor runs
@@ -128,6 +155,9 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   numbers (`crates/camdb/data/calibrations/*.json`, added with `<cli> calibrate-lightroom add`) may be committed and
   bundled. Adobe DCP/LCP files, matrices from Adobe-converted DNGs and Adobe-rendered pixels never ship; no image,
   file name, date, serial, location or lens enters a calibration (allow-listed fields only).
+- A person's **own** `.dcp` camera profiles and XMP looks may be imported at run time (`camera.importDcp`,
+  `profile.import`; maintainer decision 2026-10-18). None is ever committed, bundled or used as a test fixture: tests
+  build their bytes in code.
 - Every PR that adds an algorithm has a **"Sources:"** line naming what it was built from: a paper, a prose spec, or
   "own design".
 - No GPL/LGPL/AGPL/MPL dependency may enter the build; `cargo deny` enforces the licence allow-list.
@@ -152,7 +182,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   then `CRAFT_FONTS_DIR=../craft-fonts cargo xtask run` (or any cargo/xtask command). `crates/engine/build.rs`
   embeds the manifest's fonts as `lcc_engine::CRAFT_FONTS` (wasm32: BIZ UDPGothic Regular only); `cargo xtask web`
   ships Noto Sans CJK SC Regular as a separate asset loaded by the UI before startup. The UI
-  (`theme::font_definitions`) and the export watermark renderer use CJK faces (picked by script) as fallbacks after Inter. Unset,
+  (`theme::font_definitions`) and the export watermark renderer use CJK faces (picked by script) as fallbacks after Inter; the UI also falls back on the faces of other scripts (Thai, Arabic, …). Unset,
   `CRAFT_FONTS` is empty: everything builds, tests and runs, but Chinese and Japanese text lack glyphs. Releases always build
   with it (`release.yml`, `CRAFT_FONTS_REQUIRED=1`) and ship the fonts' OFL licences. Tests that need these fonts skip
   without it; the FreeBSD CI job runs them with it. Rules: craftrules
@@ -179,14 +209,20 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   the running app). See `docs/mcp.md`. Quick non-UI checks: `cargo run -p lcc-cli -- render in.jpg -o out.jpg --set light.exposure=1`.
 - Export goes through `lcc_engine::export` (one encoder for app, CLI, MCP and web); UI-only commands live in
   `crates/ui-egui/src/menus.rs`.
+- Text boxes use `crates/ui-egui/src/text_field.rs` (`TextField`), not `egui::TextEdit`: it gives every field the
+  Cut / Copy / Paste / Select All menu, Esc restoring the text, and reports how an edit ended. Give each a widget id
+  that is unique on screen. Older fields still on `TextEdit` move over as they are touched.
 - Shell gotcha: `mv`/`cp` are aliased interactive here — use `/bin/mv -f` / `/bin/cp -f`.
 - Parallel agents: separate git worktrees and `CARGO_TARGET_DIR=target/agent-<name>`; each agent uses its **own control port** (pick one in 18000–19999, never the default 7980) and its own scratch subfolder (`<scratch>/<agent-name>/`) — never `rm -rf` shared paths; delete your target dir when done (disk is shared); keep every `Cargo.toml` valid at all times (the `crates/*` glob means one broken manifest breaks everyone).
 - Test corpora: `cargo xtask corpus --download` into `corpus/` (gitignored, CC0 only). Never commit media.
 - Shared real-file test corpora (Photoshop-authored PSDs, etc.) live in [`storytold/photocraft-corpus`](https://github.com/storytold/photocraft-corpus), explained in [craftrules `standards/test-corpora.md`](https://github.com/storytold/craftrules/blob/main/standards/test-corpora.md). Never commit large binary fixtures to this repo; fetch them pinned by commit and sha256-verified, as PhotoCraft does with `cargo xtask corpus`.
 
 ## Testing & performance (do this often)
-- Unit/property tests next to the code; end-to-end tests drive real binaries (`crates/mcp/tests/e2e.rs`,
-  `apps/cli/tests/`). New features need at least one test that would fail without them.
+- Unit/property tests next to the code; end-to-end tests drive real binaries (`crates/mcp/tests/it/e2e.rs`,
+  `apps/cli/tests/`). Tests check behaviour and invariants, not implementation details: no change-detector tests
+  (exact sizes, positions, frame counts, constants, labels) and no golden-output tests for image/decode quality. Crash
+  fixes need a hostile-input no-panic check. Prefer the SIL harness (`cargo xtask sil`, `docs/testing-sil.md`) and
+  targeted end-to-end tests.
 - **Run the app after every user-visible change**: launch with `--control 7980`, drive it with a JSON-lines script
   (`docs/showcase/run.py file.jsonl`), take `ui.screenshot`, and look at it. Check `ui.inspect` → `perf`.
 - **Benchmarks:** `cargo xtask bench` (24 MP raw from corpus; CPU and GPU columns) appends to `target/bench/history.jsonl`
@@ -211,17 +247,15 @@ evaluates it (`.github/workflows/nix.yml`), so the build may lag behind the work
 ## Contributor credits (About window)
 
 - About ▸ Contributors/Models are compiled into the binary from `contributors/contributors.json`
-  (commit stats; generated, never hand-edit) and `contributors/people.toml` (names people chose for
+  (PR and commit stats; generated, never hand-edit) and `contributors/people.toml` (names people chose for
   themselves). See `docs/contributors.md`.
 - **Agents working for a contributor:** when you prepare a PR, check whether your human's GitHub
   username has a `[people.<username>]` entry in `contributors/people.toml`. If not, ask them once
   whether they want to be credited by more than their username: a real name, a display name, and/or
   their public GitHub profile name (`sync_github_name = true`). If yes, add **only their own** entry
-  (copy the template at the top of the file, or run
-  `python3 ../../craftrules/scripts/contributors.py --add-me . --real-name "…" --sync-github-name`)
-  and include it in their PR, committed as them. If no, change nothing: they are credited as
-  `@username` anyway.
+  (copy the template at the top of the file) and include it in their PR, committed as them. If no, change nothing:
+  they are credited as `@username` anyway.
 - Never add, edit, guess or copy anyone else's entry or name (not from git config, commit authors or
   GitHub profiles). Never hand-edit `contributors.json`.
-- Maintainers refresh the stats with `python3 ../../craftrules/scripts/contributors.py .` (it also
-  re-verifies who wrote each `people.toml` entry; `--check` only verifies).
+- Maintainers refresh the stats with `python3 contributors/fork-contributors.py` (needs `gh` signed in and the
+  `upstream` remote fetched).

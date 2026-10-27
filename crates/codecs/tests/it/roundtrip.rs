@@ -980,3 +980,60 @@ fn jxl_bad_input_is_an_error() {
         encode_jxl(&EncodeImage::new(1, 1, 3, Samples::U8(&one)), &JxlOptions { quality: 1, ..Default::default() }, &EncodeMeta::default()).unwrap();
     assert_eq!(decode(&b, DecodeOptions::default()).unwrap().width, 1);
 }
+
+/// Issue #2976: an associated-alpha TIFF (8 and 16 bits) stores premultiplied colour with
+/// `ExtraSamples` = 1 and decodes back to the straight colour; without alpha it is a plain TIFF.
+#[test]
+fn associated_alpha_tiff_round_trips() {
+    let (w, h) = (16usize, 4usize);
+    let px: Vec<[u8; 4]> = (0..w * h).map(|i| [200, (i * 9 % 256) as u8, 30, if i % 4 == 0 { 255 } else { (i * 13 % 256) as u8 }]).collect();
+    let flat: Vec<u8> = px.iter().flatten().copied().collect();
+    let tiff =
+        encode_tiff_associated(&EncodeImage::new(w as u32, h as u32, 4, Samples::U8(&flat)), TiffCompression::Lzw, &Default::default()).unwrap();
+    assert!(tiff.windows(10).any(|win| win == [0x52, 0x01, 3, 0, 1, 0, 0, 0, 1, 0]), "ExtraSamples = 1");
+    let d = decode(&tiff, Default::default()).unwrap();
+    let back = d.to_srgb8();
+    for (i, (p, q)) in px.iter().zip(&back.data).enumerate() {
+        assert_eq!(p[3], q[3], "alpha at {i}");
+        if p[3] >= 64 {
+            // (premultiplied 8-bit colour loses a little precision where alpha is low)
+            for c in 0..3 {
+                assert!(p[c].abs_diff(q[c]) <= 4, "colour at {i}: {p:?} vs {q:?}");
+            }
+        }
+    }
+    let wide: Vec<u16> = flat.iter().map(|&v| v as u16 * 257).collect();
+    let tiff16 =
+        encode_tiff_associated(&EncodeImage::new(w as u32, h as u32, 4, Samples::U16(&wide)), TiffCompression::None, &Default::default()).unwrap();
+    let d16 = decode(&tiff16, Default::default()).unwrap();
+    assert_eq!(d16.bit_depth, 16);
+    let back16 = d16.to_srgb8();
+    for (p, q) in px.iter().zip(&back16.data).filter(|(p, _)| p[3] > 0) {
+        assert!(p.iter().zip(q).all(|(a, b)| a.abs_diff(*b) <= 1), "{p:?} vs {q:?}");
+    }
+    let rgb: Vec<u8> = px.iter().flat_map(|p| [p[0], p[1], p[2]]).collect();
+    let plain =
+        encode_tiff_associated(&EncodeImage::new(w as u32, h as u32, 3, Samples::U8(&rgb)), TiffCompression::None, &Default::default()).unwrap();
+    assert!(!decode(&plain, Default::default()).unwrap().has_alpha);
+}
+
+/// `unflatten` undoes `to_working`'s flatten onto white, and leaves pixels with no alpha white.
+#[test]
+fn unflatten_inverts_the_flatten_onto_white() {
+    let img = lcc_raster::Rgba8::from_fn(8, 8, |x, y| [(x * 30) as u8, (y * 30) as u8, 77, ((x + y) * 18) as u8]);
+    let png = encode_png(&EncodeImage::rgba8(&img), &Default::default()).unwrap();
+    let d = decode(&png, Default::default()).unwrap();
+    let alpha = d.alpha.clone().unwrap();
+    let flat = d.to_working();
+    let straight = lcc_codecs::unflatten(&flat, &alpha).unwrap();
+    let unflattened = lcc_codecs::Decoded { alpha: None, ..d.clone() };
+    let want = unflattened.to_working();
+    for (i, ((s, w), &a)) in straight.data.iter().zip(&want.data).zip(&alpha.data).enumerate() {
+        if a >= 1.0 / 1024.0 {
+            assert!(s.iter().zip(w).all(|(p, q)| (p - q).abs() < 1e-4), "pixel {i}: {s:?} vs {w:?}");
+        } else {
+            assert_eq!(*s, [1.0; 3], "no alpha: the white stays at {i}");
+        }
+    }
+    assert!(lcc_codecs::unflatten(&flat, &lcc_raster::Plane::new(3, 3)).is_none(), "a plane of another size");
+}

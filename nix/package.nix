@@ -106,7 +106,7 @@ let
     brand.cli_binary
   ];
 
-  # HEIC/HEIF decoding (opt-in upstream: HEVC patents are the distributor's call), as the release builds.
+  # HEIC/HEIF decoding (a default feature; named here so it stays on if the defaults change), as the release builds.
   buildFeatures = [
     "lcc-app/heif"
     "lcc-cli/heif"
