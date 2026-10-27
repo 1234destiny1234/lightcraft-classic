@@ -758,6 +758,8 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             }
             app.ui.person_from = None;
             app.ui.view = ViewMode::People;
+            // everyone, not what the search box last narrowed the cards to
+            app.ui.people_search.clear();
             Ok(json!({"people": app.session.catalog.people().len()}))
         }
         "view.person" => {
@@ -1485,6 +1487,10 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             app.ui.filter_bar = !app.ui.filter_bar;
             if app.ui.filter_bar && !matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid) {
                 app.ui.view = ViewMode::PhotoGrid;
+            }
+            // a hidden filter bar keeps no Metadata column search of its own
+            if !app.ui.filter_bar {
+                app.ui.filter_column_search.clear();
             }
             Ok(json!({"filterBar": app.ui.filter_bar}))
         }
