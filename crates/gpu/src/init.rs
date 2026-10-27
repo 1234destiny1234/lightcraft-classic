@@ -183,7 +183,8 @@ fn create_on<T: Send + 'static>(
                 return rx.recv().unwrap_or_else(|_| Err(format!("{WHAT} panicked")));
             }
             phase.store(ABANDONED, Ordering::Relaxed);
-            let why = format!("GPU {WHAT} did not finish in {} ({}): the graphics driver or display server is not responding", show(limit), limit_env());
+            let why =
+                format!("GPU {WHAT} did not finish in {} ({}): the graphics driver or display server is not responding", show(limit), limit_env());
             log::warn!("gpu: {why}; the GPU is not used");
             s.threads = s.threads.saturating_add(1);
             Err(s.reason.get_or_insert(why).clone())
