@@ -75,6 +75,7 @@ lcc-book = { path = "crates/book" }
 lcc-geocode = { path = "crates/geocode" }
 lcc-slideshow = { path = "crates/slideshow" }
 lcc-classic-slideshow = { path = "crates/classic-slideshow" }
+lcc-ml = { path = "crates/ml" }
 lcc-testkit = { path = "crates/testkit" }
 
 # foundation

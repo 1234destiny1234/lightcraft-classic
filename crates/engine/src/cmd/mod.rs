@@ -50,6 +50,7 @@ mod merge;
 pub mod metadata;
 pub mod metadata_files;
 pub mod missing;
+mod ml;
 pub(crate) mod organize;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod peers;
@@ -289,6 +290,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         #[cfg(not(target_arch = "wasm32"))]
         v.extend(update::specs());
         v.extend(focus::specs());
+        v.extend(ml::specs());
         v.extend(folder_metadata::specs());
         v.extend(activity::specs());
         v.extend(video::specs());

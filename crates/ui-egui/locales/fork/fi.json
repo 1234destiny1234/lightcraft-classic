@@ -27,5 +27,6 @@
   "It needs features this version of the app doesn't have:": "Se tarvitsee ominaisuuksia, joita tässä sovelluksen versiossa ei ole:",
   "Install a newer version of the app to use it.": "Asenna sovelluksen uudempi versio käyttääksesi sitä.",
   "It can't be installed:": "Sitä ei voi asentaa:",
-  "Install Older Version": "Asenna vanhempi versio"
+  "Install Older Version": "Asenna vanhempi versio",
+  "Indexing photos": "Indeksoidaan kuvia"
 }
