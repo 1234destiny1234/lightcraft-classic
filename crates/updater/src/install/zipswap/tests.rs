@@ -63,6 +63,11 @@ fn start_new(dir: &Path) -> (Start, Vec<PathBuf>, bool) {
     (s, started, waited)
 }
 
+/// The start that counted ends without confirming (it crashed): its lock goes with it.
+fn crash(dir: &Path) {
+    drop(take_running(&manifest_path(dir, "app.exe")));
+}
+
 #[test]
 fn an_update_swaps_in_starts_waits_and_is_confirmed() {
     let root = scratch("swap");
@@ -93,8 +98,70 @@ fn an_update_swaps_in_starts_waits_and_is_confirmed() {
         assert!(!dir.join(format!("{f}.update-old")).exists(), "{f}");
     }
     assert!(!manifest_path(&dir, "app.exe").exists());
+    assert!(!dir.join(".app-update.json.lock").exists() && !dir.join(".app-update.json.tmp").exists());
     assert_eq!(read(&dir.join("app.exe")), "new app");
     assert!(dir.join("portable.txt").is_file() && dir.join("AppData").join("settings.json").is_file());
+}
+
+/// A second start while the first start of the new version is still coming up (it holds the
+/// manifest) leaves the update alone: one by hand, or a child that inherited the variable.
+#[test]
+fn a_second_start_before_the_first_confirms() {
+    for (case, after_update) in [("renderer relaunch", true), ("by hand", false)] {
+        let root = scratch(&format!("second-{after_update}"));
+        let dir = root.join("copy");
+        copy_in(&dir);
+        update(&root, &dir, &[("app.exe", "new app"), ("app-cli.exe", "new cli")]).unwrap();
+        let (first, _, waited) = start_new(&dir);
+        assert!(waited);
+        assert_eq!(first, Start::AfterUpdate);
+        let second = on_start(&dir.join("app.exe"), after_update, &mut || {}, &mut |_| Ok(()));
+        // a process that inherited the variable waited like the relaunch did, so it goes on as one
+        assert!(matches!(second, Start::Go | Start::AfterUpdate), "{case}: a start while the first is still coming up undid the update");
+        assert_eq!(read(&dir.join("app.exe")), "new app", "{case}");
+        assert_eq!(manifest(&dir).unwrap().attempts, 1, "{case}: the second start isn't counted");
+        // the first comes up and confirms
+        confirm(&dir.join("app.exe"));
+        assert!(!manifest_path(&dir, "app.exe").exists(), "{case}");
+    }
+}
+
+/// The renderer's relaunch carries on the start that made it: once that one has ended (its lock
+/// gone), the relaunch neither counts nor undoes, and confirms in its place.
+#[test]
+fn the_renderers_relaunch_carries_on_the_counted_start() {
+    let root = scratch("again");
+    let dir = root.join("copy");
+    copy_in(&dir);
+    update(&root, &dir, &[("app.exe", "new app")]).unwrap();
+    assert_eq!(start_new(&dir).0, Start::AfterUpdate);
+    // the first renderer failed: the start relaunches and ends
+    crash(&dir);
+    let s = on_start_again(&dir.join("app.exe"), true, &mut || {}, &mut |_| panic!("no undo"));
+    assert_eq!(s, Start::AfterUpdate);
+    assert_eq!(read(&dir.join("app.exe")), "new app");
+    assert_eq!(manifest(&dir).unwrap().attempts, 1);
+    // a start by hand meanwhile sees it coming up
+    assert_eq!(on_start(&dir.join("app.exe"), false, &mut || {}, &mut |_| panic!("no undo")), Start::Go);
+    confirm(&dir.join("app.exe"));
+    assert!(!dir.join("app.exe.update-old").exists() && !manifest_path(&dir, "app.exe").exists());
+}
+
+/// A relaunch that ends on purpose (its library is open in another copy) takes its start back: the
+/// next start counts afresh instead of undoing.
+#[test]
+fn a_start_taken_back_is_not_a_failed_one() {
+    let root = scratch("release");
+    let dir = root.join("copy");
+    copy_in(&dir);
+    update(&root, &dir, &[("app.exe", "new app")]).unwrap();
+    assert_eq!(start_new(&dir).0, Start::AfterUpdate);
+    release_start(&dir.join("app.exe"));
+    assert_eq!(manifest(&dir).unwrap().attempts, 0);
+    assert_eq!(on_start(&dir.join("app.exe"), false, &mut || {}, &mut |_| panic!("no undo")), Start::Go);
+    assert_eq!(read(&dir.join("app.exe")), "new app");
+    assert_eq!(manifest(&dir).unwrap().attempts, 1);
+    crash(&dir);
 }
 
 /// The new version started once and never came up (it crashed before its first frame): its next
@@ -107,6 +174,7 @@ fn a_new_version_that_never_came_up_is_undone_on_its_next_start() {
     update(&root, &dir, &[("app.exe", "new app"), ("app-cli.exe", "new cli"), ("NEW.txt", "added")]).unwrap();
     assert_eq!(start_new(&dir).0, Start::AfterUpdate);
     // no confirm: it crashed. The next start (by hand, so without the variable) undoes the update
+    crash(&dir);
     let mut started = Vec::new();
     let s = on_start(&dir.join("app.exe"), false, &mut || panic!("nothing to wait for"), &mut |exe| {
         started.push(exe.to_path_buf());
@@ -195,7 +263,7 @@ fn nothing_is_touched_while_another_process_holds_the_manifest() {
     copy_in(&dir);
     fs::rename(dir.join("app-cli.exe"), dir.join("app-cli.exe.update-old")).unwrap();
     fs::create_dir_all(dir.join(".app-update-1")).unwrap();
-    let mut held = Held::create(&manifest_path(&dir, "app.exe")).unwrap();
+    let held = Held::create(&manifest_path(&dir, "app.exe")).unwrap();
     let m = Manifest {
         from: "1".into(),
         to: "2".into(),
@@ -243,6 +311,7 @@ fn a_hostile_or_wrong_zip_changes_nothing() {
         ("our own name", vec![("app.exe", "new"), ("app-cli.exe.update-old", "x")], &["updater uses itself"]),
         ("our own name, other case", vec![("app.exe", "new"), ("app-cli.exe.UPDATE-OLD", "x")], &["updater uses itself"]),
         ("our manifest", vec![("app.exe", "new"), (".app-update.json", "{}")], &["updater uses itself"]),
+        ("our manifest's lock", vec![("app.exe", "new"), (".APP-update.json.lock", "")], &["updater uses itself"]),
         ("empty", vec![], &["no app.exe"]),
     ];
     for (name, files, why) in cases {
@@ -337,16 +406,58 @@ fn a_hostile_manifest_is_not_followed() {
         r#"{"from":"1","to":"2","files":"app.exe","added":[],"state":"swapped","attempts":0}"#,
         r#"{"from":"1","to":"2","files":["app.exe"],"added":[],"state":"whatever","attempts":0}"#,
         "not json",
+        "",
+        r#"{"from":"1","to":"2","fi"#,
     ] {
         assert_eq!(Manifest::parse(text), None, "{text}");
-        fs::write(manifest_path(&dir, "app.exe"), text).unwrap();
-        assert_eq!(on_start(&dir.join("app.exe"), false, &mut || {}, &mut |_| panic!("no start")), Start::Go, "{text}");
-        clean_up(&dir, "app.exe");
-        confirm(&dir.join("app.exe"));
-        assert_eq!(read(&dir.join("app.exe")), "old app", "{text}");
+        // whichever reads it first deletes it, and follows nothing in it
+        for reader in ["start", "clean-up", "confirm"] {
+            fs::write(manifest_path(&dir, "app.exe"), text).unwrap();
+            match reader {
+                "start" => assert_eq!(on_start(&dir.join("app.exe"), false, &mut || {}, &mut |_| panic!("no start")), Start::Go, "{text}"),
+                "clean-up" => clean_up(&dir, "app.exe"),
+                _ => confirm(&dir.join("app.exe")),
+            }
+            assert!(!manifest_path(&dir, "app.exe").exists(), "{reader}: {text}");
+            assert_eq!(read(&dir.join("app.exe")), "old app", "{text}");
+        }
     }
     assert!(dir.join("..").join("outside.update-old").exists());
     let _ = fs::remove_file(dir.join("..").join("outside.update-old"));
+}
+
+/// A manifest left empty (a write cut off on a file system that can't rename over a file, or a
+/// crash of a build that truncated before writing) doesn't refuse later updates.
+#[test]
+fn an_empty_manifest_does_not_block_updates() {
+    let root = scratch("empty");
+    let dir = root.join("copy");
+    copy_in(&dir);
+    fs::write(manifest_path(&dir, "app.exe"), "").unwrap();
+    clean_up(&dir, "app.exe");
+    assert!(update(&root, &dir, &[("app.exe", "new app")]).is_ok());
+}
+
+/// A write that stopped before its rename leaves the previous manifest whole and a temporary file,
+/// which is ignored and then deleted.
+#[test]
+fn a_write_cut_off_before_its_rename_leaves_the_manifest_whole() {
+    let root = scratch("cut-off");
+    let dir = root.join("copy");
+    copy_in(&dir);
+    update(&root, &dir, &[("app.exe", "new app")]).unwrap();
+    let tmp = dir.join(".app-update.json.tmp");
+    fs::write(&tmp, r#"{"from":"1","to":"2","fi"#).unwrap();
+    assert_eq!(manifest(&dir).unwrap().state, State::Swapped);
+    assert_eq!(start_new(&dir).0, Start::AfterUpdate);
+    assert_eq!(manifest(&dir).unwrap().attempts, 1);
+    confirm(&dir.join("app.exe"));
+    clean_up(&dir, "app.exe");
+    assert!(!tmp.exists() && !manifest_path(&dir, "app.exe").exists() && !dir.join(".app-update.json.lock").exists());
+    // and one with no manifest beside it
+    fs::write(&tmp, "x").unwrap();
+    clean_up(&dir, "app.exe");
+    assert!(!tmp.exists());
 }
 
 /// A read-only previous file (a copy restored from a backup) is made deletable when it is moved

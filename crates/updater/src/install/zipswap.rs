@@ -12,7 +12,9 @@
 //!    program, more than [`MAX_ENTRIES`] files or [`MAX_UNPACKED`] bytes. The zip's single top folder
 //!    (the release zips have one) is dropped.
 //! 2. A manifest beside the program (`.<name>-update.json`, [`manifest_path`]) records the files
-//!    before the first one moves, and the swapping process holds an OS lock on it until it is done.
+//!    before the first one moves, and the swapping process holds an OS lock (on a file of its own,
+//!    `.<name>-update.json.lock`) until it is done. Each write replaces the manifest whole (a
+//!    temporary file renamed over it), so a write cut off half way leaves the previous contents.
 //!    Each file is then renamed to `<file>.update-old` ([`OLD_SUFFIX`]) and the new one renamed in,
 //!    the program last. Only the zip's files are touched: `portable.txt`, the portable data folder
 //!    and anything else the person keeps there stay as they are. A rename refused for a moment
@@ -22,23 +24,27 @@
 //!    its standard input, which the old process holds until it ends (for any reason, a crash too).
 //!    The new one waits for the pipe to close before it does anything ([`on_start`]): if quitting is
 //!    cancelled, it starts when the old window does close.
-//! 4. The new version counts its start in the manifest, and once it is up (its first frame, with the
-//!    library open) it confirms the update ([`confirm`]): only then are the `.update-old` files
-//!    deleted. A start that finds an earlier start of the new version that never got that far puts
-//!    the previous files back, starts the previous version and ends ([`on_start`]).
+//! 4. The new version counts its start in the manifest and holds the manifest's lock until it is up
+//!    (its first frame, with the library open); then it confirms the update ([`confirm`]): only then
+//!    are the `.update-old` files deleted. A start that finds an earlier, counted start of the new
+//!    version that ended without getting that far (its lock gone with it) puts the previous files
+//!    back, starts the previous version and ends ([`on_start`]). A start while the counted one is
+//!    still coming up (the lock held) leaves the update alone.
 //!
 //! [`clean_up`] (each start, in the background) finishes what is left: `.update-old` files that
 //! were still in use when the update was confirmed, the `.update-failed` files of an update that was
 //! undone, and unpack folders and probes of a process that ended half way. It acts only on the
 //! manifest's files and the program's own folder (never deeper), and not while another process
-//! holds the manifest's lock.
+//! holds the manifest's lock. A manifest that can't be read is deleted, so it never stops later
+//! updates.
 //!
 //! The steps use only renames, file copies and std's file locks, so they run (and are tested) on
 //! every system; only Windows uses them.
 
 use std::fs::{self, File, TryLockError};
-use std::io::{self, BufReader, Read, Seek, Write};
+use std::io::{self, BufReader, Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -55,6 +61,17 @@ pub const FAILED_SUFFIX: &str = ".update-failed";
 /// version is started with: it waits for the old one to quit. A variable, not an argument, so a
 /// version that doesn't know it (an older release) ignores it instead of refusing to start.
 pub const AFTER_UPDATE: &str = "AFTER_UPDATE";
+
+/// The environment variable (`<PREFIX>_WINDOW_RETRY`) the app sets when it starts itself again
+/// because its window's renderer failed to come up (the app's `window_gpu::RETRY_VAR`): that start
+/// carries on the one that started it ([`on_start_again`]).
+pub const WINDOW_RETRY: &str = "WINDOW_RETRY";
+
+/// Appended to the manifest's name: the file its lock is held on.
+const LOCK_SUFFIX: &str = ".lock";
+
+/// Appended to the manifest's name: the new contents, before they are renamed over it.
+const TMP_SUFFIX: &str = ".tmp";
 
 /// The most files a zip may hold (the release zip has about ten).
 pub const MAX_ENTRIES: usize = 4096;
@@ -161,7 +178,8 @@ fn updater_name(name: &str, exe_name: &str) -> bool {
     name.ends_with(OLD_SUFFIX)
         || name.ends_with(FAILED_SUFFIX)
         || name.starts_with(&folded(&stage_prefix(exe_name)))
-        || name == folded(&format!(".{}-update.json", stem(exe_name)))
+        // the manifest, its lock and its temporary file
+        || name.starts_with(&folded(&format!(".{}-update.json", stem(exe_name))))
 }
 
 // ---------- the manifest
@@ -252,66 +270,115 @@ impl Manifest {
     }
 }
 
-/// The manifest file, open and locked by this process for as long as it is held.
+/// The manifest at `path`, locked by this process for as long as it is held. The lock is on a file
+/// of its own beside it (`<manifest>.lock`), which is never written: the manifest itself is
+/// replaced whole by each write, which a lock on it would not survive.
 struct Held {
-    file: File,
+    lock: File,
     path: PathBuf,
 }
 
+/// Lock the lock file of the manifest at `path` (created when missing): `Ok(None)` when another
+/// handle holds it (another process swapping or starting, or another start in this one).
+fn lock(path: &Path) -> io::Result<Option<File>> {
+    let file = File::options().read(true).write(true).create(true).truncate(false).open(with_suffix(path, LOCK_SUFFIX))?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(TryLockError::WouldBlock) => Ok(None),
+        Err(TryLockError::Error(e)) => Err(e),
+    }
+}
+
 impl Held {
-    /// Create the manifest at `path`, locked. It must not exist yet.
+    /// Lock the manifest at `path` for a new swap. It must not exist yet.
     fn create(path: &Path) -> io::Result<Held> {
-        let file = File::options().read(true).write(true).create_new(true).open(path)?;
-        file.try_lock().map_err(|e| match e {
-            TryLockError::Error(e) => e,
-            TryLockError::WouldBlock => io::Error::new(io::ErrorKind::WouldBlock, "the update's manifest is locked"),
-        })?;
-        Ok(Held { file, path: path.to_path_buf() })
+        let lock = lock(path)?.ok_or_else(|| io::Error::new(io::ErrorKind::WouldBlock, "the update's manifest is locked"))?;
+        if path.exists() {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "an update's manifest is already there"));
+        }
+        Ok(Held { lock, path: path.to_path_buf() })
     }
 
-    /// Open the manifest at `path` and lock it: `Ok(None)` when there is none, or another process
-    /// holds it (it is swapping right now).
+    /// Lock the manifest at `path`: `Ok(None)` when there is none, or another handle holds it (a
+    /// swap running, or a start of the new version still coming up).
     fn open(path: &Path) -> io::Result<Option<Held>> {
-        let file = match File::options().read(true).write(true).open(path) {
-            Ok(f) => f,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(e),
-        };
-        match file.try_lock() {
-            Ok(()) => Ok(Some(Held { file, path: path.to_path_buf() })),
-            Err(TryLockError::WouldBlock) => Ok(None),
-            Err(TryLockError::Error(e)) => Err(e),
+        if !path.exists() {
+            return Ok(None);
         }
-    }
-
-    /// The manifest's contents; `None` when they don't read as one (it is then left alone).
-    fn read(&mut self) -> Option<Manifest> {
-        let mut text = String::new();
-        self.file.seek(io::SeekFrom::Start(0)).ok()?;
-        (&mut self.file).take(MAX_MANIFEST_BYTES).read_to_string(&mut text).ok()?;
-        let m = Manifest::parse(&text);
-        if m.is_none() {
-            log::warn!("updates: {} is not an update manifest that can be read; left alone", self.path.display());
+        let Some(lock) = lock(path)? else { return Ok(None) };
+        // the holder may have finished, and deleted it, meanwhile
+        if !path.exists() {
+            drop(lock);
+            let _ = fs::remove_file(with_suffix(path, LOCK_SUFFIX));
+            return Ok(None);
         }
-        m
+        Ok(Some(Held { lock, path: path.to_path_buf() }))
     }
 
-    fn write(&mut self, m: &Manifest) -> io::Result<()> {
-        self.file.set_len(0)?;
-        self.file.seek(io::SeekFrom::Start(0))?;
-        self.file.write_all(m.to_json().as_bytes())?;
-        self.file.sync_all()
+    /// The manifest's contents: `Ok(None)` when they don't read as one.
+    fn read(&self) -> io::Result<Option<Manifest>> {
+        let mut bytes = Vec::new();
+        File::open(&self.path)?.take(MAX_MANIFEST_BYTES).read_to_end(&mut bytes)?;
+        Ok(String::from_utf8(bytes).ok().and_then(|text| Manifest::parse(&text)))
     }
 
-    /// Delete the manifest (the lock goes with the handle).
-    fn remove(self) {
-        let Held { file, path } = self;
-        let _ = file.unlock();
+    /// Replace the manifest with `m`: written in full to a temporary file, then renamed over it, so
+    /// the manifest holds either the previous contents or the new ones, never a part.
+    fn write(&self, m: &Manifest) -> io::Result<()> {
+        let tmp = with_suffix(&self.path, TMP_SUFFIX);
+        let mut file = File::create(&tmp)?;
+        file.write_all(m.to_json().as_bytes())?;
+        file.sync_all()?;
         drop(file);
-        if let Err(e) = fs::remove_file(&path) {
-            log::warn!("updates: could not delete {}: {e}", path.display());
+        retry(|| fs::rename(&tmp, &self.path))
+    }
+
+    /// Delete the manifest, then let go of the lock and delete its file.
+    fn remove(self) {
+        let Held { lock, path } = self;
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("updates: could not delete {}: {e}", path.display()),
+        }
+        let _ = lock.unlock();
+        drop(lock);
+        let _ = fs::remove_file(with_suffix(&path, LOCK_SUFFIX));
+    }
+}
+
+/// The manifest `held` holds, with its contents. One that can't be read as a manifest (edited by
+/// hand, or cut off on a file system that can't rename over a file) is deleted: nothing can be done
+/// with it, and left in place it would refuse every later update.
+fn contents(held: Held) -> Option<(Held, Manifest)> {
+    match held.read() {
+        Ok(Some(m)) => Some((held, m)),
+        Ok(None) => {
+            log::warn!("updates: {} is not an update manifest that can be read; deleted", held.path.display());
+            held.remove();
+            None
+        }
+        Err(e) => {
+            log::warn!("updates: could not read {}: {e}", held.path.display());
+            None
         }
     }
+}
+
+/// The manifests of the updates whose start this process counted, held (so locked) until it
+/// confirms: while one is held, another start of the copy (one by hand, or the renderer's relaunch)
+/// sees a start still coming up, not one that failed. When the process ends, however it ends, the
+/// lock goes with it. A list keyed by the manifest's path, so tests in other folders don't share it.
+static RUNNING: Mutex<Vec<Held>> = Mutex::new(Vec::new());
+
+fn keep_running(held: Held) {
+    RUNNING.lock().unwrap_or_else(PoisonError::into_inner).push(held);
+}
+
+fn take_running(path: &Path) -> Option<Held> {
+    let mut list = RUNNING.lock().unwrap_or_else(PoisonError::into_inner);
+    let i = list.iter().position(|h| h.path == path)?;
+    Some(list.swap_remove(i))
 }
 
 // ---------- the swap
@@ -361,7 +428,7 @@ fn swap_and_start(
     start: &mut dyn FnMut(&Path) -> Result<(), String>,
 ) -> Result<usize, UpdateError> {
     let path = manifest_path(dir, exe_name);
-    let mut held = Held::create(&path).map_err(|e| install_error(format!("could not write {}: {e}", path.display())))?;
+    let held = Held::create(&path).map_err(|e| install_error(format!("could not write {}: {e}", path.display())))?;
     let added = files.iter().filter(|f| !dir.join(f).exists()).cloned().collect();
     let mut m = Manifest { from: from.to_string(), to: to.to_string(), files, added, state: State::Swapping, attempts: 0 };
     if let Err(e) = held.write(&m) {
@@ -382,7 +449,7 @@ fn swap_and_start(
     match swapped {
         Ok(()) => {
             // the lock goes; the manifest stays for the new version
-            let _ = held.file.unlock();
+            drop(held);
             Ok(m.files.len())
         }
         Err(e) => {
@@ -614,9 +681,23 @@ pub enum Start {
 /// At the start of the copy whose program is `exe` (before the library is opened): when a zip
 /// update started it (`after_update`), wait for the old version to end (`wait_for_old`, which
 /// returns once the pipe from it closes); then, when the copy has an unconfirmed update, count this
-/// start, or undo the update when an earlier start of the new version never confirmed it. `start`
-/// starts the previous program after an undo.
+/// start and hold the manifest until [`confirm`], or undo the update when an earlier, counted start
+/// of the new version ended without confirming it. A start while the counted one is still coming
+/// up (it holds the manifest) leaves the update alone. `start` starts the previous program after an
+/// undo.
 pub fn on_start(exe: &Path, after_update: bool, wait_for_old: &mut dyn FnMut(), start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Start {
+    begin(exe, after_update, false, wait_for_old, start)
+}
+
+/// [`on_start`] for a start the app made itself because its window's renderer failed to come up
+/// (`<PREFIX>_WINDOW_RETRY`, [`WINDOW_RETRY`]): it carries on the start that made it, which is
+/// ending right now. It waits for that one to let go of the manifest, then holds it in its place:
+/// it neither counts as a start of its own nor undoes the update.
+pub fn on_start_again(exe: &Path, after_update: bool, wait_for_old: &mut dyn FnMut(), start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Start {
+    begin(exe, after_update, true, wait_for_old, start)
+}
+
+fn begin(exe: &Path, after_update: bool, again: bool, wait_for_old: &mut dyn FnMut(), start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Start {
     let (Some(dir), Some(exe_name)) = (exe.parent(), exe.file_name().map(|n| n.to_string_lossy().to_string())) else { return Start::Go };
     // only a version an update just put in place waits: a process that merely inherited the
     // variable (a child of the new version) finds no previous program beside it
@@ -625,39 +706,77 @@ pub fn on_start(exe: &Path, after_update: bool, wait_for_old: &mut dyn FnMut(), 
         wait_for_old();
     }
     let go = if waited { Start::AfterUpdate } else { Start::Go };
-    let mut held = match Held::open(&manifest_path(dir, &exe_name)) {
+    let path = manifest_path(dir, &exe_name);
+    let opened = if again { open_when_free(&path) } else { Held::open(&path) };
+    let held = match opened {
         Ok(Some(h)) => h,
+        // none, or held: a swap running, or a start of the new version still coming up
         Ok(None) => return go,
         Err(e) => {
             log::warn!("updates: could not open this copy's update manifest: {e}");
             return go;
         }
     };
-    let Some(mut m) = held.read() else { return go };
+    let Some((held, mut m)) = contents(held) else { return go };
     match m.state {
         // a swap that stopped half way (its process holds no lock any more): back to the previous version
         State::Swapping => {
             log::warn!("updates: the update from {} to {} stopped half way; the previous version is put back", m.from, m.to);
-            undo(dir, &exe_name, &mut held, &mut m, start)
+            undo(dir, &exe_name, &held, &mut m, start)
         }
+        // the renderer's relaunch: the start that made it was counted already
+        State::Swapped if again => {
+            keep_running(held);
+            go
+        }
+        // a counted start that ended (its lock is gone) without coming up
         State::Swapped if m.attempts > 0 => {
             log::warn!("updates: {} started before without coming up; the previous version, {}, is put back", m.to, m.from);
-            undo(dir, &exe_name, &mut held, &mut m, start)
+            undo(dir, &exe_name, &held, &mut m, start)
         }
         State::Swapped => {
             m.attempts += 1;
             if let Err(e) = held.write(&m) {
                 log::warn!("updates: could not count this start in the update manifest: {e}");
             }
+            keep_running(held);
             go
         }
         State::Confirmed | State::Undone => go,
     }
 }
 
+/// [`Held::open`], retried for up to [`LEFTOVER_WAIT`] while another handle holds the manifest (the
+/// start that relaunched this one, ending).
+fn open_when_free(path: &Path) -> io::Result<Option<Held>> {
+    let since = Instant::now();
+    loop {
+        match Held::open(path)? {
+            Some(h) => return Ok(Some(h)),
+            None if !path.exists() || since.elapsed() >= LEFTOVER_WAIT => return Ok(None),
+            None => std::thread::sleep(RETRY_PAUSE),
+        }
+    }
+}
+
+/// This process counted its start of the new version but ends on purpose before coming up (a
+/// relaunch that found its library open in another copy): the start is taken back and the manifest
+/// let go, so the next start isn't taken for a failed one.
+pub fn release_start(exe: &Path) {
+    let (Some(dir), Some(exe_name)) = (exe.parent(), exe.file_name().map(|n| n.to_string_lossy().to_string())) else { return };
+    let Some(held) = take_running(&manifest_path(dir, &exe_name)) else { return };
+    let Some((held, mut m)) = contents(held) else { return };
+    if m.state == State::Swapped && m.attempts > 0 {
+        m.attempts -= 1;
+        if let Err(e) = held.write(&m) {
+            log::warn!("updates: could not take this start back in the update manifest: {e}");
+        }
+    }
+}
+
 /// Put the previous files back (the new ones become `.update-failed`), record it, and start the
 /// previous program when this one's file was among them.
-fn undo(dir: &Path, exe_name: &str, held: &mut Held, m: &mut Manifest, start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Start {
+fn undo(dir: &Path, exe_name: &str, held: &Held, m: &mut Manifest, start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Start {
     // the program is put back only when it was swapped: a swap stopped before reaching it left it
     // as it was, and that is the program running now
     let program_swapped = m.files.iter().any(|f| is_program(f, exe_name) && (old_path(&dir.join(f)).exists() || m.added.contains(f)));
@@ -702,8 +821,16 @@ fn undo(dir: &Path, exe_name: &str, held: &mut Held, m: &mut Manifest, start: &m
 /// the previous files go. Nothing to do without an unconfirmed update.
 pub fn confirm(exe: &Path) {
     let (Some(dir), Some(exe_name)) = (exe.parent(), exe.file_name().map(|n| n.to_string_lossy().to_string())) else { return };
-    let Ok(Some(mut held)) = Held::open(&manifest_path(dir, &exe_name)) else { return };
-    let Some(mut m) = held.read() else { return };
+    let path = manifest_path(dir, &exe_name);
+    // the manifest this start holds; a start that found it held by another (since gone) opens it
+    let held = match take_running(&path) {
+        Some(h) => h,
+        None => match Held::open(&path) {
+            Ok(Some(h)) => h,
+            _ => return,
+        },
+    };
+    let Some((held, mut m)) = contents(held) else { return };
     if m.state != State::Swapped {
         return;
     }
@@ -750,14 +877,35 @@ fn finish(dir: &Path, held: Held, m: &Manifest) {
 /// are looked at, and nothing while another process holds the manifest (it is swapping). Never
 /// fails: what can't be deleted now (a file still in use) is left for the next start.
 pub fn clean_up(dir: &Path, exe_name: &str) {
-    if let Ok(Some(mut held)) = Held::open(&manifest_path(dir, exe_name)) {
-        match held.read() {
-            Some(m) if matches!(m.state, State::Confirmed | State::Undone) => finish(dir, held, &m),
-            _ => {}
+    let path = manifest_path(dir, exe_name);
+    let tmp = with_suffix(&path, TMP_SUFFIX);
+    match Held::open(&path) {
+        Ok(Some(held)) => {
+            // a write that stopped before its rename; nobody else writes while this lock is held
+            let _ = fs::remove_file(&tmp);
+            if let Some((held, m)) = contents(held)
+                && matches!(m.state, State::Confirmed | State::Undone)
+            {
+                finish(dir, held, &m);
+            }
         }
-    } else if manifest_path(dir, exe_name).exists() {
         // another process holds it: a swap is running, its unpack folder is in use
-        return;
+        Ok(None) if path.exists() => return,
+        Ok(None) => {
+            // no update under way: the temporary file and lock of one that stopped, under the lock
+            if (tmp.exists() || with_suffix(&path, LOCK_SUFFIX).exists())
+                && let Ok(Some(lock)) = lock(&path)
+                && !path.exists()
+            {
+                let _ = fs::remove_file(&tmp);
+                drop(lock);
+                let _ = fs::remove_file(with_suffix(&path, LOCK_SUFFIX));
+            }
+        }
+        Err(e) => {
+            log::debug!("updates: could not open {}: {e}", path.display());
+            return;
+        }
     }
     let prefix = folded(&stage_prefix(exe_name));
     let ours = format!("{prefix}{}", std::process::id());

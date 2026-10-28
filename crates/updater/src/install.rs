@@ -297,10 +297,12 @@ pub use zipswap::Start;
 /// started this process, wait until the version it replaced has ended (however long quitting takes,
 /// so the two never run at once); then count this start of an unconfirmed update, or undo an update
 /// whose new version never came up and start the previous version ([`Start::Undone`]: end now).
+/// The app's own relaunch after its window's renderer failed carries on the start that made it.
 pub fn on_start() -> Start {
     let Some(exe) = zip_copy_exe() else { return Start::Go };
     let after_update = lcc_brand::env_is_set(zipswap::AFTER_UPDATE);
-    zipswap::on_start(
+    let on_start = if lcc_brand::env_is_set(zipswap::WINDOW_RETRY) { zipswap::on_start_again } else { zipswap::on_start };
+    on_start(
         &exe,
         after_update,
         // the pipe closes when the old process ends; nothing is ever written to it
@@ -318,6 +320,15 @@ pub fn on_start() -> Start {
 pub fn confirm_update() {
     if let Some(exe) = zip_copy_exe() {
         zipswap::confirm(&exe);
+    }
+}
+
+/// In a copy unpacked from the zip, a start of a new version that ends on purpose before it is up
+/// (its library is open in another copy): its start is taken back, so the next start doesn't undo
+/// the update.
+pub fn release_start() {
+    if let Some(exe) = zip_copy_exe() {
+        zipswap::release_start(&exe);
     }
 }
 

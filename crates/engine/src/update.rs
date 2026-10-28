@@ -823,6 +823,13 @@ pub fn confirm_update() {
     }
 }
 
+/// A start of a new version a zip update put in place that ends on purpose before it is up (its
+/// library is open in another copy): its start is taken back, so the next start doesn't undo the
+/// update ([`lcc_updater::release_start`]).
+pub fn release_start() {
+    lcc_updater::release_start();
+}
+
 /// Whether another process has the library in `dir` open (its lock is held). A version a zip
 /// update started while a copy started by hand already runs ends quietly instead of asking.
 pub fn library_in_use(dir: &Path) -> bool {

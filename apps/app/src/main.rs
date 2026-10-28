@@ -1215,6 +1215,7 @@ fn main() -> eframe::Result {
         && lcc_engine::update::library_in_use(dir)
     {
         log::info!("{} is already open in another copy of the new version; this relaunch ends here", dir.display());
+        lcc_engine::update::release_start();
         return Ok(());
     }
     // GPU compute: off if the preference says so, or if the last launch died creating the device
