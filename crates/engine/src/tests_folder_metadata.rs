@@ -485,7 +485,7 @@ fn a_file_imported_while_a_background_save_waits_is_named_as_the_photo_command_w
     s.execute("folder.saveMetadata", &json!({"path": src.join("d").to_string_lossy(), "background": true})).unwrap();
     // x.png joins d/ before the first pump: it sorts before x.tif, so it now owns the stem sidecar x.xmp
     std::fs::copy(src.join("other/x.png"), src.join("d/x.png")).unwrap();
-    s.execute("library.import", &json!({"paths": [src.join("d/x.png").to_string_lossy()]})).unwrap();
+    s.execute("library.import", &json!({"paths": [src.join("d").join("x.png").to_string_lossy()]})).unwrap();
     let r = s.execute("folder.metadataPump", &json!({})).unwrap();
     assert_eq!(r["result"]["total"], 1, "{r}");
     let id = s.catalog.photos().find(|p| p.file_name == "x.tif").unwrap().id;

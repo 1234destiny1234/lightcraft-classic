@@ -4343,7 +4343,16 @@ pub(crate) fn filmstrip(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
             let map = app.ui.module == crate::module::ModuleId::Map;
             // in a regular album they are dragged along the strip to put them in Custom Order
             let reorder = !map && super::grid::custom_order_album(app).is_some();
-            let resp = ui.interact(cr, egui::Id::new(("film", id.0)), if map || reorder { Sense::click_and_drag() } else { Sense::click() });
+            // cells drawn ahead of the scroll (off view, under the side panels) take no clicks or
+            // keyboard focus: Tab never lands on a thumbnail nobody can see
+            let sense = if !local.intersects(vp) {
+                Sense::hover()
+            } else if map || reorder {
+                Sense::click_and_drag()
+            } else {
+                Sense::click()
+            };
+            let resp = ui.interact(cr, egui::Id::new(("film", id.0)), sense);
             let failed = app.renderer.thumb(*id).is_none() && app.renderer.failure(Slot::Thumb(*id)).is_some();
             crate::widgets::announce(&resp, film_spoken(app.session.catalog.photo(*id).map_or("", |p| p.file_name.as_str()), failed));
             if (map || reorder) && resp.drag_started() {

@@ -88,6 +88,18 @@ pub(crate) fn write_checked(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     })
 }
 
+/// Read at most `max` bytes of the app's own file at `path` (no link check: the path is the app's,
+/// not one a plug-in named, and needn't be canonical, e.g. `/var` vs `/private/var` on macOS).
+pub(crate) fn read_capped(path: &Path, max: u64) -> std::io::Result<Vec<u8>> {
+    let f = File::open(path)?;
+    let mut out = Vec::new();
+    f.take(max.saturating_add(1)).read_to_end(&mut out)?;
+    if out.len() as u64 > max {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("larger than {max} bytes")));
+    }
+    Ok(out)
+}
+
 /// Read at most `max` bytes of the regular file at the resolved `path`, refusing a link swapped
 /// in after the check (the opened file must be the very file at `path`, not reached through a
 /// link).

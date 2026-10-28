@@ -1551,7 +1551,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&job).unwrap(), "1\n", "the files are written before the start");
         let started = desktop.requests();
         assert!(
-            matches!(started.as_slice(), [crate::desktop::Request::StartProgram { args, tmp, .. }] if args == &[job.display().to_string()] && tmp == &folder),
+            matches!(started.as_slice(), [crate::desktop::Request::StartProgram { args, tmp, .. }] if args == &[format!("{}/job.txt", folder.display())] && tmp == &folder),
             "{started:?}"
         );
         let rows: Vec<_> = s.activity.list().into_iter().filter(|t| t.kind == "pluginProgram").collect();
