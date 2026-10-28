@@ -596,7 +596,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     let n = app.session.selected().len();
                     field(ui, "Change", |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
-                        for (i, (label, m)) in [("Set date & time", "set"), ("Shift by", "shift"), ("Time zone", "zone"), ("File date", "file")].iter().enumerate() {
+                        for (i, (label, m)) in [("Set date & time", "set"), ("Shift by", "shift"), ("Time zone", "zone"), ("File date", "file"), ("File name", "name")].iter().enumerate() {
                             if crate::widgets::text_button(ui, &format!("captureMode-{i}"), label, mode == m).clicked() {
                                 *mode = m.to_string();
                             }
@@ -625,6 +625,13 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             );
                             json!({"fromFile": true})
                         }
+                        "name" => {
+                            ui.label(
+                                egui::RichText::new(crate::i18n::tr("Each photo gets the date and time in its file name (IMG_20260921_143000)."))
+                                    .color(t.text_label),
+                            );
+                            json!({"fromFilename": true})
+                        }
                         _ => {
                             field(ui, "Hours", |ui| ui.add(egui::DragValue::new(zone).range(-26.0..=26.0).speed(0.25).fixed_decimals(2)));
                             json!({"hours": zone})
@@ -637,13 +644,14 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             "set" => lcc_catalog::dates::normalize_iso(time)
                                 .and_then(|t| Some(lcc_catalog::dates::iso_seconds(&t)? - lcc_catalog::dates::iso_seconds(&cur)?)),
                             "shift" => params["shift"].as_i64(),
-                            "file" => None,
+                            "file" | "name" => None,
                             _ => Some((*zone as f64 * 3600.0).round() as i64),
                         };
                         // the photo's own time is the problem (a Lightroom catalog's capture time
                         // is copied verbatim), not what was typed
                         let unreadable = lcc_catalog::dates::shift_iso(&cur, 0).is_none();
                         let after = match (mode.as_str(), unreadable && n == 1) {
+                            ("name", _) => lcc_catalog::dates::date_from_filename(&name),
                             // alone, it simply gets the time typed (photo.setCaptureTime repairs it)
                             ("set", true) => lcc_catalog::dates::normalize_iso(time),
                             _ => delta.and_then(|d| lcc_catalog::dates::shift_iso(&cur, d)),
@@ -652,13 +660,14 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             egui::RichText::new(match after {
                                 Some(a) => format!("{name}: {} → {}", cur.replace('T', " "), a.replace('T', " ")),
                                 None if mode == "file" => String::new(),
+                                None if mode == "name" => crate::i18n::tr("No date in the active photo's file name").to_string(),
                                 None if unreadable && !(mode == "set" && n == 1) => crate::i18n::tr("The active photo's capture time can't be read").to_string(),
                                 None => "Enter a date as YYYY-MM-DD HH:MM:SS".into(),
                             })
                             .color(t.text_label),
                         );
                     }
-                    if n > 1 {
+                    if n > 1 && !matches!(mode.as_str(), "file" | "name") {
                         crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr_format!("All {n} selected photos move by the same amount.", n = n)).color(t.text_dim));
                     }
                 }
@@ -1921,6 +1930,7 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
                 "set" => json!({"time": time}),
                 "shift" => json!({"shift": *days as i64 * 86_400 + *hours as i64 * 3600 + *minutes as i64 * 60}),
                 "file" => json!({"fromFile": true}),
+                "name" => json!({"fromFilename": true}),
                 _ => json!({"hours": zone}),
             },
         ),
