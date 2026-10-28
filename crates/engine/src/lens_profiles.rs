@@ -214,14 +214,15 @@ pub fn find_given<'a>(db: &'a LensDb, given: &GivenLens) -> Option<&'a lcc_lensd
         .or_else(|| db.find_lens(maker, model, None))
 }
 
-/// Look `lens_model` (and its maker, when known) up in the database in use.
-pub fn match_lens(lens_make: Option<&str>, lens_model: &str) -> Match {
-    match_lens_with(lens_make, lens_model, None)
+/// Look `lens_model` (and its maker, when known) up in the database in use. The photo's camera (EXIF make and
+/// model) lets a compact's built-in lens match by the camera's mount, as [`lookup`] does.
+pub fn match_lens(lens_make: Option<&str>, lens_model: &str, camera: (&str, &str)) -> Match {
+    match_lens_with(lens_make, lens_model, camera, None)
 }
 
 /// [`match_lens`], with a lens given by the caller taking the place of the name match: [`Match::Chosen`] when the
 /// database has it, else [`Match::NotFound`] with its name (a chosen lens never falls back to the name match).
-pub fn match_lens_with(lens_make: Option<&str>, lens_model: &str, given: Option<&GivenLens>) -> Match {
+pub fn match_lens_with(lens_make: Option<&str>, lens_model: &str, camera: (&str, &str), given: Option<&GivenLens>) -> Match {
     let Some(db) = database() else { return Match::NoDatabase };
     if let Some(g) = given {
         return match find_given(&db, g) {
@@ -232,7 +233,7 @@ pub fn match_lens_with(lens_make: Option<&str>, lens_model: &str, given: Option<
     if lens_model.trim().is_empty() {
         return Match::NoLensName;
     }
-    match db.find_lens(lens_make, lens_model, None) {
+    match db.find_lens(lens_make, lens_model, db.find_camera(camera.0, camera.1)) {
         Some(p) => Match::Found(profile_name(p, lens_model)),
         None => Match::NotFound(lens_model.trim().to_string()),
     }
@@ -456,7 +457,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         set_dir(None);
         assert!(database().is_none());
-        assert_eq!(match_lens(None, "18-55mm F3.5-5.6"), Match::NoDatabase);
+        assert_eq!(match_lens(None, "18-55mm F3.5-5.6", ("", "")), Match::NoDatabase);
         let g0 = generation();
         set_dir(Some(dir.clone()));
         assert_ne!(generation(), g0);
@@ -467,14 +468,28 @@ mod tests {
         assert!(database().is_none());
         reload();
         assert_eq!(database().unwrap().lenses.len(), 1);
-        assert!(matches!(match_lens(Some("Testcam"), "18-55mm F3.5-5.6"), Match::Found(_)));
-        assert_eq!(match_lens(None, "70-200mm F4"), Match::NotFound("70-200mm F4".into()));
-        assert_eq!(match_lens(None, "  "), Match::NoLensName);
+        assert!(matches!(match_lens(Some("Testcam"), "18-55mm F3.5-5.6", ("", "")), Match::Found(_)));
+        assert_eq!(match_lens(None, "70-200mm F4", ("", "")), Match::NotFound("70-200mm F4".into()));
+        assert_eq!(match_lens(None, "  ", ("", "")), Match::NoLensName);
         // malformed XML next to it is skipped, never a panic
         std::fs::write(dir.join("bad.xml"), "<lensdatabase><lens><model>x</lens").unwrap();
         reload();
         assert_eq!(database().unwrap().lenses.len(), 1);
         assert_eq!(source(), Some((dir.clone(), Origin::Folder)));
+        // a compact's built-in lens matches by the camera's mount only when the camera is known
+        std::fs::write(
+            dir.join("compact.xml"),
+            r#"<lensdatabase>
+<camera><maker>Canon</maker><model>Canon PowerShot S5 IS</model><mount>canonS5</mount><cropfactor>6.0</cropfactor></camera>
+<lens><maker>Canon</maker><model>Canon PowerShot S5 IS &amp; compatibles (Standard)</model><mount>canonS5</mount><cropfactor>6.0</cropfactor>
+<calibration><distortion model="ptlens" focal="6" a="0.019347" b="-0.049194" c="0"/><distortion model="ptlens" focal="72" a="0" b="0" c="0"/></calibration></lens>
+</lensdatabase>"#,
+        )
+        .unwrap();
+        reload();
+        let exif = "6.0-72.0 mm f/2.7-3.5";
+        assert!(matches!(match_lens(None, exif, ("Canon", "Canon PowerShot S5 IS")), Match::Found(_)));
+        assert_eq!(match_lens(None, exif, ("", "")), Match::NotFound(exif.into()));
         set_dir(None);
         assert!(database().is_none() && source().is_none());
         set_dir(before);
