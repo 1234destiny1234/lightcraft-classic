@@ -72,7 +72,10 @@ download it for this system and install it; the app restarts afterwards. Things 
     close. A copy you start by hand meanwhile is already the new version.
   - The previous files are kept as `<file>.update-old` until the new version is up. If it doesn't come up (it
     stops before its window shows), its next start puts the previous files back and starts the previous version;
-    the new version's files are then deleted as `<file>.update-failed`.
+    the new version's files are then deleted as `<file>.update-failed`. Starting the app again while the new
+    version is still coming up (a large library opening) doesn't count as a failure.
+  - The updater keeps its record of an update in `.<binary>-update.json` beside the program, and leaves a small
+    hidden `.<binary>-update.json.lock` there for good.
   - The restart doesn't carry over the command-line arguments the app was started with (`--library`, files to
     import), as after the MSI: the library last used opens.
   - A copy under Program Files, or in a folder it can't write to, gets the zip and its folder shown instead. A copy

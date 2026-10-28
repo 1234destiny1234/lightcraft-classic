@@ -278,7 +278,7 @@ static PIPE_TO_NEW_VERSION: std::sync::Mutex<Option<std::process::ChildStdin>> =
 fn install_zip(zip: &Path, dir: &Path, exe_name: &str, version: &str) -> Result<Outcome, UpdateError> {
     let current = crate::Version::current().to_text();
     let files = zipswap::swap_in(zip, dir, exe_name, &current, version, &mut |exe| {
-        let mut child = Command::new(exe)
+        let mut child = without_start_variables(&mut Command::new(exe))
             .env(lcc_brand::env_var(zipswap::AFTER_UPDATE), "1")
             .stdin(std::process::Stdio::piped())
             .current_dir(dir)
@@ -310,9 +310,25 @@ pub fn on_start() -> Start {
             let _ = std::io::copy(&mut std::io::stdin().lock(), &mut std::io::sink());
         },
         &mut |previous| {
-            Command::new(previous).current_dir(previous.parent().unwrap_or(Path::new("."))).spawn().map(|_| ()).map_err(|e| e.to_string())
+            without_start_variables(&mut Command::new(previous))
+                .current_dir(previous.parent().unwrap_or(Path::new(".")))
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| e.to_string())
         },
     )
+}
+
+/// `c` without the variables that tell a start how it was made (this process may have them, as
+/// the renderer's relaunch or a version an update started): a version started now is a start of its
+/// own, with its own renderer retries. In every spelling [`lcc_brand::env`] reads.
+fn without_start_variables(c: &mut Command) -> &mut Command {
+    for name in [zipswap::AFTER_UPDATE, zipswap::WINDOW_RETRY] {
+        for prefix in std::iter::once(lcc_brand::ENV_PREFIX).chain(lcc_brand::LEGACY_ENV_PREFIXES.iter().copied()) {
+            c.env_remove(format!("{prefix}_{name}"));
+        }
+    }
+    c
 }
 
 /// In a copy unpacked from the zip, once the app is up (its first frame, its library open): an
@@ -533,6 +549,20 @@ mod tests {
         assert!(a.destination.is_some());
         let c = plan(Kind::Checksums, Path::new("/tmp/SHA256SUMS.txt"), "1.2.3", &other);
         assert!(c.summary.contains("Nothing to install"));
+    }
+
+    /// A version the updater starts (the new one, or the previous one after an undo) is a start of
+    /// its own: it doesn't take this process's relaunch or after-update variables, in any spelling.
+    #[test]
+    fn a_started_version_does_not_inherit_how_this_one_started() {
+        let mut c = Command::new("x");
+        without_start_variables(&mut c);
+        let removed: Vec<String> = c.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_string_lossy().to_string()).collect();
+        for prefix in std::iter::once(lcc_brand::ENV_PREFIX).chain(lcc_brand::LEGACY_ENV_PREFIXES.iter().copied()) {
+            for name in [zipswap::AFTER_UPDATE, zipswap::WINDOW_RETRY] {
+                assert!(removed.iter().any(|k| k.eq_ignore_ascii_case(&format!("{prefix}_{name}"))), "{prefix}_{name}");
+            }
+        }
     }
 
     /// A zip copy that can replace its own files plans to; one that can't (its folder can't be

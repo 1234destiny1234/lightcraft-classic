@@ -278,10 +278,20 @@ struct Held {
     path: PathBuf,
 }
 
-/// Lock the lock file of the manifest at `path` (created when missing): `Ok(None)` when another
-/// handle holds it (another process swapping or starting, or another start in this one).
+/// Lock the lock file of the manifest at `path`: `Ok(None)` when another handle holds it (another
+/// process swapping or starting, or another start in this one). The file is created the first time
+/// (hidden, empty) and never deleted: a process could still hold a lock on a deleted one while
+/// another locks its replacement, and both would think they hold the manifest.
 fn lock(path: &Path) -> io::Result<Option<File>> {
-    let file = File::options().read(true).write(true).create(true).truncate(false).open(with_suffix(path, LOCK_SUFFIX))?;
+    let mut options = File::options();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_ATTRIBUTE_HIDDEN, for a file created now
+        options.attributes(0x2);
+    }
+    let file = options.open(with_suffix(path, LOCK_SUFFIX))?;
     match file.try_lock() {
         Ok(()) => Ok(Some(file)),
         Err(TryLockError::WouldBlock) => Ok(None),
@@ -302,15 +312,21 @@ impl Held {
     /// Lock the manifest at `path`: `Ok(None)` when there is none, or another handle holds it (a
     /// swap running, or a start of the new version still coming up).
     fn open(path: &Path) -> io::Result<Option<Held>> {
-        if !path.exists() {
+        let tmp = with_suffix(path, TMP_SUFFIX);
+        if !path.exists() && !tmp.exists() {
             return Ok(None);
         }
         let Some(lock) = lock(path)? else { return Ok(None) };
-        // the holder may have finished, and deleted it, meanwhile
+        // the holder may have finished, and deleted it, meanwhile; or a write was cut off between
+        // deleting the manifest and renaming its new contents in (a file system that can't rename
+        // over a file in one step, such as FAT): the new contents, written in full, are the manifest
         if !path.exists() {
-            drop(lock);
-            let _ = fs::remove_file(with_suffix(path, LOCK_SUFFIX));
-            return Ok(None);
+            let whole = fs::read(&tmp).ok().and_then(|b| String::from_utf8(b).ok()).and_then(|t| Manifest::parse(&t)).is_some();
+            if !whole || fs::rename(&tmp, path).is_err() {
+                let _ = fs::remove_file(&tmp);
+                return Ok(None);
+            }
+            log::warn!("updates: {} was restored from its last write", path.display());
         }
         Ok(Some(Held { lock, path: path.to_path_buf() }))
     }
@@ -325,25 +341,29 @@ impl Held {
     /// Replace the manifest with `m`: written in full to a temporary file, then renamed over it, so
     /// the manifest holds either the previous contents or the new ones, never a part.
     fn write(&self, m: &Manifest) -> io::Result<()> {
+        let text = m.to_json();
+        // one that couldn't be read back whole would be deleted, and the update with it
+        if text.len() as u64 > MAX_MANIFEST_BYTES {
+            return Err(io::Error::other(format!("the update lists more than {} KB of file names", MAX_MANIFEST_BYTES >> 10)));
+        }
         let tmp = with_suffix(&self.path, TMP_SUFFIX);
         let mut file = File::create(&tmp)?;
-        file.write_all(m.to_json().as_bytes())?;
+        file.write_all(text.as_bytes())?;
         file.sync_all()?;
         drop(file);
         retry(|| fs::rename(&tmp, &self.path))
     }
 
-    /// Delete the manifest, then let go of the lock and delete its file.
+    /// Delete the manifest (and a temporary file of it), then let go of the lock.
     fn remove(self) {
         let Held { lock, path } = self;
+        let _ = fs::remove_file(with_suffix(&path, TMP_SUFFIX));
         match fs::remove_file(&path) {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => log::warn!("updates: could not delete {}: {e}", path.display()),
         }
-        let _ = lock.unlock();
         drop(lock);
-        let _ = fs::remove_file(with_suffix(&path, LOCK_SUFFIX));
     }
 }
 
@@ -722,17 +742,18 @@ fn begin(exe: &Path, after_update: bool, again: bool, wait_for_old: &mut dyn FnM
         // a swap that stopped half way (its process holds no lock any more): back to the previous version
         State::Swapping => {
             log::warn!("updates: the update from {} to {} stopped half way; the previous version is put back", m.from, m.to);
-            undo(dir, &exe_name, &held, &mut m, start)
+            undo(dir, &exe_name, held, &mut m, start)
         }
-        // the renderer's relaunch: the start that made it was counted already
-        State::Swapped if again => {
+        // the renderer's relaunch: the start that made it was counted already (when it wasn't, as it
+        // found another start coming up, this one counts below)
+        State::Swapped if again && m.attempts > 0 => {
             keep_running(held);
             go
         }
         // a counted start that ended (its lock is gone) without coming up
         State::Swapped if m.attempts > 0 => {
             log::warn!("updates: {} started before without coming up; the previous version, {}, is put back", m.to, m.from);
-            undo(dir, &exe_name, &held, &mut m, start)
+            undo(dir, &exe_name, held, &mut m, start)
         }
         State::Swapped => {
             m.attempts += 1;
@@ -776,7 +797,7 @@ pub fn release_start(exe: &Path) {
 
 /// Put the previous files back (the new ones become `.update-failed`), record it, and start the
 /// previous program when this one's file was among them.
-fn undo(dir: &Path, exe_name: &str, held: &Held, m: &mut Manifest, start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Start {
+fn undo(dir: &Path, exe_name: &str, held: Held, m: &mut Manifest, start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Start {
     // the program is put back only when it was swapped: a swap stopped before reaching it left it
     // as it was, and that is the program running now
     let program_swapped = m.files.iter().any(|f| is_program(f, exe_name) && (old_path(&dir.join(f)).exists() || m.added.contains(f)));
@@ -804,6 +825,8 @@ fn undo(dir: &Path, exe_name: &str, held: &Held, m: &mut Manifest, start: &mut d
     if let Err(e) = held.write(m) {
         log::warn!("updates: could not record the undone update: {e}");
     }
+    // let go before the previous version starts, so its clean-up finds the manifest free
+    drop(held);
     let exe = dir.join(exe_name);
     if !program_swapped || !exe.is_file() {
         return Start::Go;
@@ -891,17 +914,8 @@ pub fn clean_up(dir: &Path, exe_name: &str) {
         }
         // another process holds it: a swap is running, its unpack folder is in use
         Ok(None) if path.exists() => return,
-        Ok(None) => {
-            // no update under way: the temporary file and lock of one that stopped, under the lock
-            if (tmp.exists() || with_suffix(&path, LOCK_SUFFIX).exists())
-                && let Ok(Some(lock)) = lock(&path)
-                && !path.exists()
-            {
-                let _ = fs::remove_file(&tmp);
-                drop(lock);
-                let _ = fs::remove_file(with_suffix(&path, LOCK_SUFFIX));
-            }
-        }
+        // no update under way ([`Held::open`] deleted a temporary file that wasn't a whole manifest)
+        Ok(None) => {}
         Err(e) => {
             log::debug!("updates: could not open {}: {e}", path.display());
             return;
