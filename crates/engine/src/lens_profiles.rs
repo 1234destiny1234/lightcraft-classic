@@ -489,6 +489,8 @@ mod tests {
         reload();
         let exif = "6.0-72.0 mm f/2.7-3.5";
         assert!(matches!(match_lens(None, exif, ("Canon", "Canon PowerShot S5 IS")), Match::Found(_)));
+        // an older catalog entry has only the display label ("Canon PowerShot S5 IS"), with no make
+        assert!(matches!(match_lens(None, exif, ("", "Canon PowerShot S5 IS")), Match::Found(_)));
         assert_eq!(match_lens(None, exif, ("", "")), Match::NotFound(exif.into()));
         set_dir(None);
         assert!(database().is_none() && source().is_none());

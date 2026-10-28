@@ -118,6 +118,12 @@ fn sam3_dir(var: Option<std::ffi::OsString>, config: Option<PathBuf>) -> Option<
     var.filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| config.map(|d| d.join("models").join("sam3")))
 }
 
+/// The photo's camera as (EXIF make, model), for the lens match: photos imported before the catalog kept make and
+/// model apart have only the display label, which the lens database's camera look-up also reads as a model.
+fn lens_camera(p: &lcc_catalog::Photo) -> (&str, &str) {
+    if p.meta.camera_model.is_empty() { ("", &p.meta.camera) } else { (&p.meta.camera_make, &p.meta.camera_model) }
+}
+
 impl Session {
     /// Look for the SAM 3 model in the shared default folder ([`default_sam3_dir`]), and for the user's
     /// download mirrors in `<config>/models/sam3-mirrors.txt`.
@@ -229,7 +235,7 @@ impl Session {
         match p.develop.optics.lens.as_ref() {
             Some(picked) if p.develops_raw() => {
                 let given = crate::lens_profiles::GivenLens::from(picked);
-                let m = crate::lens_profiles::match_lens_with(None, &p.meta.lens, (&p.meta.camera_make, &p.meta.camera_model), Some(&given));
+                let m = crate::lens_profiles::match_lens_with(None, &p.meta.lens, lens_camera(p), Some(&given));
                 let has_focal = given.focal.or(p.meta.focal_mm.map(f64::from)).is_some_and(|f| f.is_finite() && f > 0.0);
                 match m {
                     crate::lens_profiles::Match::Chosen(name) if !has_focal => Some(crate::lens_profiles::Match::NoFocal(name)),
@@ -252,14 +258,16 @@ impl Session {
         if p.embedded_lens.is_some() {
             // the file's own, as this session recorded when it looked the photo up; unrecorded, the file's unless
             // the database matches its lens name (only then could the correction have come from there)
-            let from_file = self.lens_from_file.get(&p.id).copied().unwrap_or_else(|| {
-                !matches!(crate::lens_profiles::match_lens(None, &p.meta.lens, (&p.meta.camera_make, &p.meta.camera_model)), Match::Found(_))
-            });
+            let from_file = self
+                .lens_from_file
+                .get(&p.id)
+                .copied()
+                .unwrap_or_else(|| !matches!(crate::lens_profiles::match_lens(None, &p.meta.lens, lens_camera(p)), Match::Found(_)));
             if from_file {
                 return None;
             }
         }
-        let m = crate::lens_profiles::match_lens_with(None, &p.meta.lens, (&p.meta.camera_make, &p.meta.camera_model), given);
+        let m = crate::lens_profiles::match_lens_with(None, &p.meta.lens, lens_camera(p), given);
         let has_focal = given.and_then(|g| g.focal).or(p.meta.focal_mm.map(f64::from)).is_some_and(|f| f.is_finite() && f > 0.0);
         match m {
             Match::Chosen(name) if !has_focal => Some(Match::NoFocal(name)),
