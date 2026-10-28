@@ -494,10 +494,13 @@ fn the_overall_deadline_stops_a_trickling_server() {
 
 #[test]
 fn file_urls_are_percent_decoded_but_bare_paths_keep_their_percent_signs() {
-    let bare = mirrors(Some("/models/50%20off"), None, &[]);
+    // an absolute path on this OS (`/models` is relative on Windows)
+    let root = if cfg!(windows) { "C:/models" } else { "/models" };
+    let bare = mirrors(Some(&format!("{root}/50%20off")), None, &[]);
     assert_eq!(bare.len(), 1);
-    assert_eq!(local_path(&bare[0]), Some(std::path::PathBuf::from("/models/50%20off")));
-    assert_eq!(local_path("file:///models/my%20sam3"), Some(std::path::PathBuf::from("/models/my sam3")));
+    assert_eq!(local_path(&bare[0]), Some(std::path::PathBuf::from(format!("{root}/50%20off"))));
+    let url = format!("file:///{}/my%20sam3", root.trim_start_matches('/'));
+    assert_eq!(local_path(&url), Some(std::path::PathBuf::from(format!("{root}/my sam3"))));
     for hostile in ["file:///x%", "file:///x%2", "file:///x%zz", "file:///x%ff", "file:///x%0a"] {
         assert_eq!(local_path(hostile), None, "{hostile}");
     }
