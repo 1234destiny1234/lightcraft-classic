@@ -11,9 +11,9 @@ use lcc_catalog::PhotoId;
 use serde_json::json;
 
 use crate::LccApp;
+use crate::icons::Icon;
 use crate::module::{ModuleId, PanelId};
 use crate::state::RightPanel;
-use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::widgets::{divider, icon_button_named};
 
