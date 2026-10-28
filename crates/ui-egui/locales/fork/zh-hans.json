@@ -1429,5 +1429,6 @@
   "installed:": "已安装：",
   "Waiting for a plug-in's program": "正在等待插件的程序",
   "Plug-in Settings": "增效工具设置",
-  "this plug-in has no settings": "此增效工具没有设置"
+  "this plug-in has no settings": "此增效工具没有设置",
+  "Indexing photos": "正在索引照片"
 }

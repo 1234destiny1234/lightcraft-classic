@@ -54,6 +54,8 @@ pub mod fonts;
 pub mod guard;
 pub mod hdr_texture;
 pub mod history_groups;
+/// The shared AI backend's queue and activity row (#491).
+mod ml;
 pub mod import;
 mod import_move;
 pub mod legacy;
@@ -322,6 +324,8 @@ pub struct Session {
     pub(crate) sidecar_flush_limit: std::time::Duration,
     /// AI denoise: the model in use, the photos that have their picture and the work in progress.
     pub(crate) denoise: denoise::State,
+    /// The shared AI job queue (#491), made on its first job.
+    pub(crate) ml: ml::State,
     /// Plug-in filter measurements (`develop.pluginFilter.analyze`) running in the background.
     pub(crate) filter_analyses: cmd::plugin_filters::Analyses,
     /// Where the host keeps face models (one folder each); `None` where there is no file system (the web).
@@ -588,6 +592,7 @@ impl Session {
             #[cfg(not(target_arch = "wasm32"))]
             sidecar_flush_limit: std::time::Duration::from_secs(30),
             denoise: Default::default(),
+            ml: Default::default(),
             filter_analyses: Default::default(),
             face_models_dir: None,
             face_downloads: Default::default(),
@@ -1753,6 +1758,8 @@ mod tests_facets;
 mod tests_filesystem_history;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_focus_scan;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_ml;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_folder_metadata;
 #[cfg(test)]

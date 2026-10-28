@@ -1258,5 +1258,6 @@
   "installed:": "встановлено:",
   "Waiting for a plug-in's program": "Очікування програми плагіна",
   "Plug-in Settings": "Налаштування плагіна",
-  "this plug-in has no settings": "цей плагін не має налаштувань"
+  "this plug-in has no settings": "цей плагін не має налаштувань",
+  "Indexing photos": "Індексування фотографій"
 }

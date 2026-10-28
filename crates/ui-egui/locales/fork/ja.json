@@ -1507,5 +1507,6 @@
   "installed:": "インストール済み：",
   "Waiting for a plug-in's program": "プラグインのプログラムを待機中",
   "Plug-in Settings": "プラグインの設定",
-  "this plug-in has no settings": "このプラグインには設定がありません"
+  "this plug-in has no settings": "このプラグインには設定がありません",
+  "Indexing photos": "写真をインデックス作成中"
 }

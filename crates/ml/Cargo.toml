@@ -1,0 +1,14 @@
+[package]
+name = "lcc-ml"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Background ML inference (L3): device selection with CPU fallback and one shared job queue for the AI features"
+
+[lints]
+workspace = true
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+web-time = { workspace = true }

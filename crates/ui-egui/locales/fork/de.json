@@ -1364,5 +1364,6 @@
   "installed:": "installiert:",
   "Waiting for a plug-in's program": "Warten auf das Programm eines Plug-ins",
   "Plug-in Settings": "Zusatzmodul-Einstellungen",
-  "this plug-in has no settings": "dieses Zusatzmodul hat keine Einstellungen"
+  "this plug-in has no settings": "dieses Zusatzmodul hat keine Einstellungen",
+  "Indexing photos": "Fotos werden indiziert"
 }

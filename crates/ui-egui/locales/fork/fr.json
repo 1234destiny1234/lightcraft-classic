@@ -1427,5 +1427,6 @@
   "installed:": "installé :",
   "Waiting for a plug-in's program": "En attente du programme d’un module externe",
   "Plug-in Settings": "Réglages du module externe",
-  "this plug-in has no settings": "ce module externe n’a pas de réglages"
+  "this plug-in has no settings": "ce module externe n’a pas de réglages",
+  "Indexing photos": "Indexation des photos"
 }

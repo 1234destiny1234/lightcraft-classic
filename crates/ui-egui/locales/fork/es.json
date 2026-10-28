@@ -1510,5 +1510,6 @@
   "installed:": "instalado:",
   "Waiting for a plug-in's program": "Esperando al programa de un plug-in",
   "Plug-in Settings": "Ajustes del plugin",
-  "this plug-in has no settings": "este plugin no tiene ajustes"
+  "this plug-in has no settings": "este plugin no tiene ajustes",
+  "Indexing photos": "Indexando fotos"
 }

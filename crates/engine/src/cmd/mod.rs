@@ -32,6 +32,7 @@ mod face_recognize;
 pub(crate) mod facets;
 pub mod filters;
 mod focus;
+mod ml;
 pub mod folder_metadata;
 pub mod folders;
 pub mod geocode;
@@ -289,6 +290,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         #[cfg(not(target_arch = "wasm32"))]
         v.extend(update::specs());
         v.extend(focus::specs());
+        v.extend(ml::specs());
         v.extend(folder_metadata::specs());
         v.extend(activity::specs());
         v.extend(video::specs());
