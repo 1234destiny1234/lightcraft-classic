@@ -512,6 +512,9 @@ pub struct AppSettings {
     pub double_click_develop: bool,
     /// Hide active filter text / indicator in Develop mode (Settings ▸ Interface ▸ Detail).
     pub hide_filter_in_develop: bool,
+    /// Presets panel: list the "User Presets" group first, after Favorites (issue #476; off by
+    /// default, as Lightroom Classic keeps groups in name order).
+    pub user_presets_first: bool,
     /// View ▸ View Options: the lines the loupe's info overlay shows in Info 1 and Info 2.
     #[serde(deserialize_with = "lenient")]
     pub loupe_info: LoupeInfo,
@@ -603,6 +606,7 @@ impl Default for AppSettings {
             zoom_to_focus: true,
             double_click_develop: false,
             hide_filter_in_develop: false,
+            user_presets_first: false,
             loupe_info: LoupeInfo::default(),
             lightroom_import: LightroomImport::Ask,
         }
