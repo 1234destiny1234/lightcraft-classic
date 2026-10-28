@@ -163,10 +163,10 @@ fn grain_noise(x: f32, y: f32, seed: u32) -> f32 {
 }
 
 /// Number of per-mask terms in [`mask_terms`].
-pub const MASK_TERMS: usize = 21;
+pub const MASK_TERMS: usize = MASK_SUMS + 4;
 
 /// Number of alpha-weighted terms at the start of [`mask_terms`].
-pub const MASK_SUMS: usize = 17;
+pub const MASK_SUMS: usize = 17 + crate::colorops::LOCAL_GRADE_TERMS;
 
 /// Positive dehaze from process V3 (#1237) of scene-linear `c`: `dz` the strength (0..1, with a
 /// local adjustment's added), `d` the dark channel over the airlight (0..1), `air` the airlight.
@@ -187,8 +187,9 @@ pub fn dehaze_v3_pixel(c: [f32; 3], dz: f32, d: f32, air: f32) -> [f32; 3] {
 
 /// A mask's local adjustments as the per-pixel stage uses them (alpha-weighted sums), in order:
 /// exposure, temp, tint, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze,
-/// saturation, hue, sharpness, noise, moiré, defringe, then the colour overlay: on (0/1), cos and
-/// sin of its OkLCh hue, and its strength.
+/// saturation, hue, sharpness, noise, moiré, defringe, the colour grading
+/// ([`crate::colorops::local_grade_terms`]), then the colour overlay: on (0/1), cos and sin of its
+/// OkLCh hue, and its strength.
 pub fn mask_terms(j: &LocalAdjustments) -> [f32; MASK_TERMS] {
     let (on, cos, sin, amt) = if j.color_sat > 0.0 {
         let hue = crate::colorops::oklch_hue_of_srgb_hue(j.color_hue);
@@ -196,6 +197,7 @@ pub fn mask_terms(j: &LocalAdjustments) -> [f32; MASK_TERMS] {
     } else {
         (0.0, 0.0, 0.0, 0.0)
     };
+    let g = crate::colorops::local_grade_terms(j);
     [
         j.exposure as f32,
         (j.temp / 100.0) as f32,
@@ -214,6 +216,18 @@ pub fn mask_terms(j: &LocalAdjustments) -> [f32; MASK_TERMS] {
         (j.noise / 100.0) as f32,
         (j.moire / 100.0) as f32,
         (j.defringe / 100.0) as f32,
+        g[0],
+        g[1],
+        g[2],
+        g[3],
+        g[4],
+        g[5],
+        g[6],
+        g[7],
+        g[8],
+        g[9],
+        g[10],
+        g[11],
         on,
         cos,
         sin,
@@ -598,8 +612,27 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
                     tint_col = Some(([t[MASK_SUMS + 1], t[MASK_SUMS + 2], 0.0], a * t[MASK_SUMS + 3]));
                 }
             }
-            let [l_exp, l_temp, l_tint, l_con, l_hl, l_sh, l_wh, l_bl, l_tex, l_clar, l_dehaze, l_sat, l_hue, l_sharp, l_noise, l_moire, l_defringe] =
-                l;
+            let [
+                l_exp,
+                l_temp,
+                l_tint,
+                l_con,
+                l_hl,
+                l_sh,
+                l_wh,
+                l_bl,
+                l_tex,
+                l_clar,
+                l_dehaze,
+                l_sat,
+                l_hue,
+                l_sharp,
+                l_noise,
+                l_moire,
+                l_defringe,
+                ..,
+            ] = l;
+            let l_grade: [f32; crate::colorops::LOCAL_GRADE_TERMS] = std::array::from_fn(|k| l[17 + k]);
 
             // --- local Moiré (and the colour part of Noise): chromaticity towards its blur
             let mt = (l_moire + 0.5 * l_noise.max(0.0)).clamp(-1.0, 1.0);
@@ -742,6 +775,7 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
                 let lab = lcc_color::perceptual::oklab_from_2020(d);
                 d = lcc_color::perceptual::oklab_to_2020([lab[0], lab[1] + dir[0] * 0.08 * amt, lab[2] + dir[1] * 0.08 * amt]);
             }
+            d = crate::colorops::local_grade(d, &l_grade);
 
             // --- vignette (display linear, post-crop)
             if let Some(v) = vig {
