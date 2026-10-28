@@ -67,6 +67,10 @@ const MAX_MANIFEST_BYTES: u64 = 1 << 20;
 
 /// How long a rename or delete that Windows refuses for a moment is retried.
 const RETRY_FOR: Duration = Duration::from_secs(3);
+
+/// How long a leftover of the previous version is retried before it is left for the next start: a
+/// program that just ended stays locked while Windows tears its process down.
+const LEFTOVER_WAIT: Duration = Duration::from_secs(10);
 const RETRY_PAUSE: Duration = Duration::from_millis(100);
 
 /// `name` in lower case, for comparing names the way Windows does.
@@ -574,13 +578,18 @@ fn roll_back(moved: &[Moved]) -> Vec<String> {
 
 /// `op`, retried for [`RETRY_FOR`] while Windows refuses it for a moment (a file another process,
 /// usually a virus scanner, has open).
-fn retry<T>(mut op: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+fn retry<T>(op: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    retry_for(RETRY_FOR, op)
+}
+
+/// [`retry`] for up to `wait`.
+fn retry_for<T>(wait: Duration, mut op: impl FnMut() -> io::Result<T>) -> io::Result<T> {
     let start = Instant::now();
     loop {
         match op() {
             Ok(v) => return Ok(v),
             // 32: sharing violation, 33: lock violation
-            Err(e) if (e.kind() == io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(32 | 33))) && start.elapsed() < RETRY_FOR => {
+            Err(e) if (e.kind() == io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(32 | 33))) && start.elapsed() < wait => {
                 std::thread::sleep(RETRY_PAUSE)
             }
             Err(e) => return Err(e),
@@ -708,6 +717,8 @@ pub fn confirm(exe: &Path) {
 }
 
 /// Delete the leftovers a confirmed or undone update lists, and the manifest once none is left.
+/// Runs off the UI thread: a file still in use is retried for [`LEFTOVER_WAIT`] (the process that
+/// ran it may be ending right now) and otherwise left for the next start.
 fn finish(dir: &Path, held: Held, m: &Manifest) {
     let leftover = |f: &Path| match m.state {
         State::Confirmed => old_path(f),
@@ -716,7 +727,7 @@ fn finish(dir: &Path, held: Held, m: &Manifest) {
     let mut left = 0usize;
     for rel in &m.files {
         let file = leftover(&dir.join(rel));
-        match fs::remove_file(&file) {
+        match retry_for(LEFTOVER_WAIT, || fs::remove_file(&file)) {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => {
