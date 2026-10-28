@@ -271,6 +271,7 @@ fn library_add_refuses_and_adds_nothing() {
     let gone = album(&mut f.s, "Gone", &[f.photo]);
     f.s.execute("album.delete", &json!({"id": gone.0})).unwrap();
     let from = f.photo.0.to_string();
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut cases = vec![
         (json!({"path": elsewhere.join("x.png"), "from": from}), "not in the folder"),
         (json!({"path": f.dir.join(&outside), "from": from}), "not in the folder"),
