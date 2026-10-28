@@ -106,7 +106,7 @@
   "Renders a copy of the photo with your edits applied and opens it in the editor.": "Vytvoří kopii fotky s vašimi úpravami a otevře ji v editoru.",
   "Opens a copy of the original file, without your edits.": "Otevře kopii původního souboru bez vašich úprav.",
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Otevře samotný původní soubor; uložením se tato fotka aktualizuje. Vaše úpravy odsud tam nejsou vidět.",
-  "Raw files can only be edited as a copy with adjustments.": "Soubory raw lze upravit jen jako kopii s úpravami.",
-  "File format, colour space and bit depth: Settings ▸ External Editing.": "Formát souboru, barevný prostor a bitová hloubka: Nastavení ▸ Externí úpravy.",
-  "Settings ▸ External Editing ▸ Edit In turns the question back on": "Nastavení ▸ Externí úpravy ▸ Upravit v znovu zapne dotaz"
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "Soubory raw lze upravit jen jako kopii s úpravami.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Formát souboru, barevný prostor a bitová hloubka: Nastavení → Externí úpravy.",
+  "Settings → External Editing → Edit In turns the question back on": "Nastavení → Externí úpravy → Upravit v znovu zapne dotaz"
 }

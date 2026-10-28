@@ -37,7 +37,7 @@
   "Renders a copy of the photo with your edits applied and opens it in the editor.": "Luo kuvasta kopion säätöinesi ja avaa sen editorissa.",
   "Opens a copy of the original file, without your edits.": "Avaa kopion alkuperäisestä tiedostosta ilman säätöjäsi.",
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Avaa itse alkuperäisen tiedoston; tallennus päivittää tämän kuvan. Täällä tehdyt säätösi eivät näy siellä.",
-  "Raw files can only be edited as a copy with adjustments.": "Raw-tiedostoja voi muokata vain säädetyn kopion kautta.",
-  "File format, colour space and bit depth: Settings ▸ External Editing.": "Tiedostomuoto, väriavaruus ja bittisyvyys: Asetukset ▸ Ulkoinen muokkaus.",
-  "Settings ▸ External Editing ▸ Edit In turns the question back on": "Asetukset ▸ Ulkoinen muokkaus ▸ Muokkaa ohjelmassa ottaa kysymyksen taas käyttöön"
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "Raw-tiedostoja voi muokata vain säädetyn kopion kautta.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Tiedostomuoto, väriavaruus ja bittisyvyys: Asetukset → Ulkoinen muokkaus.",
+  "Settings → External Editing → Edit In turns the question back on": "Asetukset → Ulkoinen muokkaus → Muokkaa ohjelmassa ottaa kysymyksen taas käyttöön"
 }

@@ -651,16 +651,16 @@ fn ask_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
             }
             if !ask.file_editable {
                 ui.add_space(2.0);
-                ui.label(egui::RichText::new(tr("Raw files can only be edited as a copy with adjustments.")).small().weak());
+                ui.label(egui::RichText::new(tr("Raw files and generated photos can only be edited as a copy with adjustments.")).small().weak());
             }
             if ask.editor.is_some() && ask.mode == "copyWithAdjustments" {
-                ui.label(egui::RichText::new(tr("File format, colour space and bit depth: Settings ▸ External Editing.")).small().weak());
+                ui.label(egui::RichText::new(tr("File format, colour space and bit depth: Settings → External Editing.")).small().weak());
             }
             ui.add_space(6.0);
             if ask.editor.is_some() {
                 let c = crate::dialog_frame::checkbox(ui, &mut ask.remember, tr("Don't ask again"));
                 crate::widgets::register(ui.ctx(), "check:editInRemember", c.rect);
-                c.on_hover_text(tr("Settings ▸ External Editing ▸ Edit In turns the question back on"));
+                c.on_hover_text(tr("Settings → External Editing → Edit In turns the question back on"));
             }
             ui.add_space(6.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

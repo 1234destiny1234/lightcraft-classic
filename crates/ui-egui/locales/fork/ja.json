@@ -1516,7 +1516,7 @@
   "Renders a copy of the photo with your edits applied and opens it in the editor.": "補正を適用した写真のコピーを書き出し、エディターで開きます。",
   "Opens a copy of the original file, without your edits.": "補正を含まない元ファイルのコピーを開きます。",
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "元ファイルそのものを開きます。保存するとこの写真が更新されます。ここでの補正はそちらでは表示されません。",
-  "Raw files can only be edited as a copy with adjustments.": "RAW ファイルは補正を適用したコピーとしてのみ編集できます。",
-  "File format, colour space and bit depth: Settings ▸ External Editing.": "ファイル形式、色空間、ビット深度：設定 ▸ 外部編集。",
-  "Settings ▸ External Editing ▸ Edit In turns the question back on": "設定 ▸ 外部編集 ▸ 他のツールで編集 で確認を再び有効にできます"
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "RAW ファイルは補正を適用したコピーとしてのみ編集できます。",
+  "File format, colour space and bit depth: Settings → External Editing.": "ファイル形式、色空間、ビット深度：設定 → 外部編集。",
+  "Settings → External Editing → Edit In turns the question back on": "設定 → 外部編集 → 他のツールで編集 で確認を再び有効にできます"
 }

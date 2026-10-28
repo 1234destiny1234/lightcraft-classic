@@ -37,8 +37,8 @@
   "Renders a copy of the photo with your edits applied and opens it in the editor.": "Renderar en kopia av fotot med dina justeringar och öppnar den i redigeraren.",
   "Opens a copy of the original file, without your edits.": "Öppnar en kopia av originalfilen, utan dina justeringar.",
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Öppnar själva originalfilen; när den sparas uppdateras det här fotot. Dina justeringar här syns inte där.",
-  "Raw files can only be edited as a copy with adjustments.": "Raw-filer kan bara redigeras som en kopia med justeringar.",
-  "File format, colour space and bit depth: Settings ▸ External Editing.": "Filformat, färgrymd och bitdjup: Inställningar ▸ Extern redigering.",
-  "Settings ▸ External Editing ▸ Edit In turns the question back on": "Inställningar ▸ Extern redigering ▸ Redigera i slår på frågan igen",
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "Raw-filer kan bara redigeras som en kopia med justeringar.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Filformat, färgrymd och bitdjup: Inställningar → Extern redigering.",
+  "Settings → External Editing → Edit In turns the question back on": "Inställningar → Extern redigering → Redigera i slår på frågan igen",
   "Don't ask again": "Fråga inte igen"
 }

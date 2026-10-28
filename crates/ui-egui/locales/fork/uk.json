@@ -1267,7 +1267,7 @@
   "Renders a copy of the photo with your edits applied and opens it in the editor.": "Створює копію фото з вашими налаштуваннями та відкриває її в редакторі.",
   "Opens a copy of the original file, without your edits.": "Відкриває копію вихідного файлу без ваших налаштувань.",
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Відкриває сам вихідний файл; збереження оновлює це фото. Ваші налаштування тут там не видно.",
-  "Raw files can only be edited as a copy with adjustments.": "RAW-файли можна редагувати лише як копію з налаштуваннями.",
-  "File format, colour space and bit depth: Settings ▸ External Editing.": "Формат файлу, колірний простір і глибина кольору: Налаштування ▸ Зовнішнє редагування.",
-  "Settings ▸ External Editing ▸ Edit In turns the question back on": "Налаштування ▸ Зовнішнє редагування ▸ Редагувати в знову вмикає питання"
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "RAW-файли можна редагувати лише як копію з налаштуваннями.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Формат файлу, колірний простір і глибина кольору: Налаштування → Зовнішнє редагування.",
+  "Settings → External Editing → Edit In turns the question back on": "Налаштування → Зовнішнє редагування → Редагувати в знову вмикає питання"
 }

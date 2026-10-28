@@ -107,8 +107,8 @@
   "Renders a copy of the photo with your edits applied and opens it in the editor.": "Tworzy kopię zdjęcia z Twoimi korektami i otwiera ją w edytorze.",
   "Opens a copy of the original file, without your edits.": "Otwiera kopię oryginalnego pliku, bez Twoich korekt.",
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Otwiera sam oryginalny plik; zapisanie go aktualizuje to zdjęcie. Twoje korekty z tego miejsca nie są tam widoczne.",
-  "Raw files can only be edited as a copy with adjustments.": "Pliki raw można edytować tylko jako kopię z korektami.",
-  "File format, colour space and bit depth: Settings ▸ External Editing.": "Format pliku, przestrzeń kolorów i głębia bitowa: Ustawienia ▸ Edycja zewnętrzna.",
-  "Settings ▸ External Editing ▸ Edit In turns the question back on": "Ustawienia ▸ Edycja zewnętrzna ▸ Edytuj w ponownie włącza pytanie",
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "Pliki raw można edytować tylko jako kopię z korektami.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Format pliku, przestrzeń kolorów i głębia bitowa: Ustawienia → Edycja zewnętrzna.",
+  "Settings → External Editing → Edit In turns the question back on": "Ustawienia → Edycja zewnętrzna → Edytuj w ponownie włącza pytanie",
   "Don't ask again": "Nie pytaj ponownie"
 }

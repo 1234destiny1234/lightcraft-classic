@@ -1373,7 +1373,7 @@
   "Renders a copy of the photo with your edits applied and opens it in the editor.": "Rendert eine Kopie des Fotos mit Ihren Anpassungen und öffnet sie im Editor.",
   "Opens a copy of the original file, without your edits.": "Öffnet eine Kopie der Originaldatei, ohne Ihre Anpassungen.",
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Öffnet die Originaldatei selbst; beim Speichern wird dieses Foto aktualisiert. Ihre Anpassungen hier sind dort nicht sichtbar.",
-  "Raw files can only be edited as a copy with adjustments.": "Raw-Dateien lassen sich nur als Kopie mit Anpassungen bearbeiten.",
-  "File format, colour space and bit depth: Settings ▸ External Editing.": "Dateiformat, Farbraum und Bittiefe: Einstellungen ▸ Externe Bearbeitung.",
-  "Settings ▸ External Editing ▸ Edit In turns the question back on": "Einstellungen ▸ Externe Bearbeitung ▸ Bearbeiten in schaltet die Frage wieder ein"
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "Raw-Dateien lassen sich nur als Kopie mit Anpassungen bearbeiten.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Dateiformat, Farbraum und Bittiefe: Einstellungen → Externe Bearbeitung.",
+  "Settings → External Editing → Edit In turns the question back on": "Einstellungen → Externe Bearbeitung → Bearbeiten in schaltet die Frage wieder ein"
 }
