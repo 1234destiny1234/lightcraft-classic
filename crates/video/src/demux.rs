@@ -437,12 +437,68 @@ fn open_mp4(src: FileSource) -> Result<Clip, VideoError> {
     let table = Table::new(pts, key, (1, u64::from(t.timescale)), |_| true);
     let fps = mp4_rate(t);
     let md = &file.metadata;
-    let created = md.get("com.apple.quicktime.creationdate").or_else(|| md.get("©day")).or_else(|| md.get("date")).map(str::to_string);
+    let created = md
+        .get("com.apple.quicktime.creationdate")
+        .or_else(|| md.get("©day"))
+        .or_else(|| md.get("date"))
+        .map(str::to_string)
+        .or_else(|| mvhd_created(&src, file.moov_offset));
     let gps = md.get("com.apple.quicktime.location.ISO6709").or_else(|| md.get("©xyz")).and_then(crate::parse_iso6709);
     let has_audio = file.track_of_kind(TrackKind::Audio).is_some();
     let (codec, unsupported) = split(codec, table.len());
     let info = info(duration, fps, (w, h), rotation, name, has_audio, created, gps, hdr_of(w, h, colr), codec.is_some());
     Ok(Clip { src, container: Container::Mp4 { file: Box::new(file), track }, info, colr, codec, unsupported, table })
+}
+
+/// A box header at `at`: (type, header length, box length); a length of 0 runs to `end`.
+fn box_header(src: &FileSource, at: u64, end: u64) -> Option<([u8; 4], u64, u64)> {
+    let mut h = [0u8; 16];
+    src.read(at, h.get_mut(..8)?).ok()?;
+    let [s0, s1, s2, s3, t0, t1, t2, t3, ..] = h;
+    let kind = [t0, t1, t2, t3];
+    match u32::from_be_bytes([s0, s1, s2, s3]) {
+        0 => Some((kind, 8, end.checked_sub(at)?)),
+        1 => {
+            src.read(at.checked_add(8)?, h.get_mut(8..)?).ok()?;
+            let [_, _, _, _, _, _, _, _, l @ ..] = h;
+            Some((kind, 16, u64::from_be_bytes(l)))
+        }
+        n => Some((kind, 8, u64::from(n))),
+    }
+}
+
+/// The movie header's creation time (`mvhd`, seconds since 1904 in UTC; what exiftool calls
+/// CreateDate) as RFC 3339, the only date many phones' MP4s carry. `None` when unset (0) or unreadable.
+fn mvhd_created(src: &FileSource, moov: u64) -> Option<String> {
+    let (kind, head, len) = box_header(src, moov, src.len())?;
+    if &kind != b"moov" {
+        return None;
+    }
+    let end = moov.checked_add(len)?.min(src.len());
+    let mut at = moov.checked_add(head)?;
+    // moov holds a handful of children; mvhd comes first in practice
+    for _ in 0..64 {
+        let (kind, head, len) = box_header(src, at, end)?;
+        if &kind == b"mvhd" {
+            let payload = at.checked_add(head)?;
+            let mut p = [0u8; 12];
+            src.read(payload, p.get_mut(..1)?).ok()?;
+            let wide = p.first() == Some(&1);
+            src.read(payload, p.get_mut(..if wide { 12 } else { 8 })?).ok()?;
+            let [_, _, _, _, a, b, c, d, e, f, g, h] = p;
+            let secs = if wide { u64::from_be_bytes([a, b, c, d, e, f, g, h]) } else { u64::from(u32::from_be_bytes([a, b, c, d])) };
+            if secs == 0 {
+                return None;
+            }
+            let unix = i64::try_from(secs).ok()?.checked_sub(2_082_844_800)?;
+            return Some(chrono::DateTime::from_timestamp(unix, 0)?.format("%Y-%m-%dT%H:%M:%SZ").to_string());
+        }
+        at = at.checked_add(len.max(head))?;
+        if at >= end {
+            return None;
+        }
+    }
+    None
 }
 
 /// Frame rate from the track timescale and the most common sample duration.
@@ -885,6 +941,34 @@ mod tests {
         assert_eq!(mkv_date(secs * 1_000_000_000).as_deref(), Some("2024-02-29T12:34:56Z"));
         assert!(mkv_date(i64::MAX).is_some_and(|d| d.starts_with("2293-")));
         assert!(mkv_date(i64::MIN).is_some_and(|d| d.starts_with("1708-")));
+    }
+
+    #[test]
+    fn movie_header_dates_and_hostile_boxes() {
+        let path = std::env::temp_dir().join(format!("lcc-mvhd-{}.mp4", std::process::id()));
+        let created = |bytes: &[u8]| {
+            std::fs::write(&path, bytes).unwrap();
+            mvhd_created(&FileSource::open(&path).unwrap(), 0)
+        };
+        let moov = |children: &[u8]| [&(8 + children.len() as u32).to_be_bytes()[..], b"moov", children].concat();
+        let mvhd = |version: u8, time: &[u8]| [&(12 + time.len() as u32).to_be_bytes()[..], b"mvhd", &[version, 0, 0, 0], time].concat();
+        let v0 = mvhd(0, &3_860_475_630u32.to_be_bytes());
+        assert_eq!(created(&moov(&v0)).as_deref(), Some("2026-05-01T10:20:30Z"));
+        let v1 = mvhd(1, &3_860_475_630u64.to_be_bytes());
+        let skip = [&16u32.to_be_bytes()[..], b"free", &[0; 8]].concat();
+        assert_eq!(created(&moov(&[&skip[..], &v1].concat())).as_deref(), Some("2026-05-01T10:20:30Z"));
+        // a 64-bit box length
+        let large = [&1u32.to_be_bytes()[..], b"moov", &(16 + v0.len() as u64).to_be_bytes(), &v0].concat();
+        assert_eq!(created(&large).as_deref(), Some("2026-05-01T10:20:30Z"));
+        // unset, truncated, out of range, zero-length children, a child past the end, no moov
+        assert_eq!(created(&moov(&mvhd(0, &[0; 4]))), None);
+        assert_eq!(created(&moov(&v0)[..18]), None);
+        assert_eq!(created(&moov(&mvhd(1, &u64::MAX.to_be_bytes()))), None);
+        assert_eq!(created(&moov(&[&0u32.to_be_bytes()[..], b"free"].concat())), None);
+        assert_eq!(created(&moov(&[&u32::MAX.to_be_bytes()[..], b"free"].concat())), None);
+        assert_eq!(created(&[&u64::MAX.to_be_bytes()[..], &v0].concat()), None);
+        assert_eq!(created(b"moov"), None);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

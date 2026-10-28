@@ -5445,6 +5445,7 @@ dependencies = [
 name = "lcc-video"
 version = "26.44.1"
 dependencies = [
+ "chrono",
  "filmcraft-aac",
  "filmcraft-ac3",
  "filmcraft-apv",

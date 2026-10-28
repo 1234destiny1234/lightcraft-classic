@@ -131,3 +131,29 @@ fn corrupt_clip_imports_and_shows_a_placeholder() {
     assert!(crate::media::video_poster(&dir.join("gone.mp4").to_string_lossy(), None, 128).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Issue #672: a phone's MP4 often has its date only in `mvhd` (QuickTime CreateDate, UTC),
+/// and a clip with no date at all takes the file's date, as photos do.
+#[test]
+fn undated_clips_take_the_movie_header_or_the_file_date() {
+    let dir = temp_dir("mvhd-date");
+    let clip = dir.join("phone.mp4");
+    write_clip(&clip, 64, 48, 10, |_| 100, &[]);
+    let mut bytes = std::fs::read(&clip).unwrap();
+    let at = bytes.windows(4).position(|w| w == b"mvhd").unwrap();
+    assert_eq!(bytes[at + 4], 0, "version 0 movie header");
+    // 2026-05-01T10:20:30Z in seconds since 1904
+    bytes[at + 8..at + 12].copy_from_slice(&3_860_475_630u32.to_be_bytes());
+    std::fs::write(&clip, &bytes).unwrap();
+    let mut s = Session::new().with_fs();
+    let id = import_one(&mut s, &clip);
+    assert_eq!(s.catalog.photo(id).unwrap().captured.as_deref(), Some("2026-05-01T10:20:30+00:00"));
+
+    let bare = dir.join("bare.mp4");
+    write_clip(&bare, 64, 48, 10, |_| 100, &[]);
+    let mtime = std::fs::metadata(&bare).unwrap().modified().unwrap().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let mut s = Session::new().with_fs();
+    let id = import_one(&mut s, &bare);
+    assert_eq!(s.catalog.photo(id).unwrap().captured.as_deref(), Some(crate::import::civil(mtime as i64).as_str()));
+    let _ = std::fs::remove_dir_all(&dir);
+}
