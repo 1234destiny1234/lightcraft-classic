@@ -147,7 +147,11 @@ fn undated_clips_take_the_movie_header_or_the_file_date() {
     std::fs::write(&clip, &bytes).unwrap();
     let mut s = Session::new().with_fs();
     let id = import_one(&mut s, &clip);
-    assert_eq!(s.catalog.photo(id).unwrap().captured.as_deref(), Some("2026-05-01T10:20:30+00:00"));
+    // in this computer's zone, so it sorts by clock time among the photos taken with it
+    let captured = s.catalog.photo(id).unwrap().captured.clone().unwrap();
+    let d = lcc_meta::DateTime::parse_iso(&captured).unwrap();
+    assert!(d.offset_minutes.is_some(), "{captured}");
+    assert_eq!(d.unix_seconds(), 1_777_630_830, "{captured}");
 
     let bare = dir.join("bare.mp4");
     write_clip(&bare, 64, 48, 10, |_| 100, &[]);

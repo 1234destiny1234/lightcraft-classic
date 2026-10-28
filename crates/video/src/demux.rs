@@ -468,7 +468,8 @@ fn box_header(src: &FileSource, at: u64, end: u64) -> Option<([u8; 4], u64, u64)
 }
 
 /// The movie header's creation time (`mvhd`, seconds since 1904 in UTC; what exiftool calls
-/// CreateDate) as RFC 3339, the only date many phones' MP4s carry. `None` when unset (0) or unreadable.
+/// CreateDate) in this computer's time zone as RFC 3339, the only date many phones' MP4s carry.
+/// `None` when unset (0), unreadable or outside 1970..=9999.
 fn mvhd_created(src: &FileSource, moov: u64) -> Option<String> {
     let (kind, head, len) = box_header(src, moov, src.len())?;
     if &kind != b"moov" {
@@ -491,7 +492,16 @@ fn mvhd_created(src: &FileSource, moov: u64) -> Option<String> {
                 return None;
             }
             let unix = i64::try_from(secs).ok()?.checked_sub(2_082_844_800)?;
-            return Some(chrono::DateTime::from_timestamp(unix, 0)?.format("%Y-%m-%dT%H:%M:%SZ").to_string());
+            // chrono's local zone lookup can panic far outside the years a camera writes
+            if !(0..=253_402_300_799).contains(&unix) {
+                return None;
+            }
+            // Phones, Canon and Nikon Z write UTC here, but photos are sorted and grouped by the
+            // camera's clock time, so a UTC time would put the clip hours away from the photos
+            // taken with it. Older Nikon and Sony bodies write local time instead and come out
+            // shifted by the zone offset; there is no way to tell from mvhd alone.
+            let local = chrono::DateTime::from_timestamp(unix, 0)?.with_timezone(&chrono::Local);
+            return Some(local.to_rfc3339_opts(chrono::SecondsFormat::Secs, false));
         }
         at = at.checked_add(len.max(head))?;
         if at >= end {
@@ -952,17 +962,27 @@ mod tests {
         };
         let moov = |children: &[u8]| [&(8 + children.len() as u32).to_be_bytes()[..], b"moov", children].concat();
         let mvhd = |version: u8, time: &[u8]| [&(12 + time.len() as u32).to_be_bytes()[..], b"mvhd", &[version, 0, 0, 0], time].concat();
+        // the instant written, after checking it is given in this computer's zone
+        let instant = |s: Option<String>| {
+            let d = chrono::DateTime::parse_from_rfc3339(&s.unwrap()).unwrap();
+            assert_eq!(d.offset(), d.with_timezone(&chrono::Local).offset());
+            d.timestamp()
+        };
+        // 2026-05-01T10:20:30Z
+        let may_1 = 1_777_630_830;
         let v0 = mvhd(0, &3_860_475_630u32.to_be_bytes());
-        assert_eq!(created(&moov(&v0)).as_deref(), Some("2026-05-01T10:20:30Z"));
+        assert_eq!(instant(created(&moov(&v0))), may_1);
         let v1 = mvhd(1, &3_860_475_630u64.to_be_bytes());
         let skip = [&16u32.to_be_bytes()[..], b"free", &[0; 8]].concat();
-        assert_eq!(created(&moov(&[&skip[..], &v1].concat())).as_deref(), Some("2026-05-01T10:20:30Z"));
+        assert_eq!(instant(created(&moov(&[&skip[..], &v1].concat()))), may_1);
         // a 64-bit box length
         let large = [&1u32.to_be_bytes()[..], b"moov", &(16 + v0.len() as u64).to_be_bytes(), &v0].concat();
-        assert_eq!(created(&large).as_deref(), Some("2026-05-01T10:20:30Z"));
+        assert_eq!(instant(created(&large)), may_1);
         // unset, truncated, out of range, zero-length children, a child past the end, no moov
         assert_eq!(created(&moov(&mvhd(0, &[0; 4]))), None);
         assert_eq!(created(&moov(&v0)[..18]), None);
+        assert_eq!(created(&moov(&mvhd(0, &2_082_844_799u32.to_be_bytes()))), None);
+        assert_eq!(created(&moov(&mvhd(1, &255_485_145_600u64.to_be_bytes()))), None);
         assert_eq!(created(&moov(&mvhd(1, &u64::MAX.to_be_bytes()))), None);
         assert_eq!(created(&moov(&[&0u32.to_be_bytes()[..], b"free"].concat())), None);
         assert_eq!(created(&moov(&[&u32::MAX.to_be_bytes()[..], b"free"].concat())), None);
