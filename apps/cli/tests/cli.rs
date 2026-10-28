@@ -1021,6 +1021,49 @@ fn transparent_png_export_keeps_its_alpha() {
     assert!(corner.iter().take(3).all(|&c| c >= 250), "JPEG composites onto white: {corner:?}");
 }
 
+#[cfg(unix)]
+#[test]
+fn non_utf8_argument_fails_without_a_panic() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let out = tmp("non-utf8-output.png");
+    let _ = std::fs::remove_file(&out);
+    let output = Command::new(BIN).arg("render").arg(OsString::from_vec(b"bad-\xff.png".to_vec())).arg("-o").arg(&out).output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("argument 2"), "{stderr}");
+    assert!(stderr.contains("UTF-8"), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(!out.exists());
+}
+
+#[test]
+fn run_script_params_must_be_objects() {
+    let path = tmp("run-invalid-params.jsonl");
+    let path_str = path.to_str().unwrap();
+    for params in [json!([]), json!("invalid"), json!(42), json!(true)] {
+        let script = format!("{}\n{}\n", json!({"command": "library.info"}), json!({"command": "develop.reset", "params": params}));
+        std::fs::write(&path, &script).unwrap();
+        for (source, stdin) in [("-", Some(script.as_str())), (path_str, None)] {
+            let (ok, lines, err) = run_cli(&["--script", source], stdin);
+            assert!(!ok, "{source}: {params}: {lines:?}");
+            assert!(lines.is_empty(), "nothing runs before the script is read whole: {source}: {params}: {lines:?}");
+            assert!(err.contains(&format!("{source}:2")), "{err}");
+            assert!(err.contains("`params` must be a JSON object"), "{err}");
+        }
+    }
+    for script in
+        ["{\"command\":\"library.info\"}\n", "{\"command\":\"library.info\",\"params\":null}\n", "{\"command\":\"library.info\",\"params\":{}}\n"]
+    {
+        let (ok, lines, err) = run_cli(&["--script", "-"], Some(script));
+        assert!(ok, "{script}: {err}");
+        assert_eq!(lines.len(), 1, "{script}: {lines:?}");
+        assert_eq!(lines[0]["ok"], true, "{script}: {lines:?}");
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
 fn run_cli(args: &[&str], stdin: Option<&str>) -> (bool, Vec<Value>, String) {
     let mut child = Command::new(BIN).arg("run").args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     if let Some(text) = stdin {

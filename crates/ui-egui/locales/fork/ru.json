@@ -1724,5 +1724,19 @@
   "installed:": "установлена:",
   "Waiting for a plug-in's program": "Ожидание программы плагина",
   "Plug-in Settings": "Настройки плагина",
-  "this plug-in has no settings": "у этого плагина нет настроек"
+  "this plug-in has no settings": "у этого плагина нет настроек",
+  "Edit a Copy with Adjustments": "Редактировать копию с настройками",
+  "Edit a Copy": "Редактировать копию",
+  "Edit Original": "Редактировать оригинал",
+  "Ask": "Спрашивать",
+  "Every selected photo is edited the same way.": "Все выбранные фото редактируются одинаково.",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "Создаёт копию фото с вашими настройками и открывает её в редакторе.",
+  "Opens a copy of the original file, without your edits.": "Открывает копию исходного файла без ваших настроек.",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Открывает сам исходный файл; при сохранении это фото обновится. Ваши настройки здесь там не видны.",
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "RAW-файлы можно редактировать только как копию с настройками.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Формат файла, цветовое пространство и разрядность: Настройки → Внешнее редактирование.",
+  "Settings → External Editing → Edit In turns the question back on": "Настройки → Внешнее редактирование → Редактировать в снова включает вопрос",
+  "Indexing photos": "Индексация фотографий",
+  "Each photo gets the date and time in its file name (IMG_20260921_143000).": "Каждому фото присваиваются дата и время из имени файла (IMG_20260921_143000).",
+  "No date in the active photo's file name": "В имени файла активного фото нет даты"
 }

@@ -28,5 +28,18 @@
   "It needs features this version of the app doesn't have:": "Plug-in ini memerlukan fitur yang tidak ada di versi aplikasi ini:",
   "Install a newer version of the app to use it.": "Instal versi aplikasi yang lebih baru untuk menggunakannya.",
   "It can't be installed:": "Tidak dapat diinstal:",
-  "Install Older Version": "Instal Versi Lama"
+  "Install Older Version": "Instal Versi Lama",
+  "Edit a Copy with Adjustments": "Edit salinan dengan penyesuaian",
+  "Edit a Copy": "Edit salinan",
+  "Edit Original": "Edit asli",
+  "Ask": "Tanya",
+  "Edit Photo": "Edit foto",
+  "Every selected photo is edited the same way.": "Semua foto yang dipilih diedit dengan cara yang sama.",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "Membuat salinan foto dengan penyesuaian Anda dan membukanya di editor.",
+  "Opens a copy of the original file, without your edits.": "Membuka salinan file asli, tanpa penyesuaian Anda.",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Membuka file aslinya sendiri; menyimpannya memperbarui foto ini. Penyesuaian Anda di sini tidak terlihat di sana.",
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "File raw hanya dapat diedit sebagai salinan dengan penyesuaian.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Format file, ruang warna, dan kedalaman bit: Pengaturan → Pengeditan eksternal.",
+  "Settings → External Editing → Edit In turns the question back on": "Pengaturan → Pengeditan eksternal → Edit di mengaktifkan pertanyaan lagi",
+  "Indexing photos": "Mengindeks foto"
 }

@@ -192,7 +192,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], in_column: bo
         let current = active.and_then(|id| app.session.develop_of(id)).map(|d| (*d).clone());
         let thumbs = app.ui.preset_thumbs && active.is_some();
         let row_h = if thumbs { 54.0 } else { 26.0 };
-        let groups = grouped(ui.ctx(), &app.session.presets, &app.session.preset_folders);
+        let groups = grouped(ui.ctx(), &app.session.presets, &app.session.preset_folders, app.ui.settings.user_presets_first);
         let mut all_user_folders = Vec::new();
         collect_all_user_folders(&groups, &mut all_user_folders);
         all_user_folders.sort();
@@ -498,12 +498,18 @@ fn show_folder_node(
     }
 }
 
+/// The group new presets are saved into by default.
+const USER_PRESETS: &str = "User Presets";
+
 /// The presets by folder (hierarchical tree) after a Favorites group of the starred ones, if any;
-/// rebuilt only when the preset list changed (its generation).
-fn grouped(ctx: &egui::Context, presets: &PresetList, custom_folders: &[String]) -> Arc<Vec<FolderNode>> {
+/// rebuilt only when the preset list changed (its generation). With `user_first` (Settings ▸
+/// Interface, issue #476; off by default, as in Lightroom Classic) the "User Presets" group comes
+/// right after Favorites; every other group keeps its usual place.
+fn grouped(ctx: &egui::Context, presets: &PresetList, custom_folders: &[String], user_first: bool) -> Arc<Vec<FolderNode>> {
     let id = egui::Id::new("presets-grouped");
-    if let Some((generation, groups)) = ctx.data(|d| d.get_temp::<(u64, Arc<Vec<FolderNode>>)>(id))
+    if let Some((generation, first, groups)) = ctx.data(|d| d.get_temp::<(u64, bool, Arc<Vec<FolderNode>>)>(id))
         && generation == presets.generation()
+        && first == user_first
     {
         return groups;
     }
@@ -571,6 +577,10 @@ fn grouped(ctx: &egui::Context, presets: &PresetList, custom_folders: &[String])
     }
 
     let mut roots = build_nodes(None, 0, &folder_data);
+    if user_first && let Some(i) = roots.iter().position(|n| n.path == USER_PRESETS) {
+        let node = roots.remove(i);
+        roots.insert(0, node);
+    }
 
     fn collect_starred(nodes: &[FolderNode], presets: &PresetList) -> Vec<usize> {
         let mut starred = Vec::new();
@@ -603,7 +613,7 @@ fn grouped(ctx: &egui::Context, presets: &PresetList, custom_folders: &[String])
     }
 
     let groups = Arc::new(roots);
-    ctx.data_mut(|d| d.insert_temp(id, (presets.generation(), groups.clone())));
+    ctx.data_mut(|d| d.insert_temp(id, (presets.generation(), user_first, groups.clone())));
     groups
 }
 
@@ -722,7 +732,7 @@ mod tests {
         assert!(warm < bw, "list order differs from panel order");
 
         let ctx = egui::Context::default();
-        let groups = grouped(&ctx, &session.presets, &session.preset_folders);
+        let groups = grouped(&ctx, &session.presets, &session.preset_folders, false);
         assert_eq!(groups[0].name, "Favorites");
         assert!(!groups[0].user && !groups[0].builtin, "not a Move to Group target");
         // B&W, then Color, then the user groups
@@ -738,7 +748,7 @@ mod tests {
         for id in ["lc.warm-glow", "lc.bw-selenium", "user.mine"] {
             session.execute("preset.favorite", &json!({"id": id})).unwrap();
         }
-        let groups = grouped(&ctx, &session.presets, &session.preset_folders);
+        let groups = grouped(&ctx, &session.presets, &session.preset_folders, false);
         assert_eq!(groups[0].name, "B&W", "no Favorites group without favourites");
     }
 
@@ -752,6 +762,27 @@ mod tests {
         let other = session.visible().iter().copied().find(|id| Some(*id) != active).unwrap();
         session.execute("library.select", &json!({"ids": [other.0]})).unwrap();
         assert!(!state.is_current(&session), "the preset belongs to the earlier selection");
+    }
+
+    /// Issue #476: the User Presets group can be listed first (after Favorites); the default keeps
+    /// Lightroom Classic's name order, and built-in groups keep their order either way.
+    #[test]
+    fn user_presets_group_first_only_when_asked() {
+        let mut session = lcc_engine::Session::with_demo();
+        let base = session.presets.iter().find(|p| p.id == "lc.warm-glow").unwrap().clone();
+        session.presets.push(Preset { id: "user.mine".into(), name: "Mine".into(), group: "User Presets".into(), builtin: false, ..base.clone() });
+        session.presets.push(Preset { id: "user.a".into(), name: "A".into(), group: "Aaa Mine".into(), builtin: false, ..base });
+        session.execute("preset.favorite", &json!({"id": "lc.warm-glow"})).unwrap();
+        let ctx = egui::Context::default();
+        let names = |first| grouped(&ctx, &session.presets, &session.preset_folders, first).iter().map(|g| g.name.clone()).collect::<Vec<_>>();
+        let off = names(false);
+        assert_ne!(off[1], "User Presets", "default order unchanged");
+        let on = names(true);
+        assert_eq!(on[0], "Favorites");
+        assert_eq!(on[1], "User Presets");
+        let rest_off: Vec<_> = off.iter().filter(|n| *n != "User Presets").collect();
+        let rest_on: Vec<_> = on.iter().filter(|n| *n != "User Presets").collect();
+        assert_eq!(rest_off, rest_on, "every other group keeps its place");
     }
 
     /// Issue #468: Preset folders and nested subfolders.
@@ -782,7 +813,7 @@ mod tests {
         });
 
         let ctx = egui::Context::default();
-        let groups = grouped(&ctx, &session.presets, &session.preset_folders);
+        let groups = grouped(&ctx, &session.presets, &session.preset_folders, false);
 
         let mastin = groups.iter().find(|g| g.name == "Mastin Labs").expect("Mastin Labs folder at root");
         assert_eq!(mastin.depth, 0);

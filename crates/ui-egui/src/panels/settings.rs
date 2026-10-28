@@ -342,6 +342,21 @@ fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     heading(ui, t, crate::i18n::tr("Dialogs"));
     check(ui, "settings.closeDialogsOutside", &mut app.ui.settings.close_dialogs_outside, "Close a dialog by clicking outside it");
     heading(ui, t, crate::i18n::tr("External Editing"));
+    // Photo ▸ Edit In (#616): the window that asks which file to edit, or the remembered choice
+    row(ui, t, crate::i18n::tr("Edit In"), |ui| {
+        use crate::state::EditInMode;
+        choices(
+            ui,
+            "settingsEditInMode",
+            &[
+                (EditInMode::Ask, "Ask"),
+                (EditInMode::CopyWithAdjustments, "Edit a Copy with Adjustments"),
+                (EditInMode::Copy, "Edit a Copy"),
+                (EditInMode::Original, "Edit Original"),
+            ],
+            &mut app.ui.settings.edit_in_mode,
+        );
+    });
     row(ui, t, crate::i18n::tr("PhotoCraft"), |ui| {
         crate::text_field::TextField::singleline("field:photocraftPath", &mut app.ui.settings.photocraft_path)
             .hint(crate::i18n::tr("Found automatically"))
@@ -1156,6 +1171,8 @@ fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         t,
         crate::i18n::tr("Grouped: keywords inside the same keyword share a line naming it, and long lists and the suggestions are shortened."),
     );
+    heading(ui, t, crate::i18n::tr("Presets"));
+    check(ui, "settings.userPresetsFirst", &mut app.ui.settings.user_presets_first, "List User Presets first in the Presets panel");
     heading(ui, t, crate::i18n::tr("Detail View"));
     check(ui, "settings.navigator", &mut app.ui.navigator, "Show the Navigator while zoomed in");
     check(ui, "settings.hideFilterInDevelop", &mut app.ui.settings.hide_filter_in_develop, "Hide filter text in Develop mode");

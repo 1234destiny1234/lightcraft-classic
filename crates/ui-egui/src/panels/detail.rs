@@ -2388,8 +2388,10 @@ fn general_interaction(
             && let Some(q) = resp.interact_pointer_pos()
         {
             let n = map.norm(q);
-            let _ = app.run("develop.wbPick", json!({"x": n.x, "y": n.y}));
+            let _ = app.run("develop.wbPick", json!({"x": n.x, "y": n.y, "size": app.ui.wb_sample}));
             app.ui.tool.clear();
+        } else if let Some(q) = resp.hover_pos() {
+            wb_loupe(app, ui, q, img, canvas);
         }
         return;
     }
@@ -2415,6 +2417,78 @@ fn general_interaction(
     }
     click_zoom_and_pan(app, resp, img, canvas);
     let _ = (native, aspect);
+}
+
+/// The White Balance Selector's sample sizes (side of the averaged square, preview pixels).
+pub(crate) const WB_SAMPLES: [u32; 5] = [1, 3, 5, 9, 15];
+
+/// The sample size nearest `n` among [`WB_SAMPLES`].
+pub(crate) fn wb_sample_step(n: f64) -> u32 {
+    WB_SAMPLES.iter().copied().min_by(|a, b| (*a as f64 - n).abs().total_cmp(&(*b as f64 - n).abs())).unwrap_or(5)
+}
+
+/// The White Balance Selector's loupe (#644): beside the pointer, the photo under it magnified to
+/// single pixels, with the square that a click averages outlined; the same square on the photo.
+fn wb_loupe(app: &LccApp, ui: &egui::Ui, q: Pos2, img: Rect, canvas: Rect) {
+    if !img.contains(q) {
+        return;
+    }
+    let Some(active) = app.session.active() else { return };
+    let Some(tex) = app.renderer.textures.get(&Slot::Main).or_else(|| app.renderer.textures.get(&Slot::Preview)).filter(|t| t.photo == active) else {
+        return;
+    };
+    let r = render_texture_rect(img, tex.size);
+    let (tw, th) = (tex.size[0].max(1) as f32, tex.size[1].max(1) as f32);
+    let u = ((q.x - r.left()) / r.width().max(1.0)).clamp(0.0, 1.0);
+    let v = ((q.y - r.top()) / r.height().max(1.0)).clamp(0.0, 1.0);
+    let sample = app.ui.wb_sample.clamp(1, 31) as f32;
+    // texels across the loupe: odd, so the pointer's texel sits in the middle
+    let across = ((sample * 2.0 + 7.0).max(15.0) as u32 | 1) as f32;
+    let side = 168.0f32;
+    let cell = side / across;
+    // centred on the texel under the pointer
+    let (px, py) = ((u * tw).floor().min(tw - 1.0), (v * th).floor().min(th - 1.0));
+    let half = (across - 1.0) / 2.0;
+    let uv = Rect::from_min_max(pos2((px - half) / tw, (py - half) / th), pos2((px + half + 1.0) / tw, (py + half + 1.0) / th));
+    // up and right of the pointer, flipped inside the pane near its edges
+    let gap = 24.0;
+    let mut x = q.x + gap;
+    if x + side > canvas.right() {
+        x = q.x - gap - side;
+    }
+    let mut y = q.y - gap - side;
+    if y < canvas.top() {
+        y = q.y + gap;
+    }
+    let at = Rect::from_min_size(pos2(x, y), vec2(side, side));
+    let p = ui.painter().with_clip_rect(canvas);
+    // the sampled square on the photo itself, where it is bigger than a few points
+    let on_screen = vec2(r.width() / tw, r.height() / th) * sample;
+    if on_screen.x >= 4.0 {
+        let sq = Rect::from_center_size(pos2(r.left() + (px + 0.5) / tw * r.width(), r.top() + (py + 0.5) / th * r.height()), on_screen);
+        p.rect_stroke(sq, 0.0, Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
+    }
+    p.rect_filled(at.expand(2.0), 3.0, Color32::from_black_alpha(200));
+    p.rect_filled(at, 0.0, Color32::from_gray(40));
+    // texels outside the photo stay dark grey (the texture clamps at its edges)
+    let inside = Rect::from_min_max(pos2(uv.left().max(0.0), uv.top().max(0.0)), pos2(uv.right().min(1.0), uv.bottom().min(1.0)));
+    if inside.width() > 0.0 && inside.height() > 0.0 {
+        let to = |w: Pos2| pos2(at.left() + (w.x - uv.left()) / uv.width() * side, at.top() + (w.y - uv.top()) / uv.height() * side);
+        p.image(tex.tex.id(), Rect::from_min_max(to(inside.min), to(inside.max)), inside, Color32::WHITE);
+    }
+    // the pixel grid, then the averaged square
+    let grid = Stroke::new(0.5, Color32::from_black_alpha(70));
+    if cell >= 6.0 {
+        for i in 1..across as u32 {
+            let o = i as f32 * cell;
+            p.line_segment([pos2(at.left() + o, at.top()), pos2(at.left() + o, at.bottom())], grid);
+            p.line_segment([pos2(at.left(), at.top() + o), pos2(at.right(), at.top() + o)], grid);
+        }
+    }
+    let sq = Rect::from_center_size(at.center(), vec2(cell * sample, cell * sample));
+    p.rect_stroke(sq, 0.0, Stroke::new(2.0, Color32::BLACK), egui::StrokeKind::Outside);
+    p.rect_stroke(sq, 0.0, Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
+    register(ui.ctx(), "canvas:wbLoupe", at);
 }
 
 /// The photo `img` reaches past its pane `canvas`: a drag pans it.

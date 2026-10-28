@@ -29,5 +29,19 @@
   "It needs features this version of the app doesn't have:": "Nó cần những tính năng mà phiên bản ứng dụng này không có:",
   "Install a newer version of the app to use it.": "Hãy cài phiên bản ứng dụng mới hơn để dùng nó.",
   "It can't be installed:": "Không thể cài đặt:",
-  "Install Older Version": "Cài phiên bản cũ hơn"
+  "Install Older Version": "Cài phiên bản cũ hơn",
+  "Edit a Copy with Adjustments": "Sửa bản sao kèm điều chỉnh",
+  "Edit a Copy": "Sửa bản sao",
+  "Edit Original": "Sửa bản gốc",
+  "Ask": "Hỏi",
+  "Edit Photo": "Sửa ảnh",
+  "Every selected photo is edited the same way.": "Mọi ảnh đã chọn được sửa theo cùng một cách.",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "Tạo bản sao của ảnh kèm các điều chỉnh của bạn và mở nó trong trình sửa.",
+  "Opens a copy of the original file, without your edits.": "Mở bản sao của tệp gốc, không kèm điều chỉnh của bạn.",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Mở chính tệp gốc; lưu tệp sẽ cập nhật ảnh này. Điều chỉnh của bạn ở đây không hiện ở đó.",
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "Tệp raw chỉ có thể sửa dưới dạng bản sao kèm điều chỉnh.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Định dạng tệp, không gian màu và độ sâu bit: Cài đặt → Chỉnh sửa bên ngoài.",
+  "Settings → External Editing → Edit In turns the question back on": "Cài đặt → Chỉnh sửa bên ngoài → Sửa trong bật lại câu hỏi",
+  "Don't ask again": "Không hỏi lại",
+  "Indexing photos": "Đang lập chỉ mục ảnh"
 }

@@ -27,5 +27,18 @@
   "It needs features this version of the app doesn't have:": "Se tarvitsee ominaisuuksia, joita tässä sovelluksen versiossa ei ole:",
   "Install a newer version of the app to use it.": "Asenna sovelluksen uudempi versio käyttääksesi sitä.",
   "It can't be installed:": "Sitä ei voi asentaa:",
-  "Install Older Version": "Asenna vanhempi versio"
+  "Install Older Version": "Asenna vanhempi versio",
+  "Edit a Copy with Adjustments": "Muokkaa kopiota säädöin",
+  "Edit a Copy": "Muokkaa kopiota",
+  "Edit Original": "Muokkaa alkuperäistä",
+  "Ask": "Kysy",
+  "Edit Photo": "Muokkaa kuvaa",
+  "Every selected photo is edited the same way.": "Kaikki valitut kuvat muokataan samalla tavalla.",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "Luo kuvasta kopion säätöinesi ja avaa sen editorissa.",
+  "Opens a copy of the original file, without your edits.": "Avaa kopion alkuperäisestä tiedostosta ilman säätöjäsi.",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Avaa itse alkuperäisen tiedoston; tallennus päivittää tämän kuvan. Täällä tehdyt säätösi eivät näy siellä.",
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "Raw-tiedostoja voi muokata vain säädetyn kopion kautta.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Tiedostomuoto, väriavaruus ja bittisyvyys: Asetukset → Ulkoinen muokkaus.",
+  "Settings → External Editing → Edit In turns the question back on": "Asetukset → Ulkoinen muokkaus → Muokkaa ohjelmassa ottaa kysymyksen taas käyttöön",
+  "Indexing photos": "Indeksoidaan kuvia"
 }

@@ -1507,5 +1507,19 @@
   "installed:": "インストール済み：",
   "Waiting for a plug-in's program": "プラグインのプログラムを待機中",
   "Plug-in Settings": "プラグインの設定",
-  "this plug-in has no settings": "このプラグインには設定がありません"
+  "this plug-in has no settings": "このプラグインには設定がありません",
+  "Edit a Copy with Adjustments": "補正を適用したコピーを編集",
+  "Edit a Copy": "コピーを編集",
+  "Edit Original": "元画像を編集",
+  "Ask": "確認する",
+  "Every selected photo is edited the same way.": "選択したすべての写真が同じ方法で編集されます。",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "補正を適用した写真のコピーを書き出し、エディターで開きます。",
+  "Opens a copy of the original file, without your edits.": "補正を含まない元ファイルのコピーを開きます。",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "元ファイルそのものを開きます。保存するとこの写真が更新されます。ここでの補正はそちらでは表示されません。",
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "RAW ファイルは補正を適用したコピーとしてのみ編集できます。",
+  "File format, colour space and bit depth: Settings → External Editing.": "ファイル形式、色空間、ビット深度：設定 → 外部編集。",
+  "Settings → External Editing → Edit In turns the question back on": "設定 → 外部編集 → 他のツールで編集 で確認を再び有効にできます",
+  "Indexing photos": "写真をインデックス作成中",
+  "Each photo gets the date and time in its file name (IMG_20260921_143000).": "各写真にファイル名の日時（IMG_20260921_143000）を設定します。",
+  "No date in the active photo's file name": "アクティブな写真のファイル名に日付がありません"
 }

@@ -328,6 +328,12 @@ fn stem_of(file_name: &str) -> String {
     Path::new(file_name).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "photo".into())
 }
 
+/// Whether an editor can open photo `id`'s file itself (Edit a Copy / Edit Original): a JPEG,
+/// TIFF, PNG, PSD or WebP on disk. Raws and demo photos only take a copy with the adjustments.
+pub fn file_editable(s: &Session, id: PhotoId) -> bool {
+    editable_path(s, id, "photo.editIn").is_ok()
+}
+
 fn editable_path(s: &Session, id: PhotoId, cmd: &str) -> Result<String> {
     let ph = s.catalog.photo(id).ok_or_else(|| bad(cmd, "no photo"))?;
     let Source::File { path } = &ph.source else {

@@ -572,35 +572,48 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"temp": t, "tint": tint}))
             }
         ),
-        cmd!("develop.wbPick", "White Balance Selector", [], Some("W"), "{x, y} normalized image coords of a neutral point", has_active, |s, p| {
-            let (x, y) = (f64_req(p, "x", "develop.wbPick")?, f64_req(p, "y", "develop.wbPick")?);
-            let id = active(s, "develop.wbPick")?;
-            let src = s.source_now(id, SourceLevel::Thumb).map_err(|e| bad("develop.wbPick", e))?;
-            let info = s.source_info(id);
-            let d = s.develop_of(id).unwrap_or_default();
-            // Sample a small neighbourhood in the oriented source.
-            let o = src.oriented(d.orientation);
-            let (cx, cy) = ((x.clamp(0.0, 1.0) * o.width as f64) as isize, (y.clamp(0.0, 1.0) * o.height as f64) as isize);
-            let mut acc = [0.0f32; 3];
-            for dy in -2..=2 {
-                for dx in -2..=2 {
-                    let c = o.get_clamped(cx + dx, cy + dy);
-                    for i in 0..3 {
-                        acc[i] += c[i] / 25.0;
+        cmd!(
+            "develop.wbPick",
+            "White Balance Selector",
+            [],
+            Some("W"),
+            "{x, y} normalized image coords of a neutral point, size?: side of the averaged square in pixels (1..=31, odd; default 5)",
+            has_active,
+            |s, p| {
+                let (x, y) = (f64_req(p, "x", "develop.wbPick")?, f64_req(p, "y", "develop.wbPick")?);
+                if !x.is_finite() || !y.is_finite() {
+                    return Err(bad("develop.wbPick", "x and y must be finite numbers"));
+                }
+                let half = wb_pick_half(p.get("size").and_then(Value::as_f64));
+                let id = active(s, "develop.wbPick")?;
+                let src = s.source_now(id, SourceLevel::Thumb).map_err(|e| bad("develop.wbPick", e))?;
+                let info = s.source_info(id);
+                let d = s.develop_of(id).unwrap_or_default();
+                // Sample a small neighbourhood in the oriented source.
+                let o = src.oriented(d.orientation);
+                let (cx, cy) = ((x.clamp(0.0, 1.0) * o.width as f64) as isize, (y.clamp(0.0, 1.0) * o.height as f64) as isize);
+                let mut acc = [0.0f32; 3];
+                let n = ((2 * half + 1) * (2 * half + 1)) as f32;
+                for dy in -half..=half {
+                    for dx in -half..=half {
+                        let c = o.get_clamped(cx + dx, cy + dy);
+                        for i in 0..3 {
+                            acc[i] += c[i] / n;
+                        }
                     }
                 }
+                let patch = lcc_raster::Rgb32f::filled(4, 4, acc);
+                let (t, tint) = lcc_pipeline::auto::auto_wb(&patch, &info);
+                edit(s, "develop.wbPick", "White Balance", |d| {
+                    lcc_pipeline::local::normalize_wb(d, &info);
+                    d.wb.mode = WbMode::Custom;
+                    d.wb.temp = t;
+                    d.wb.tint = tint;
+                    Ok(())
+                })?;
+                Ok(json!({"temp": t, "tint": tint}))
             }
-            let patch = lcc_raster::Rgb32f::filled(4, 4, acc);
-            let (t, tint) = lcc_pipeline::auto::auto_wb(&patch, &info);
-            edit(s, "develop.wbPick", "White Balance", |d| {
-                lcc_pipeline::local::normalize_wb(d, &info);
-                d.wb.mode = WbMode::Custom;
-                d.wb.temp = t;
-                d.wb.tint = tint;
-                Ok(())
-            })?;
-            Ok(json!({"temp": t, "tint": tint}))
-        }),
+        ),
         cmd!(
             "develop.treatment",
             "Black & White",
@@ -1657,5 +1670,29 @@ mod recipe_tests {
         assert_eq!(recipe_partial(&recipe(&[("light.exposure", 0.5)])), Some(json!({"light": {"exposure": 0.5}})));
         // a reset to the control's default is stored
         assert_eq!(recipe_partial(&recipe(&[("light.exposure", 0.0)])), Some(json!({"light": {"exposure": 0.0}})));
+    }
+}
+
+/// Half the side of `develop.wbPick`'s averaged square: `size` (pixels, rounded to the next odd
+/// number, 1..=31; 5 when absent or not a finite number).
+pub(crate) fn wb_pick_half(size: Option<f64>) -> isize {
+    match size {
+        Some(v) if v.is_finite() => ((v.clamp(1.0, 31.0).round() as isize) / 2).clamp(0, 15),
+        _ => 2,
+    }
+}
+
+#[cfg(test)]
+mod wb_pick_size_tests {
+    use super::wb_pick_half;
+
+    #[test]
+    fn hostile_sizes_stay_in_range() {
+        for v in [None, Some(f64::NAN), Some(f64::INFINITY), Some(-1e300), Some(1e300), Some(0.0), Some(4.0), Some(31.0)] {
+            let h = wb_pick_half(v);
+            assert!((0..=15).contains(&h), "{v:?} -> {h}");
+        }
+        assert_eq!(wb_pick_half(Some(1.0)), 0);
+        assert!(wb_pick_half(Some(15.0)) > wb_pick_half(None));
     }
 }

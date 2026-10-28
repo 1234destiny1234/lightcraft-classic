@@ -242,7 +242,17 @@ fn main() -> ExitCode {
             Err(e) => log::warn!("could not copy the previous settings folder: {e}"),
         }
     }
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // `std::env::args` panics on an argument that isn't UTF-8: refuse it with a message instead
+    let mut args: Vec<String> = Vec::new();
+    for (index, arg) in std::env::args_os().skip(1).enumerate() {
+        match arg.into_string() {
+            Ok(arg) => args.push(arg),
+            Err(_) => {
+                eprintln!("{CLI}: argument {} is not valid UTF-8; use a UTF-8 encoded argument", index + 1);
+                return ExitCode::FAILURE;
+            }
+        }
+    }
     let r = match args.first().map(String::as_str) {
         Some("run") => run(&args[1..]),
         Some("run-action") => run_action::to_run_args(&args[1..]).and_then(|a| run(&a)),
@@ -712,7 +722,12 @@ fn run(args: &[String]) -> Result<(), String> {
                 .or(v.get("method"))
                 .and_then(Value::as_str)
                 .ok_or_else(|| format!("{path}:{}: needs `command` or `method`", n + 1))?;
-            let params = v.get("params").cloned().filter(|p| p.is_object()).unwrap_or_else(|| json!({}));
+            // a `params` that isn't an object is a mistake in the script: refuse it before any command runs
+            let params = match v.get("params") {
+                None | Some(Value::Null) => json!({}),
+                Some(Value::Object(params)) => Value::Object(params.clone()),
+                Some(_) => return Err(format!("{path}:{}: `params` must be a JSON object", n + 1)),
+            };
             steps.push(Step { id: id.to_string(), params });
         }
     }

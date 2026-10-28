@@ -53,9 +53,9 @@ These need the host feature **`settings`**: a plug-in that uses any of them says
     runs.
 
   A prepare step **can only read**, whatever the plug-in is granted: there, `metadata.setStandard`,
-  `ns.set`, `settings.set`, `fs.writeText`, `fs.writeBytes`, `fs.remove` and any `http.request`
-  other than `GET` or `HEAD` fail with "a prepare step can only read". The command itself may write
-  as usual.
+  `ns.set`, `settings.set`, `fs.writeText`, `fs.writeBytes`, `fs.remove`, `program.start` and any
+  `http.request` other than `GET` or `HEAD` fail with "a prepare step can only read". The command
+  itself may write as usual.
 
   A `choice` field with no `options` (`"options": []`) gets its options only from the prepare
   step; it is allowed only in a command with `prepare`. A settings field with `"prepare": true`
@@ -88,7 +88,7 @@ are the granted permissions intersected with the requested ones.
 | `metadataWrite: true` | `metadata.setStandard {ids, title?, caption?, keywords?, addKeywords?, …}` |
 | `network: ["api.example.com", "*.example.org"]` | `http.request` to those hosts only. Redirects are not followed: the plug-in has to request the new URL itself, and that request is checked again. A binary body goes as `bodyBase64` (with `contentType`) instead of `body`. |
 | `fs: [{path: "/abs/dir", write?}]` | `fs.readText`, `fs.readBytes`, `fs.list`, `fs.exists` below each root, and `fs.writeText`, `fs.writeBytes`, `fs.remove` (files only) below writable roots. Bytes travel as base64 (`{path}` → base64 text; `{path, base64}`). `..` is rejected, and symbolic links are resolved so a link cannot lead out of a root. Files lent to a call (an export hook's or destination's exported files, a publish upload's rendered file) can be read and rewritten without any root, never removed. A program run's folder is lent to its `program.end` call for reading. |
-| `programs: [{id, name, macBundleIds?, windowsExe?, linuxExe?}]` | `program.start` of those programs (`program.list` needs nothing). Only the user grants one, by ticking it in the install dialog or the Plugin Manager. `plugin.install` with `grant` and `plugin.grant`, whoever calls them (MCP, the control channel, an action, the command line), may repeat the programs already granted (they stay granted) or leave them out (revoked), and refuse a grant that names any other program or a wider entry than the granted one, changing nothing. The control channel's input requests (`ui.pointer`, `ui.clickWidget`, `ui.key`) work the dialog as the user's mouse and keyboard would, so a row ticked through them counts as the user's: give the control port only to agents you would let tick it. |
+| `programs: [{id, name, macBundleIds?, windowsExe?, linuxExe?}]` | `program.start` of those programs, with the arguments the plug-in chooses on each run (see [Programs](#programs)); `program.list` needs nothing. Only the user grants one, by ticking it in the install dialog or the Plugin Manager. `plugin.install` with `grant` and `plugin.grant`, whoever calls them (MCP, the control channel, an action, the command line), may repeat the programs already granted (they stay granted) or leave them out (revoked), and refuse a grant that names any other program or a wider entry than the granted one, changing nothing. The control channel's input requests (`ui.pointer`, `ui.clickWidget`, `ui.key`) work the dialog as the user's mouse and keyboard would, so a row ticked through them counts as the user's: give the control port only to agents you would let tick it. |
 
 Every plug-in can always use its own **metadata namespace** (`ns.get {photo}`,
 `ns.set {photo, key, value}`, `ns.photos`). The namespace is stored next to the module, never in
@@ -131,6 +131,12 @@ particular programs, not whatever the entry names later. An install from a comma
 programs, with a line in its log: the user allowed them for the code they had. Installing the same
 module again keeps them.
 
+**What a grant covers:** the user allows a program, not a particular use of it. The plug-in chooses
+the arguments and the files it hands the program on every run (`program.start {args, files}`); the
+host checks only their names and sizes, never what they ask the program to do. So a grant gives the
+plug-in whatever that program can do with the arguments it accepts, and the install dialog and the
+Plug-in Manager show which program it is, not how the plug-in will use it.
+
 - **`program.list`** → `[{program, name, granted, installed: [{bundleId?, path?, version?}]}]` for
   every declared program, in manifest order (on macOS, installs in the entry's order). It needs no
   permission, so a plug-in can tell the user what to install or allow; `path`, where the program
@@ -152,7 +158,8 @@ module again keeps them.
 
   Only a plug-in command (`plugin.run`, a menu item) starts programs: export hooks, export
   destinations, metadata providers and `program.end` can list programs but get an error from
-  `program.start` ("start the program from a command"). Publish services have neither (no
+  `program.start` ("start the program from a command"), and so do a command's and the settings'
+  prepare steps ("a prepare step can only read"). Publish services have neither (no
   catalog, no programs). A command's lookups (at most 3 seconds per lookup) and the check that the
   program didn't fail at once (300 ms) run on the thread that runs the command, in the app the UI
   thread, so a start can hold the window that long.

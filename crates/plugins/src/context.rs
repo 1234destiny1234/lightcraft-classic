@@ -97,7 +97,7 @@ pub(crate) struct CallContext<'a> {
 /// Whether host call `method` with `p` changes something: refused in a read-only call.
 fn writes(method: &str, p: &Value) -> bool {
     match method {
-        "metadata.setStandard" | "ns.set" | "settings.set" | "fs.writeText" | "fs.writeBytes" | "fs.remove" => true,
+        "metadata.setStandard" | "ns.set" | "settings.set" | "fs.writeText" | "fs.writeBytes" | "fs.remove" | "program.start" => true,
         // a request that may change something on the server
         "http.request" => {
             let m = p.get("method").and_then(Value::as_str).unwrap_or("GET");
