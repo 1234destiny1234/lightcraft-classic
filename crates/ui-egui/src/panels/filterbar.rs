@@ -58,8 +58,9 @@ fn toggle(ui: &mut egui::Ui, id: &str, on: bool, tip: &str, draw: impl FnOnce(&e
     resp.on_hover_text(crate::i18n::tr(tip))
 }
 
-/// A dropdown showing `current`; `items` are (label, filter patch, selected).
-fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: bool, items: Vec<(String, Value, bool)>) {
+/// A dropdown showing `current`; `items` lists its (label, filter patch, selected), asked only while the dropdown is
+/// open (issue #538: a library's cameras, lenses and keywords cost milliseconds to list, on every frame).
+fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: bool, items: impl FnOnce(&mut LccApp) -> Vec<(String, Value, bool)>) {
     let t = Tokens::get(ui.ctx());
     let r = crate::widgets::dropdown(
         ui,
@@ -100,6 +101,7 @@ fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: 
             ui.separator();
         }
         let needle = query.to_lowercase();
+        let items = items(app);
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
             for (n, (label, patch, sel)) in items.iter().enumerate() {
                 // the "Any …" row (a patch that only clears: nulls and empty lists) always stays
@@ -170,17 +172,12 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         RatingOp::Exactly => "=",
         RatingOp::AtMost => "≤",
     };
-    picker(
-        app,
-        ui,
-        "ratingOp",
-        op_label,
-        false,
+    picker(app, ui, "ratingOp", op_label, false, |_| {
         [("≥  at least", "atLeast", RatingOp::AtLeast), ("=  exactly", "exactly", RatingOp::Exactly), ("≤  at most", "atMost", RatingOp::AtMost)]
             .into_iter()
             .map(|(l, k, op)| (l.to_string(), json!({"ratingOp": k}), f.rating_op == op))
-            .collect(),
-    );
+            .collect()
+    });
     if let Some(r) = crate::rating::Rating::new("filter", f.rating).automation_ids("filter:star").show(ui) {
         filter(app, json!({"rating": r}));
     }
@@ -247,12 +244,7 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         Some(_) => "Merged",
         None => kind_label,
     };
-    picker(
-        app,
-        ui,
-        "kind",
-        kind_label,
-        f.kind.is_some() || f.merged.is_some(),
+    picker(app, ui, "kind", kind_label, f.kind.is_some() || f.merged.is_some(), |_| {
         [
             ("All types", Value::Null, None),
             ("Photos", json!("image"), Some(MediaKind::Image)),
@@ -266,24 +258,19 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
                 .into_iter()
                 .map(|(l, m)| (l.to_string(), json!({"kind": null, "merged": m}), f.merged.as_deref() == Some(m))),
         )
-        .collect(),
-    );
+        .collect()
+    });
     let edited_label = match f.edited {
         None => "Edited or not",
         Some(true) => "Edited",
         Some(false) => "Unedited",
     };
-    picker(
-        app,
-        ui,
-        "edited",
-        edited_label,
-        f.edited.is_some(),
+    picker(app, ui, "edited", edited_label, f.edited.is_some(), |_| {
         [("Edited or not", Value::Null, None), ("Edited", json!(true), Some(true)), ("Unedited", json!(false), Some(false))]
             .into_iter()
             .map(|(l, v, e)| (l.to_string(), json!({"edited": v}), f.edited == e))
-            .collect(),
-    );
+            .collect()
+    });
     if f.immich.is_some() || !app.session.catalog.remote_links().is_empty() {
         let current = match f.immich.as_deref() {
             Some("linked") => "In Immich",
@@ -291,12 +278,7 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
             Some(_) => "Not in Immich",
             None => "Immich: any",
         };
-        picker(
-            app,
-            ui,
-            "immich",
-            current,
-            f.immich.is_some(),
+        picker(app, ui, "immich", current, f.immich.is_some(), |_| {
             [
                 ("Immich: any", Value::Null),
                 ("In Immich", json!("linked")),
@@ -305,40 +287,47 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
             ]
             .into_iter()
             .map(|(l, v)| (l.to_string(), json!({"immich": v.clone()}), f.immich.as_deref() == v.as_str()))
-            .collect(),
-        );
+            .collect()
+        });
         #[cfg(not(target_arch = "wasm32"))]
         super::connections::smart_search_box(app, ui);
     }
 
     // metadata pickers
     let ui: &mut egui::Ui = if two_rows { &mut row2 } else { &mut row1 };
-    let values = app.caches.filter_values(&app.session.catalog);
-    let (cameras, lenses, keywords) = (values.cameras.clone(), values.lenses.clone(), values.keywords.clone());
     // several values of one picker show any of them (issue #213); a value set elsewhere (the Keyword List
-    // in the sidebar sets one keyword) counts as chosen, and the first toggle here moves it into the list
-    for (id, key, list_key, all_label, current, list, values) in [
-        ("camera", "camera", "cameras", "Camera", f.camera.clone(), f.cameras.clone(), cameras),
-        ("lens", "lens", "lenses", "Lens", f.lens.clone(), f.lenses.clone(), lenses),
-        ("keyword", "keyword", "keywords", "Keyword", f.keyword.clone(), f.keywords.clone(), keywords),
-    ] {
+    // in the sidebar sets one keyword) counts as chosen, and the first toggle here moves it into the list.
+    // The library's values are looked up only while a picker is open (issue #538).
+    let lists: [fn(&crate::FilterValues) -> &[String]; 3] = [|v| &v.cameras, |v| &v.lenses, |v| &v.keywords];
+    for ((id, key, list_key, all_label, current, list), of) in [
+        ("camera", "camera", "cameras", "Camera", f.camera.clone(), f.cameras.clone()),
+        ("lens", "lens", "lenses", "Lens", f.lens.clone(), f.lenses.clone()),
+        ("keyword", "keyword", "keywords", "Keyword", f.keyword.clone(), f.keywords.clone()),
+    ]
+    .into_iter()
+    .zip(lists)
+    {
         let chosen = chosen_values(current.as_deref(), &list);
-        let is_on = |v: &str| chosen.iter().any(|c| c.eq_ignore_ascii_case(v));
-        let mut items = vec![(format!("Any {}", all_label.to_lowercase()), json!({key: Value::Null, list_key: []}), chosen.is_empty())];
-        items.extend(values.into_iter().map(|v| {
-            let on = is_on(&v);
-            let next: Vec<&String> =
-                if on { chosen.iter().filter(|c| !c.eq_ignore_ascii_case(&v)).collect() } else { chosen.iter().chain([&v]).collect() };
-            let patch = json!({key: Value::Null, list_key: next});
-            (v, patch, on)
-        }));
         let shown = match chosen.as_slice() {
             [] => all_label.to_string(),
             [one] => one.clone(),
             [first, rest @ ..] => format!("{first} +{}", rest.len()),
         };
         let shown = if shown.chars().count() > 22 { format!("{}…", shown.chars().take(21).collect::<String>()) } else { shown };
-        picker(app, ui, id, &shown, !chosen.is_empty(), items);
+        let active = !chosen.is_empty();
+        picker(app, ui, id, &shown, active, move |app| {
+            let values = app.caches.filter_values(&app.session.catalog);
+            let is_on = |v: &str| chosen.iter().any(|c| c.eq_ignore_ascii_case(v));
+            let mut items = vec![(format!("Any {}", all_label.to_lowercase()), json!({key: Value::Null, list_key: []}), chosen.is_empty())];
+            items.extend(of(&values).iter().map(|v| {
+                let on = is_on(v);
+                let next: Vec<&String> =
+                    if on { chosen.iter().filter(|c| !c.eq_ignore_ascii_case(v)).collect() } else { chosen.iter().chain([v]).collect() };
+                let patch = json!({key: Value::Null, list_key: next});
+                (v.clone(), patch, on)
+            }));
+            items
+        });
     }
 
     // faces picker: detected face boxes, named or not (`faces` in `library.filter`)
@@ -357,7 +346,7 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         (None, Some(label)) => label,
         (None, None) => "Faces".to_string(),
     };
-    picker(app, ui, "faces", &shown_faces, f.faces.is_some(), face_items);
+    picker(app, ui, "faces", &shown_faces, f.faces.is_some(), move |_| face_items);
 
     // the Metadata columns' switch (issue #218)
     let on = !app.ui.filter_columns.is_empty();
