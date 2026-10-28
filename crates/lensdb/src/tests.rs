@@ -255,6 +255,11 @@ fn built_in_lens_matches_by_camera_mount_and_focal_range() {
     assert!(db.find_camera("", "Canon PowerShot S5 IS").is_some());
     // the exact-name lookup never falls back to the camera's mount
     assert!(db.find_lens_named(None, "6.0-72.0 mm f/2.7-3.5", cam).is_none());
+    // a DNG that records only the specification finds the built-in lens through the camera's mount
+    let spec = spec_name([6.0, 72.0, 2.7, 3.5]);
+    assert_eq!(db.find_built_in_lens(&spec, cam.unwrap()).map(|l| l.mounts.clone()), Some(vec!["canonS5".to_string()]));
+    let ef = db.find_camera("Canon", "Canon EOS 5D");
+    assert!(ef.is_none_or(|c| db.find_built_in_lens(&spec, c).is_none()));
     // a focal length that overflows to infinity is ignored, not taken as an unbounded range
     let huge = format!("6.0-{}9 mm f/2.7-3.5", "9".repeat(400));
     assert_eq!(db.find_lens(None, &huge, cam).unwrap().mounts, ["canonS5"]);

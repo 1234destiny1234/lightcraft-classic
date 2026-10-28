@@ -273,10 +273,12 @@ pub fn lookup_with(
             let (lens, model) = match m.lens_model.as_deref() {
                 Some(model) => (db.find_lens(m.lens_make.as_deref(), model, camera)?, model.to_string()),
                 // Nikon DSLRs record only the lens specification ("24-70mm f/2.8"); a profile must be named exactly that
-                // (a user's alias), since the specification fits other makers' lenses too
+                // (a user's alias), since the specification fits other makers' lenses too. A compact's DNG records only
+                // the specification of its built-in lens, which its camera's own mount pins down.
                 None => {
                     let name = lcc_lensdb::spec_name(m.lens_spec?);
-                    (db.find_lens_named(m.lens_make.as_deref(), &name, camera)?, name)
+                    let lens = db.find_lens_named(m.lens_make.as_deref(), &name, camera).or_else(|| db.find_built_in_lens(&name, camera?))?;
+                    (lens, name)
                 }
             };
             (lens, focal, m.f_number, Applied::Found(profile_name(lens, &model)))
