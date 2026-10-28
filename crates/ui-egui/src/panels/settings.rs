@@ -342,6 +342,21 @@ fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     heading(ui, t, crate::i18n::tr("Dialogs"));
     check(ui, "settings.closeDialogsOutside", &mut app.ui.settings.close_dialogs_outside, "Close a dialog by clicking outside it");
     heading(ui, t, crate::i18n::tr("External Editing"));
+    // Photo ▸ Edit In (#616): the window that asks which file to edit, or the remembered choice
+    row(ui, t, crate::i18n::tr("Edit In"), |ui| {
+        use crate::state::EditInMode;
+        choices(
+            ui,
+            "settingsEditInMode",
+            &[
+                (EditInMode::Ask, "Ask"),
+                (EditInMode::CopyWithAdjustments, "Edit a Copy with Adjustments"),
+                (EditInMode::Copy, "Edit a Copy"),
+                (EditInMode::Original, "Edit Original"),
+            ],
+            &mut app.ui.settings.edit_in_mode,
+        );
+    });
     row(ui, t, crate::i18n::tr("PhotoCraft"), |ui| {
         crate::text_field::TextField::singleline("field:photocraftPath", &mut app.ui.settings.photocraft_path)
             .hint(crate::i18n::tr("Found automatically"))

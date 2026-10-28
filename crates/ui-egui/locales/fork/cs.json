@@ -96,5 +96,17 @@
   "It needs features this version of the app doesn't have:": "Potřebuje funkce, které tato verze aplikace nemá:",
   "Install a newer version of the app to use it.": "Chcete-li jej použít, nainstalujte novější verzi aplikace.",
   "It can't be installed:": "Nelze nainstalovat:",
-  "Install Older Version": "Nainstalovat starší verzi"
+  "Install Older Version": "Nainstalovat starší verzi",
+  "Edit a Copy with Adjustments": "Upravit kopii s úpravami",
+  "Edit a Copy": "Upravit kopii",
+  "Edit Original": "Upravit originál",
+  "Ask": "Ptát se",
+  "Edit Photo": "Upravit fotku",
+  "Every selected photo is edited the same way.": "Všechny vybrané fotky se upraví stejně.",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "Vytvoří kopii fotky s vašimi úpravami a otevře ji v editoru.",
+  "Opens a copy of the original file, without your edits.": "Otevře kopii původního souboru bez vašich úprav.",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Otevře samotný původní soubor; uložením se tato fotka aktualizuje. Vaše úpravy odsud tam nejsou vidět.",
+  "Raw files can only be edited as a copy with adjustments.": "Soubory raw lze upravit jen jako kopii s úpravami.",
+  "File format, colour space and bit depth: Settings ▸ External Editing.": "Formát souboru, barevný prostor a bitová hloubka: Nastavení ▸ Externí úpravy.",
+  "Settings ▸ External Editing ▸ Edit In turns the question back on": "Nastavení ▸ Externí úpravy ▸ Upravit v znovu zapne dotaz"
 }

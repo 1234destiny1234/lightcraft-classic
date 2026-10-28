@@ -10,8 +10,10 @@
 //!   - anything else opens through the host's `open_with`;
 //!   - always: the photo reloads when the app regains focus, and a cheap modification-time poll
 //!     of the files out for editing (once a second) catches saves while the app keeps the focus.
-//! - Edit In on a PSD or TIFF asks, as Lightroom does, whether to edit the original (the default),
-//!   a copy, or a copy with the adjustments ([`ask_mode`]).
+//! - Edit In from a menu, shortcut or the context menu asks, as Lightroom does, whether to edit a
+//!   copy with the adjustments, a copy, or the original ([`ask_edit`]; Edit Original preselected
+//!   on a PSD or TIFF, the copies of the file itself only offered where an editor can open it).
+//!   "Don't ask again" keeps the choice in Settings ▸ External Editing (issue #616).
 //! - Photo ▸ Edit In ▸ Edit In Presets… (`dialog.editInPresets`): a preset editor over the
 //!   `editIn.*` commands.
 //! - Window ▸ Actions (`panel.actions`): record / stop / play / delete actions and set their
@@ -113,9 +115,26 @@ pub struct WorkflowUi {
     pub shortcut: String,
     /// The last command's outcome, shown at the bottom of the window.
     pub message: String,
-    /// Edit In on a PSD/TIFF waiting for the user's choice: the command's parameters and the mode
-    /// picked so far.
-    pub ask: Option<(Value, String)>,
+    /// Edit In waiting for the user's choice.
+    pub ask: Option<Ask>,
+}
+
+/// The Edit Photo window's question.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ask {
+    /// The command's parameters (`photo.editIn`: with `id`).
+    pub params: Value,
+    /// The mode picked so far.
+    pub mode: String,
+    /// Edit in PhotoCraft (`Some(true)`), in the other editor (`Some(false)`), or `photo.editIn`
+    /// with its preset (`None`).
+    pub editor: Option<bool>,
+    /// An editor can open the file itself, so Edit a Copy and Edit Original are offered.
+    pub file_editable: bool,
+    /// How many photos the edit covers.
+    pub count: usize,
+    /// "Don't ask again".
+    pub remember: bool,
 }
 
 thread_local! {
@@ -169,8 +188,86 @@ pub(crate) fn ask_mode(app: &LccApp, p: &Value) -> Option<Result<Value, String>>
     if let Some(o) = params.as_object_mut() {
         o.insert("id".into(), json!(id.0));
     }
-    update(|s| s.ask = Some((params, "original".into())));
+    let file_editable = lcc_engine::cmd::edit_in::file_editable(&app.session, id);
+    update(|s| s.ask = Some(Ask { params, mode: "original".into(), editor: None, file_editable, count: 1, remember: false }));
     Some(Ok(json!({"asked": true})))
+}
+
+/// Edit in PhotoCraft / Edit in Other Editor from a menu, shortcut or the context menu (no
+/// parameters): ask which file the editor gets, as Lightroom does, or use the choice Settings
+/// remembers (issue #616). `None` = run the command as it is (scripted, nothing selected, or the
+/// editor missing: the command then says why).
+pub(crate) fn ask_edit(app: &mut LccApp, ctx: &egui::Context, p: &Value, photocraft: bool) -> Option<Result<Value, String>> {
+    if p.as_object().is_some_and(|o| !o.is_empty()) {
+        return None;
+    }
+    let ids = app.session.targets(&json!({})).ok().filter(|ids| !ids.is_empty())?;
+    let editor = editor_for(app, photocraft);
+    if let Some(check) = app.services.check_editor.as_ref()
+        && check(&editor).is_err()
+    {
+        return None;
+    }
+    let file_editable = ids.iter().all(|id| lcc_engine::cmd::edit_in::file_editable(&app.session, *id));
+    let remembered = app.ui.settings.edit_in_mode.mode();
+    if let Some(mode) = remembered {
+        // a remembered Copy / Original on a raw: the copy with the adjustments is all there is
+        let mode = if file_editable { mode } else { "copyWithAdjustments" };
+        return Some(run_choice(app, ctx, &json!({}), Some(photocraft), mode, &ids));
+    }
+    let first = app.session.catalog.photo(ids[0]).map(|ph| ph.file_name.clone()).unwrap_or_default();
+    let mode = if file_editable && lcc_engine::cmd::edit_in::suggested_mode(&first) == lcc_engine::cmd::edit_in::Mode::Original {
+        "original"
+    } else {
+        "copyWithAdjustments"
+    };
+    let ask = Ask { params: json!({}), mode: mode.into(), editor: Some(photocraft), file_editable, count: ids.len(), remember: false };
+    update(|s| s.ask = Some(ask));
+    Some(Ok(json!({"asked": true, "mode": mode, "fileEditable": file_editable})))
+}
+
+/// The application Edit in PhotoCraft / Other Editor opens (Settings ▸ External Editing).
+fn editor_for(app: &LccApp, photocraft: bool) -> String {
+    let settings = &app.ui.settings;
+    if photocraft {
+        let path = settings.photocraft_path.trim();
+        if path.is_empty() { crate::state::PHOTOCRAFT.to_string() } else { path.to_string() }
+    } else {
+        settings.external_editor.clone()
+    }
+}
+
+/// Run the edit the user chose: a copy with the adjustments goes through the editor's own
+/// command (its file settings); a copy or the original through `photo.editIn` for each photo.
+fn run_choice(app: &mut LccApp, ctx: &egui::Context, params: &Value, editor: Option<bool>, mode: &str, ids: &[lcc_catalog::PhotoId]) -> Result<Value, String> {
+    let Some(photocraft) = editor else {
+        let mut p = params.clone();
+        if let Some(o) = p.as_object_mut() {
+            o.insert("mode".into(), json!(mode));
+        }
+        return app.run("photo.editIn", p);
+    };
+    if mode == "copyWithAdjustments" {
+        return crate::menus::edit_in(app, ctx, &json!({}), photocraft);
+    }
+    let tool = editor_for(app, photocraft);
+    let mut results = Vec::new();
+    for id in ids {
+        let mut p = json!({"id": id.0, "mode": mode});
+        if !tool.is_empty()
+            && let Some(o) = p.as_object_mut()
+        {
+            o.insert("app".into(), json!(tool));
+        }
+        match app.run("photo.editIn", p) {
+            Ok(r) => results.push(r),
+            Err(e) => {
+                app.toast(ctx, crate::i18n::tr_format!("Couldn't open the editor: {e}", e = e));
+                return Err(e);
+            }
+        }
+    }
+    Ok(json!({"mode": mode, "edits": results}))
 }
 
 /// Called with every engine command's successful result.
@@ -518,48 +615,85 @@ fn presets_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     st.presets_open = open && !closed;
 }
 
-/// Lightroom's "Edit Photo" question for a PSD or TIFF.
+/// Lightroom's "Edit Photo" question: which file the editor gets.
 fn ask_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
-    let Some((params, mut mode)) = st.ask.take() else { return };
-    let mut open = true;
+    let Some(mut ask) = st.ask.take() else { return };
     let mut go = false;
-    let mut cancel = false;
-    let mut closed = false;
+    let mut cancel = crate::dialog_frame::esc_closes(false, ctx);
     egui::Window::new(tr("Edit Photo"))
         .id(egui::Id::new("edit-in-ask"))
         .title_bar(false)
         .frame(crate::dialog_frame::card_frame(ctx))
         .collapsible(false)
         .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .default_width(380.0)
         .show(ctx, |ui| {
             if crate::dialog_frame::card_header(ui, tr("Edit Photo"), Some("edit-in-ask:close")) {
-                closed = true;
+                cancel = true;
             }
-            for (v, l) in [("original", "Edit Original"), ("copy", "Edit a Copy"), ("copyWithAdjustments", "Edit a Copy with Adjustments")] {
-                ui.radio_value(&mut mode, v.to_string(), tr(l));
+            if ask.count > 1 {
+                ui.label(tr("Every selected photo is edited the same way."));
+                ui.add_space(4.0);
             }
-            ui.label(egui::RichText::new(tr("Edit Original opens the file itself; saving it updates this photo.")).small());
+            let choices = [
+                ("copyWithAdjustments", "Edit a Copy with Adjustments", "Renders a copy of the photo with your edits applied and opens it in the editor."),
+                ("copy", "Edit a Copy", "Opens a copy of the original file, without your edits."),
+                ("original", "Edit Original", "Opens the original file itself; saving it updates this photo. Your edits here are not visible there."),
+            ];
+            for (v, label, what) in choices {
+                let enabled = v == "copyWithAdjustments" || ask.file_editable;
+                ui.add_enabled_ui(enabled, |ui| {
+                    let r = ui.radio_value(&mut ask.mode, v.to_string(), egui::RichText::new(tr(label)).strong());
+                    crate::widgets::register(ui.ctx(), &format!("radio:editIn-{v}"), r.rect);
+                    ui.indent(v, |ui| ui.label(egui::RichText::new(tr(what)).small()));
+                });
+            }
+            if !ask.file_editable {
+                ui.add_space(2.0);
+                ui.label(egui::RichText::new(tr("Raw files can only be edited as a copy with adjustments.")).small().weak());
+            }
+            if ask.editor.is_some() && ask.mode == "copyWithAdjustments" {
+                ui.label(egui::RichText::new(tr("File format, colour space and bit depth: Settings ▸ External Editing.")).small().weak());
+            }
+            ui.add_space(6.0);
+            if ask.editor.is_some() {
+                let c = crate::dialog_frame::checkbox(ui, &mut ask.remember, tr("Don't ask again"));
+                crate::widgets::register(ui.ctx(), "check:editInRemember", c.rect);
+                c.on_hover_text(tr("Settings ▸ External Editing ▸ Edit In turns the question back on"));
+            }
             ui.add_space(6.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 use crate::button::{Button, Kind};
                 go = Button::new("Edit").kind(Kind::Primary).widget("button:editInGo").show(ui).clicked();
-                cancel = Button::new("Cancel").widget("button:editInCancel").show(ui).clicked();
+                if Button::new("Cancel").widget("button:editInCancel").show(ui).clicked() {
+                    cancel = true;
+                }
             });
         });
-    if closed {
-        open = false;
-    }
     if go {
-        let mut p = params;
-        if let Some(o) = p.as_object_mut() {
-            o.insert("mode".into(), json!(mode));
-        }
-        if let Err(e) = app.run("photo.editIn", p) {
-            app.ui.status = e;
-        }
-    } else if open && !cancel {
-        st.ask = Some((params, mode));
+        let _ = choose(app, ctx, ask);
+    } else if !cancel {
+        st.ask = Some(ask);
     }
+}
+
+/// The Edit Photo window's Edit button (and `editIn.choose` in tests): run the chosen edit, and
+/// keep the choice when "Don't ask again" is ticked.
+fn choose(app: &mut LccApp, ctx: &egui::Context, ask: Ask) -> Result<Value, String> {
+    let mode = if ask.file_editable { ask.mode.as_str() } else { "copyWithAdjustments" };
+    if ask.remember && ask.editor.is_some() {
+        app.ui.settings.edit_in_mode = crate::state::EditInMode::from_mode(mode);
+    }
+    let ids = match ask.params.get("id").and_then(Value::as_u64) {
+        Some(id) => vec![lcc_catalog::PhotoId(id)],
+        None => app.session.targets(&json!({})).unwrap_or_default(),
+    };
+    let r = run_choice(app, ctx, &ask.params, ask.editor, mode, &ids);
+    if let Err(e) = &r {
+        app.ui.status = e.clone();
+    }
+    r
 }
 
 fn actions_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
@@ -753,18 +887,82 @@ mod tests {
         let n = h.app.session.catalog.photos().count();
         let r = h.app.run("photo.editIn", json!({})).unwrap();
         assert_eq!(r["asked"], true, "{r}");
-        assert_eq!(state().ask.as_ref().map(|(p, m)| (p["id"].as_u64(), m.as_str())), Some((Some(psd.0), "original")));
+        assert_eq!(state().ask.as_ref().map(|a| (a.params["id"].as_u64(), a.mode.as_str())), Some((Some(psd.0), "original")));
         // (settle alone can run out of time on a busy runner before the window's first visible frame)
         let shown = h.step_until(std::time::Duration::from_secs(60), |h| h.painted_text().iter().any(|t| t.contains("Edit Original")));
         assert!(shown, "the question shows");
         // the user confirms Edit Original: no new photo
-        let (p, _) = state().ask.unwrap();
-        let mut p = p;
+        let mut p = state().ask.unwrap().params;
         p["mode"] = json!("original");
         update(|s| s.ask = None);
         let r = h.app.run("photo.editIn", p).unwrap();
         assert_eq!((r["id"].as_u64(), h.app.session.catalog.photos().count()), (Some(psd.0), n));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #616: Edit in Other Editor from the menu asks which file to edit (a copy with the
+    /// adjustments preselected on a PNG); Edit a Copy copies the file itself without rendering;
+    /// "Don't ask again" keeps the choice, so the next Edit In doesn't ask. A raw-like file the
+    /// editor can't open only gets the copy with the adjustments, whatever was remembered.
+    #[test]
+    fn edit_in_asks_which_file_and_remembers_the_choice() {
+        let dir = temp("choice");
+        let src = dir.join("d.png");
+        png(&src, 20, 12, 1);
+        let opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let o = opened.clone();
+        let mut s = lcc_engine::Session::new().with_fs();
+        s.workflow = lcc_engine::cmd::actions::Workflow::in_dir(Some(dir.join("settings")));
+        let services = crate::Services {
+            open_with: Some(Box::new(move |path: &str, _app: &str| {
+                o.lock().unwrap().push(path.to_string());
+                Ok(())
+            })),
+            ..Default::default()
+        };
+        let mut h = crate::headless::Headless::new(LccApp::new(s, services), [900.0, 600.0], 1.0);
+        h.app.session.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+        let n = h.app.session.catalog.photos().count();
+        let r = h.app.run("photo.editInExternal", json!({})).unwrap();
+        assert_eq!((r["asked"].as_bool(), r["mode"].as_str(), r["fileEditable"].as_bool()), (Some(true), Some("copyWithAdjustments"), Some(true)), "{r}");
+        assert_eq!(h.app.session.catalog.photos().count(), n, "nothing is made before the choice");
+        let shown = h.step_until(std::time::Duration::from_secs(60), |h| h.painted_text().iter().any(|t| t.contains("Edit a Copy")));
+        assert!(shown, "the question shows");
+        let mut ask = state().ask.unwrap();
+        update(|s| s.ask = None);
+        ask.mode = "copy".into();
+        ask.remember = true;
+        let r = choose(&mut h.app, &egui::Context::default(), ask).unwrap();
+        assert_eq!(r["mode"], "copy", "{r}");
+        let copy = r["edits"][0]["path"].as_str().unwrap().to_string();
+        assert!(copy.ends_with(".png") && copy != src.to_string_lossy(), "a copy of the file itself: {copy}");
+        assert_eq!(h.app.ui.settings.edit_in_mode, crate::state::EditInMode::Copy);
+        assert_eq!(h.app.session.catalog.photos().count(), n + 1);
+        // remembered: no question, another copy at once
+        h.app.session.execute("photo.select", &json!({"ids": [r["edits"][0]["original"].clone()]})).ok();
+        let r = h.app.run("photo.editInExternal", json!({})).unwrap();
+        assert!(r["asked"].is_null() && r["mode"] == "copy", "{r}");
+        assert!(state().ask.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #616: a photo whose file no editor opens (a generated demo photo, like a raw) only offers
+    /// the copy with the adjustments, and a remembered Copy falls back to it.
+    #[test]
+    fn a_file_the_editor_cant_open_only_gets_the_rendered_copy() {
+        let services = crate::Services { open_with: Some(Box::new(|_: &str, _: &str| Ok(()))), ..Default::default() };
+        let mut h = crate::headless::Headless::new(LccApp::new(lcc_engine::Session::with_demo().with_fs(), services), [900.0, 600.0], 1.0);
+        let r = h.app.run("photo.editInExternal", json!({})).unwrap();
+        assert_eq!((r["mode"].as_str(), r["fileEditable"].as_bool()), (Some("copyWithAdjustments"), Some(false)), "{r}");
+        let mut ask = state().ask.unwrap();
+        update(|s| s.ask = None);
+        ask.mode = "original".into();
+        let id = h.app.session.active().unwrap();
+        // the choice can't reach the file itself: the rendered copy is asked for (a demo photo
+        // has no folder, so it fails saying so, without touching anything)
+        let r = choose(&mut h.app, &egui::Context::default(), ask);
+        assert!(r.as_ref().is_err_and(|e| e.contains("dir")), "{r:?}");
+        assert_eq!(h.app.session.active(), Some(id));
     }
 
     /// RT.B2 fallback: a save to a file out for editing is picked up by the modification-time poll,
@@ -973,9 +1171,13 @@ mod tests {
         assert_eq!(r["ok"], true, "{r}");
         assert!(!h.app.ui.settings.confirm_delete);
 
-        // without a program, the editor from Settings opens as before
+        // without a program, Edit In asks which file (#616), then the editor from Settings opens
         let r = h.request("engine.execute", json!({"command": "photo.editInExternal", "params": {}}), t);
         assert_eq!(r["ok"], true, "{r}");
+        let ask = state().ask.expect("the question is asked");
+        update(|s| s.ask = None);
+        assert_eq!(ask.mode, "copyWithAdjustments");
+        choose(&mut h.app, &egui::Context::default(), ask).unwrap();
         assert!(matches!(opened.lock().unwrap().as_slice(), [(_, app)] if app == "/usr/bin/gimp"), "{:?}", opened.lock().unwrap());
 
         // a preset the user saved opens its program by name

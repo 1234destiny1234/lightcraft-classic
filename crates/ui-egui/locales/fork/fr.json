@@ -1427,5 +1427,16 @@
   "installed:": "installé :",
   "Waiting for a plug-in's program": "En attente du programme d’un module externe",
   "Plug-in Settings": "Réglages du module externe",
-  "this plug-in has no settings": "ce module externe n’a pas de réglages"
+  "this plug-in has no settings": "ce module externe n’a pas de réglages",
+  "Edit a Copy with Adjustments": "Modifier une copie avec les réglages",
+  "Edit a Copy": "Modifier une copie",
+  "Edit Original": "Modifier l'original",
+  "Ask": "Demander",
+  "Every selected photo is edited the same way.": "Toutes les photos sélectionnées sont modifiées de la même façon.",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "Génère une copie de la photo avec vos réglages et l'ouvre dans l'éditeur.",
+  "Opens a copy of the original file, without your edits.": "Ouvre une copie du fichier original, sans vos réglages.",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Ouvre le fichier original lui-même ; l'enregistrer met à jour cette photo. Vos réglages d'ici n'y sont pas visibles.",
+  "Raw files can only be edited as a copy with adjustments.": "Les fichiers raw ne peuvent être modifiés que sous forme de copie avec réglages.",
+  "File format, colour space and bit depth: Settings ▸ External Editing.": "Format de fichier, espace colorimétrique et profondeur : Réglages ▸ Édition externe.",
+  "Settings ▸ External Editing ▸ Edit In turns the question back on": "Réglages ▸ Édition externe ▸ Modifier dans réactive la question"
 }

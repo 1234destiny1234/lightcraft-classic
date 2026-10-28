@@ -519,6 +519,49 @@ pub struct AppSettings {
     /// gets a new one, or always merge (issue #2672; the window's "Don't ask again" picks that).
     #[serde(deserialize_with = "lenient")]
     pub lightroom_import: LightroomImport,
+    /// Photo ▸ Edit In: ask which file to edit (a copy with the adjustments, a copy, the original),
+    /// or always use the choice made with the window's "Don't ask again" (issue #616).
+    #[serde(deserialize_with = "lenient")]
+    pub edit_in_mode: EditInMode,
+}
+
+/// What Photo ▸ Edit In hands the editor (Settings ▸ External Editing). Saved as `"ask"`,
+/// `"copyWithAdjustments"`, `"copy"` or `"original"`; anything else reads as [`Self::Ask`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EditInMode {
+    /// A window asks each time.
+    #[default]
+    Ask,
+    /// A copy rendered with the edits.
+    CopyWithAdjustments,
+    /// A copy of the original file, without the edits (JPEG, TIFF, PNG, PSD, WebP; a raw gets a
+    /// copy with the adjustments).
+    Copy,
+    /// The original file itself (same file types as [`Self::Copy`]).
+    Original,
+}
+
+impl EditInMode {
+    /// The `photo.editIn` mode, `None` for [`Self::Ask`].
+    pub fn mode(self) -> Option<&'static str> {
+        match self {
+            EditInMode::Ask => None,
+            EditInMode::CopyWithAdjustments => Some("copyWithAdjustments"),
+            EditInMode::Copy => Some("copy"),
+            EditInMode::Original => Some("original"),
+        }
+    }
+
+    /// The setting for a `photo.editIn` mode (unknown: [`Self::Ask`]).
+    pub fn from_mode(mode: &str) -> Self {
+        match mode {
+            "copyWithAdjustments" => EditInMode::CopyWithAdjustments,
+            "copy" => EditInMode::Copy,
+            "original" => EditInMode::Original,
+            _ => EditInMode::Ask,
+        }
+    }
 }
 
 /// Where File ▸ Import Lightroom Catalog… puts a catalog (Settings ▸ General ▸ Library). Saved as
@@ -605,6 +648,7 @@ impl Default for AppSettings {
             hide_filter_in_develop: false,
             loupe_info: LoupeInfo::default(),
             lightroom_import: LightroomImport::Ask,
+            edit_in_mode: EditInMode::Ask,
         }
     }
 }

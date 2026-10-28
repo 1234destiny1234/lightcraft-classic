@@ -1429,5 +1429,16 @@
   "installed:": "已安装：",
   "Waiting for a plug-in's program": "正在等待插件的程序",
   "Plug-in Settings": "增效工具设置",
-  "this plug-in has no settings": "此增效工具没有设置"
+  "this plug-in has no settings": "此增效工具没有设置",
+  "Edit a Copy with Adjustments": "编辑应用调整后的副本",
+  "Edit a Copy": "编辑副本",
+  "Edit Original": "编辑原始文件",
+  "Ask": "询问",
+  "Every selected photo is edited the same way.": "所有选中的照片都以相同方式编辑。",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "渲染一份应用了您的调整的照片副本，并在编辑器中打开。",
+  "Opens a copy of the original file, without your edits.": "打开原始文件的副本，不含您的调整。",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "直接打开原始文件；保存后此照片会更新。您在这里的调整在那里不可见。",
+  "Raw files can only be edited as a copy with adjustments.": "Raw 文件只能作为应用调整后的副本编辑。",
+  "File format, colour space and bit depth: Settings ▸ External Editing.": "文件格式、色彩空间和位深度：设置 ▸ 外部编辑。",
+  "Settings ▸ External Editing ▸ Edit In turns the question back on": "设置 ▸ 外部编辑 ▸ 在其他应用中编辑 可重新开启此询问"
 }

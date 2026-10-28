@@ -1947,15 +1947,14 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 asked.map(|()| json!({"granted": (access.granted)()}))
             }
         },
-        "photo.editInPhotoCraft" => edit_in(app, &ctx, p, true),
-        "photo.editInExternal" => {
-            // a PSD or TIFF: ask Edit Original / a Copy / a Copy with Adjustments first, as Lightroom does
-            if p.as_object().is_none_or(|o| o.is_empty())
-                && let Some(r) = crate::edit_in::ask_mode(app, &json!({}))
-            {
+        // from a menu, shortcut or the context menu (no params): ask which file to edit first, as
+        // Lightroom does, unless Settings remembers the choice (#616)
+        "photo.editInPhotoCraft" | "photo.editInExternal" => {
+            let photocraft = id == "photo.editInPhotoCraft";
+            if let Some(r) = crate::edit_in::ask_edit(app, &ctx, p, photocraft) {
                 return Some(r);
             }
-            edit_in(app, &ctx, p, false)
+            edit_in(app, &ctx, p, photocraft)
         }
         "photo.openOriginalInExternal" => open_original_in(app, &ctx, p),
         "dialog.cull" => {
@@ -3075,7 +3074,7 @@ fn show_in_folders(app: &mut LccApp, id: Option<lcc_catalog::PhotoId>) -> Result
 /// file (`format`, `colorSpace`, `bitDepth`) and the editor (`app`). PhotoCraft is checked first,
 /// so a missing editor leaves no copy behind. Once the copies exist, an editor that won't open them
 /// is reported in the result's `failed` (and a toast), not as an error.
-fn edit_in(app: &mut LccApp, ctx: &egui::Context, p: &Value, photocraft: bool) -> Result<Value, String> {
+pub(crate) fn edit_in(app: &mut LccApp, ctx: &egui::Context, p: &Value, photocraft: bool) -> Result<Value, String> {
     // every way in (menu, shortcut, context menu, the control channel) says why nothing opened
     edit_in_inner(app, ctx, p, photocraft).inspect_err(|e| app.toast(ctx, crate::i18n::tr_format!("Couldn't open the editor: {e}", e = e)))
 }

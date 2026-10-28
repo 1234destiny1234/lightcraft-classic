@@ -1258,5 +1258,16 @@
   "installed:": "встановлено:",
   "Waiting for a plug-in's program": "Очікування програми плагіна",
   "Plug-in Settings": "Налаштування плагіна",
-  "this plug-in has no settings": "цей плагін не має налаштувань"
+  "this plug-in has no settings": "цей плагін не має налаштувань",
+  "Edit a Copy with Adjustments": "Редагувати копію з налаштуваннями",
+  "Edit a Copy": "Редагувати копію",
+  "Edit Original": "Редагувати оригінал",
+  "Ask": "Питати",
+  "Every selected photo is edited the same way.": "Усі вибрані фото редагуються однаково.",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "Створює копію фото з вашими налаштуваннями та відкриває її в редакторі.",
+  "Opens a copy of the original file, without your edits.": "Відкриває копію вихідного файлу без ваших налаштувань.",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Відкриває сам вихідний файл; збереження оновлює це фото. Ваші налаштування тут там не видно.",
+  "Raw files can only be edited as a copy with adjustments.": "RAW-файли можна редагувати лише як копію з налаштуваннями.",
+  "File format, colour space and bit depth: Settings ▸ External Editing.": "Формат файлу, колірний простір і глибина кольору: Налаштування ▸ Зовнішнє редагування.",
+  "Settings ▸ External Editing ▸ Edit In turns the question back on": "Налаштування ▸ Зовнішнє редагування ▸ Редагувати в знову вмикає питання"
 }
