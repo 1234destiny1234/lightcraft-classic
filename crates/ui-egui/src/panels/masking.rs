@@ -218,6 +218,11 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 }
             });
         }
+        // the active mask's Amount, right under the tiles (as Camera Raw / Lightroom Classic place it)
+        if let Some((index, m)) = d.masks.iter().enumerate().find(|(_, m)| app.session.active_mask == Some(m.id)) {
+            ui.add_space(6.0);
+            amount_slider(app, ui, index, m);
+        }
     });
     divider(ui);
     let mut hovered_row = None;
@@ -425,6 +430,16 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             }
         }
     }
+    ui.add_space(30.0);
+    let _ = Stroke::NONE;
+}
+
+/// The active mask's Amount slider, under a line naming the mask (its name, else "Mask N").
+fn amount_slider(app: &mut LccApp, ui: &mut egui::Ui, index: usize, m: &lcc_develop::Mask) {
+    let t = Tokens::get(ui.ctx());
+    let name = if m.name.trim().is_empty() { format!("{} {}", crate::i18n::tr("Mask"), index + 1) } else { m.name.clone() };
+    let r = ui.add(egui::Label::new(egui::RichText::new(name).font(t.semibold(12.0)).color(t.text_label)).truncate());
+    register(ui.ctx(), "maskAmountName", r.rect);
     let amt = ControlSpec {
         id: "amount",
         label: "Amount",
@@ -438,8 +453,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     };
     let out = slider(ui, &amt, m.adjust.amount, true, None);
     apply_slider_out(app, &amt, out, |app, v| app.run("mask.adjust", json!({"values": {"amount": v}})));
-    ui.add_space(30.0);
-    let _ = Stroke::NONE;
 }
 
 /// Translate fixed action labels, but never mutate or translate user-entered mask names.
