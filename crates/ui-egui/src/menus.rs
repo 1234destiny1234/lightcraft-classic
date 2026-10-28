@@ -1660,6 +1660,10 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                     app.ui.right = RightPanel::Edit;
                     app.ui.view = ViewMode::Detail;
                     app.ui.tool = "wbPicker".into();
+                    // {sample?: side of the averaged square in preview pixels}
+                    if let Some(n) = p.get("sample").and_then(Value::as_f64).filter(|v| v.is_finite()) {
+                        app.ui.wb_sample = crate::panels::detail::wb_sample_step(n);
+                    }
                 }
                 other => return Some(Err(format!("unknown tool `{other}`"))),
             }

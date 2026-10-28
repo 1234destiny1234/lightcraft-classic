@@ -1153,6 +1153,8 @@ pub struct UiState {
     /// Backspace on it removes that guide alone; a click away or leaving the tool clears it.
     #[serde(skip)]
     pub selected_guide: Option<(u64, usize)>,
+    /// White Balance Selector: side of the averaged square, in preview pixels (1, 3, 5, 9, 15).
+    pub wb_sample: u32,
     pub brush_size: f32,
     pub brush_feather: f32,
     pub brush_flow: f32,
@@ -1913,6 +1915,7 @@ impl Default for UiState {
             grading_hidden: None,
             tool: String::new(),
             selected_guide: None,
+            wb_sample: 5,
             brush_size: 0.04,
             brush_feather: 50.0,
             brush_flow: 60.0,
