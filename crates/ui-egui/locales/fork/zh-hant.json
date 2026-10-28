@@ -1506,5 +1506,19 @@
   "installed:": "已安裝：",
   "Waiting for a plug-in's program": "正在等待外掛程式的程式",
   "Plug-in Settings": "增效模組設定",
-  "this plug-in has no settings": "此增效模組沒有設定"
+  "this plug-in has no settings": "此增效模組沒有設定",
+  "Edit a Copy with Adjustments": "編輯套用調整後的副本",
+  "Edit a Copy": "編輯副本",
+  "Edit Original": "編輯原始檔案",
+  "Ask": "詢問",
+  "Every selected photo is edited the same way.": "所有選取的照片都以相同方式編輯。",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "算繪一份套用您調整的照片副本，並在編輯器中開啟。",
+  "Opens a copy of the original file, without your edits.": "開啟原始檔案的副本，不含您的調整。",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "直接開啟原始檔案；儲存後此照片會更新。您在這裡的調整在那裡看不到。",
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "Raw 檔案只能以套用調整後的副本編輯。",
+  "File format, colour space and bit depth: Settings → External Editing.": "檔案格式、色彩空間與位元深度：設定 → 外部編輯。",
+  "Settings → External Editing → Edit In turns the question back on": "設定 → 外部編輯 → 在其他應用程式中編輯 可重新開啟此詢問",
+  "Indexing photos": "正在索引相片",
+  "Each photo gets the date and time in its file name (IMG_20260921_143000).": "每張照片使用其檔案名稱中的日期與時間（IMG_20260921_143000）。",
+  "No date in the active photo's file name": "目前照片的檔案名稱中沒有日期"
 }

@@ -58,8 +58,9 @@ fn toggle(ui: &mut egui::Ui, id: &str, on: bool, tip: &str, draw: impl FnOnce(&e
     resp.on_hover_text(crate::i18n::tr(tip))
 }
 
-/// A dropdown showing `current`; `items` lists its (label, filter patch, selected), asked only while the dropdown is
-/// open (issue #538: a library's cameras, lenses and keywords cost milliseconds to list, on every frame).
+/// A dropdown showing `current`; `items` lists its (label, filter patch, selected) rows. It runs only while the
+/// dropdown is open: a metadata picker lists every camera, lens or keyword of the library, and building those rows
+/// on every frame made scrolling the grid under the bar stutter in a large library (issue #538).
 fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: bool, items: impl FnOnce(&mut LccApp) -> Vec<(String, Value, bool)>) {
     let t = Tokens::get(ui.ctx());
     let r = crate::widgets::dropdown(
@@ -296,18 +297,13 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
     // metadata pickers
     let ui: &mut egui::Ui = if two_rows { &mut row2 } else { &mut row1 };
     // several values of one picker show any of them (issue #213); a value set elsewhere (the Keyword List
-    // in the sidebar sets one keyword) counts as chosen, and the first toggle here moves it into the list.
-    // The library's values are looked up only while a picker is open (issue #538).
-    let lists: [fn(&crate::FilterValues) -> &[String]; 3] = [|v| &v.cameras, |v| &v.lenses, |v| &v.keywords];
-    for ((id, key, list_key, all_label, current, list), of) in [
-        ("camera", "camera", "cameras", "Camera", f.camera.clone(), f.cameras.clone()),
-        ("lens", "lens", "lenses", "Lens", f.lens.clone(), f.lenses.clone()),
-        ("keyword", "keyword", "keywords", "Keyword", f.keyword.clone(), f.keywords.clone()),
-    ]
-    .into_iter()
-    .zip(lists)
-    {
-        let chosen = chosen_values(current.as_deref(), &list);
+    // in the sidebar sets one keyword) counts as chosen, and the first toggle here moves it into the list
+    for (id, key, list_key, all_label, current, list) in [
+        ("camera", "camera", "cameras", "Camera", f.camera.as_deref(), f.cameras.as_slice()),
+        ("lens", "lens", "lenses", "Lens", f.lens.as_deref(), f.lenses.as_slice()),
+        ("keyword", "keyword", "keywords", "Keyword", f.keyword.as_deref(), f.keywords.as_slice()),
+    ] {
+        let chosen = chosen_values(current, list);
         let shown = match chosen.as_slice() {
             [] => all_label.to_string(),
             [one] => one.clone(),
@@ -315,19 +311,26 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         };
         let shown = if shown.chars().count() > 22 { format!("{}…", shown.chars().take(21).collect::<String>()) } else { shown };
         let active = !chosen.is_empty();
-        picker(app, ui, id, &shown, active, move |app| {
+        let items = move |app: &mut LccApp| {
+            // the library's values, asked for only while the menu is open: listing them again after a metadata change
+            // goes through every photo
             let values = app.caches.filter_values(&app.session.catalog);
+            let all = match id {
+                "camera" => &values.cameras,
+                "lens" => &values.lenses,
+                _ => &values.keywords,
+            };
             let is_on = |v: &str| chosen.iter().any(|c| c.eq_ignore_ascii_case(v));
             let mut items = vec![(format!("Any {}", all_label.to_lowercase()), json!({key: Value::Null, list_key: []}), chosen.is_empty())];
-            items.extend(of(&values).iter().map(|v| {
+            items.extend(all.iter().map(|v| {
                 let on = is_on(v);
                 let next: Vec<&String> =
                     if on { chosen.iter().filter(|c| !c.eq_ignore_ascii_case(v)).collect() } else { chosen.iter().chain([v]).collect() };
-                let patch = json!({key: Value::Null, list_key: next});
-                (v.clone(), patch, on)
+                (v.clone(), json!({key: Value::Null, list_key: next}), on)
             }));
             items
-        });
+        };
+        picker(app, ui, id, &shown, active, items);
     }
 
     // faces picker: detected face boxes, named or not (`faces` in `library.filter`)

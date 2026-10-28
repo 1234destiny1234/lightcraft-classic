@@ -1507,5 +1507,19 @@
   "installed:": "instalado:",
   "Waiting for a plug-in's program": "Aguardando o programa de um plug-in",
   "Plug-in Settings": "Configurações do plug-in",
-  "this plug-in has no settings": "este plug-in não tem configurações"
+  "this plug-in has no settings": "este plug-in não tem configurações",
+  "Edit a Copy with Adjustments": "Editar uma cópia com ajustes",
+  "Edit a Copy": "Editar uma cópia",
+  "Edit Original": "Editar original",
+  "Ask": "Perguntar",
+  "Every selected photo is edited the same way.": "Todas as fotos selecionadas são editadas da mesma forma.",
+  "Renders a copy of the photo with your edits applied and opens it in the editor.": "Gera uma cópia da foto com seus ajustes e a abre no editor.",
+  "Opens a copy of the original file, without your edits.": "Abre uma cópia do arquivo original, sem seus ajustes.",
+  "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Abre o próprio arquivo original; salvá-lo atualiza esta foto. Seus ajustes daqui não aparecem lá.",
+  "Raw files and generated photos can only be edited as a copy with adjustments.": "Arquivos raw só podem ser editados como cópia com ajustes.",
+  "File format, colour space and bit depth: Settings → External Editing.": "Formato de arquivo, espaço de cor e profundidade de bits: Configurações → Edição externa.",
+  "Settings → External Editing → Edit In turns the question back on": "Configurações → Edição externa → Editar em reativa a pergunta",
+  "Indexing photos": "Indexando fotos",
+  "Each photo gets the date and time in its file name (IMG_20260921_143000).": "Cada foto recebe a data e a hora do nome do arquivo (IMG_20260921_143000).",
+  "No date in the active photo's file name": "Nenhuma data no nome do arquivo da foto ativa"
 }

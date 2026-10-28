@@ -540,6 +540,27 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let lab = oklab(d);
         d = oklab_inv(vec3<f32>(lab.x, lab.y + tint_dir.x * 0.08 * tint_amt, lab.z + tint_dir.y * 0.08 * tint_amt));
     }
+    // colour grading inside masks (lcc_pipeline::colorops::local_grade): terms 17..29, the Color
+    // Grading panel's zones at blending 50, balance 0
+    var graded = false;
+    for (var k = 17u; k < 29u; k++) {
+        if (lt[k] != 0.0) {
+            graded = true;
+        }
+    }
+    if (graded) {
+        var lab = oklab(d);
+        let ws = 1.0 - sstep(0.1, 0.6, lab.x);
+        let wh = sstep(0.4, 0.9, lab.x);
+        let wm = max(1.0 - ws - wh, 0.0);
+        let zw = array<f32, 4>(ws, wm, wh, 1.0);
+        for (var z = 0u; z < 4u; z++) {
+            lab.y += lt[17u + z * 3u] * zw[z];
+            lab.z += lt[18u + z * 3u] * zw[z];
+            lab.x += lt[19u + z * 3u] * zw[z];
+        }
+        d = oklab_inv(lab);
+    }
 
     // --- vignette (display linear, post-crop)
     if (pu(F_VIG) != 0u) {

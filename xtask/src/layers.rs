@@ -87,6 +87,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("merge", Class::Layer(3)),
     ("video-export", Class::Layer(3)),
     ("segment", Class::Layer(3)),
+    // the shared AI backend (#491): device choice and the one job queue; models join it later
+    ("ml", Class::Layer(3)),
     ("video", Class::Layer(3)),
     ("engine", Class::Layer(4)),
     ("classic-slideshow", Class::Layer(4)),

@@ -2202,6 +2202,19 @@ fn wb_rows(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, raw: bool) 
                     app.toast(ui.ctx(), e);
                 }
             }
+            if active {
+                // how many pixels a click averages (#644), as Lightroom's selector toolbar offers
+                let n = app.ui.wb_sample;
+                let r = crate::widgets::dropdown(ui, "wbSample", &format!("{n}×{n}"), t.font(13.0), t.text_label)
+                    .on_hover_text(crate::i18n::tr("Sample size: the square of pixels the selector averages"));
+                egui::Popup::menu(&r).show(|ui| {
+                    for s in crate::panels::detail::WB_SAMPLES {
+                        if ui.selectable_label(n == s, format!("{s}×{s}")).clicked() {
+                            app.ui.wb_sample = s;
+                        }
+                    }
+                });
+            }
             ui.label(egui::RichText::new(crate::i18n::tr("WB:")).font(t.font(13.0)).color(t.text_dim));
             let r = crate::widgets::dropdown(ui, "wbMode", crate::i18n::tr(d.wb.mode.label()), t.font(14.0), t.text_label);
             egui::Popup::menu(&r).show(|ui| {
