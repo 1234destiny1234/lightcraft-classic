@@ -157,3 +157,91 @@ fn the_rail_lists_cards_and_the_watched_folder_and_picking_one_scans_it() {
     h.settle(SETTLE);
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+
+#[test]
+fn the_import_dialog_opens_empty_and_offers_folder_and_file_selection() {
+    let services = Services { png: None, pick_folder: Some(Box::new(|| None)), ..Default::default() };
+    let app = LccApp::new(lcc_engine::Session::with_demo().with_fs(), services);
+    let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+
+    let r = h.request("engine.execute", json!({"command": "dialog.import"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::Import { .. })), "import dialog is open");
+    assert!(has(&h, "button:importChooseFolder") || has(&h, "import:chooseFolder"), "choose folder button in empty state");
+    assert!(has(&h, "button:importChooseFiles") || has(&h, "import:chooseFiles"), "choose files button in empty state");
+    assert!(has(&h, "check:includeSubfolders"), "include subfolders checkbox");
+    assert!(opts(&h).subfolders, "subfolders enabled by default");
+}
+
+#[test]
+fn left_bar_import_button_opens_import_dialog() {
+    let services = Services { png: None, pick_folder: Some(Box::new(|| None)), ..Default::default() };
+    let app = LccApp::new(lcc_engine::Session::with_demo().with_fs(), services);
+    let mut h = Headless::new(app, [1400.0, 1000.0], 1.0);
+    h.settle(SETTLE);
+    let r = h.request("engine.execute", json!({"command": "module.library"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    let r = h.request("ui.set", json!({"leftPanel": true}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+
+    assert!(has(&h, "button:leftBar-import"), "import button exists on bottom bar");
+    click(&mut h, "button:leftBar-import");
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::Import { .. })), "clicking Import button opens import dialog");
+}
+
+#[test]
+fn import_from_folder_with_subfolders_toggle_updates_candidates_and_imports() {
+    let tmp = std::env::temp_dir().join(format!("lcc-import-subfolders-{}", std::process::id()));
+    let sub = tmp.join("sub");
+    std::fs::create_dir_all(&sub).unwrap();
+
+    let write_small_png = |path: &std::path::Path, seed: u8| {
+        let img = lcc_raster::Rgba8 { width: 8, height: 8, data: vec![[seed, 50, 100, 255]; 64] };
+        let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
+        std::fs::write(path, png).unwrap();
+    };
+
+    write_small_png(&tmp.join("root1.png"), 10);
+    write_small_png(&tmp.join("root2.png"), 20);
+    write_small_png(&sub.join("nested.png"), 30);
+
+    let services = Services { png: None, pick_folder: Some(Box::new(|| None)), ..Default::default() };
+    let app = LccApp::new(lcc_engine::Session::with_demo().with_fs(), services);
+    let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+
+    let r = h.request("engine.execute", json!({"command": "file.addFolder", "params": {"path": tmp.to_string_lossy()}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::Import { .. })), "the import dialog is open");
+    assert!(opts(&h).subfolders, "subfolders is true by default");
+    assert_eq!(opts(&h).candidates.len(), 3, "initially discovers root1, root2, and nested");
+    assert_eq!(cells(&h), 3);
+
+    // Uncheck "Include subfolders"
+    click(&mut h, "check:includeSubfolders");
+    assert!(!opts(&h).subfolders, "subfolders is now false");
+    // After re-scan completes, only root photos are candidates
+    assert_eq!(opts(&h).candidates.len(), 2, "nested photo excluded when subfolders unchecked");
+    assert_eq!(cells(&h), 2);
+
+    // Click Import (Add in place)
+    click(&mut h, "button:importAdd");
+    let before = h.app.session.catalog.photos().count();
+    click(&mut h, "import:go");
+    assert!(h.app.ui.dialog.is_none(), "import dialog closes after starting import");
+
+    let start = std::time::Instant::now();
+    while h.app.session.catalog.photos().count() < before + 2 {
+        assert!(start.elapsed() < T, "imported 2 root photos");
+        h.step();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    assert_eq!(h.app.session.catalog.photos().count(), before + 2, "only 2 root photos imported");
+    let _ = std::fs::remove_dir_all(&tmp);
+}

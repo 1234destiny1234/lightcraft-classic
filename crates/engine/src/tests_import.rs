@@ -87,6 +87,48 @@ fn recursive_discovery_includes_sony_sr2_and_srf_case_insensitively() {
     std::fs::remove_dir_all(src).unwrap();
 }
 
+#[test]
+fn expand_report_subfolders_respects_inclusion_flag() {
+    let src = temp_dir("subfolder-discovery");
+    let nested = src.join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+
+    let root_file = src.join("root.jpg");
+    let nested_file = nested.join("nested.jpg");
+    let unsupported_file = src.join("notes.txt");
+    let sidecar_file = src.join("root.xmp");
+
+    std::fs::write(&root_file, b"test-root-content").unwrap();
+    std::fs::write(&nested_file, b"test-nested-content").unwrap();
+    std::fs::write(&unsupported_file, b"not an image").unwrap();
+    std::fs::write(&sidecar_file, b"<xmp></xmp>").unwrap();
+
+    let src_str = src.to_string_lossy().to_string();
+
+    let slashes = |v: Vec<String>| {
+        let mut v: Vec<String> = v.into_iter().map(|p| p.replace('\\', "/")).collect();
+        v.sort();
+        v
+    };
+    let root_norm = root_file.to_string_lossy().replace('\\', "/");
+    let nested_norm = nested_file.to_string_lossy().replace('\\', "/");
+
+    // With subfolders: true -> both root and nested photos are discovered
+    let with_sub = crate::import::expand_report_subfolders(&[src_str.clone()], None, crate::walk::Limits::default(), true);
+    let files_with_sub = slashes(with_sub.files);
+    assert!(files_with_sub.contains(&root_norm));
+    assert!(files_with_sub.contains(&nested_norm));
+    assert_eq!(files_with_sub.len(), 2);
+
+    // With subfolders: false -> only root photo is discovered; nested directory is excluded
+    let without_sub = crate::import::expand_report_subfolders(&[src_str], None, crate::walk::Limits::default(), false);
+    let files_without_sub = slashes(without_sub.files);
+    assert_eq!(files_without_sub, vec![root_norm]);
+    assert_eq!(without_sub.unsupported, 1, "notes.txt counted as unsupported, sidecar is ignored");
+
+    let _ = std::fs::remove_dir_all(src);
+}
+
 /// A file that was only browsed (Local) is not "already in the library": the scan offers it, and
 /// importing it brings the browsed record (with its edits) into the library.
 #[test]
