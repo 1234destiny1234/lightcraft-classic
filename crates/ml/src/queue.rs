@@ -436,10 +436,8 @@ fn run_worker<T: Send + 'static>(shared: &Shared<T>) {
             Step::Stopped => break,
             Step::Idle => {
                 let st = shared.lock();
-                let _st = shared
-                    .wake
-                    .wait_while(st, |s| s.pending() == 0 && !shared.stop.load(Ordering::Relaxed))
-                    .unwrap_or_else(PoisonError::into_inner);
+                let _st =
+                    shared.wake.wait_while(st, |s| s.pending() == 0 && !shared.stop.load(Ordering::Relaxed)).unwrap_or_else(PoisonError::into_inner);
             }
         }
     }

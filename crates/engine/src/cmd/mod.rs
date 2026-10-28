@@ -32,7 +32,6 @@ mod face_recognize;
 pub(crate) mod facets;
 pub mod filters;
 mod focus;
-mod ml;
 pub mod folder_metadata;
 pub mod folders;
 pub mod geocode;
@@ -51,6 +50,7 @@ mod merge;
 pub mod metadata;
 pub mod metadata_files;
 pub mod missing;
+mod ml;
 pub(crate) mod organize;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod peers;

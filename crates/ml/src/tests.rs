@@ -144,10 +144,8 @@ fn cancel_all_ends_what_runs_and_what_waits() {
 fn a_gpu_failure_reruns_the_job_on_the_cpu_and_stays_there() {
     let calls = Arc::new(AtomicUsize::new(0));
     let q: Queue<Kind> = Queue::new(Config::default(), gpu_probe(calls.clone()), None);
-    q.submit(Job::new("a", |ctx: &Ctx| {
-        if ctx.device().is_gpu() { Err(JobError::Device("out of memory".into())) } else { Ok(ctx.device().kind) }
-    }))
-    .unwrap();
+    q.submit(Job::new("a", |ctx: &Ctx| if ctx.device().is_gpu() { Err(JobError::Device("out of memory".into())) } else { Ok(ctx.device().kind) }))
+        .unwrap();
     let r = collect(&q, 1);
     assert_eq!(r[0].outcome, Outcome::Done(Kind::Cpu));
     assert_eq!(r[0].device, Some(Kind::Cpu));
@@ -168,8 +166,7 @@ fn a_gpu_failure_reruns_the_job_on_the_cpu_and_stays_there() {
 
 #[test]
 fn a_device_error_on_the_cpu_is_a_failure() {
-    let q: Queue<u32> =
-        Queue::new(Config { preference: Preference::Cpu, ..Config::default() }, gpu_probe(Arc::new(AtomicUsize::new(0))), None);
+    let q: Queue<u32> = Queue::new(Config { preference: Preference::Cpu, ..Config::default() }, gpu_probe(Arc::new(AtomicUsize::new(0))), None);
     q.submit(Job::new("a", |_: &Ctx| Err(JobError::Device("bad".into())))).unwrap();
     assert!(matches!(&collect(&q, 1)[0].outcome, Outcome::Failed(w) if w.contains("bad")));
 }
@@ -212,8 +209,7 @@ fn a_job_that_panics_fails_and_the_worker_goes_on() {
 
 #[test]
 fn a_full_queue_refuses_more() {
-    let q: Queue<u32> =
-        Queue::new(Config { max_pending: 2, ..Config::default() }, gpu_probe(Arc::new(AtomicUsize::new(0))), None);
+    let q: Queue<u32> = Queue::new(Config { max_pending: 2, ..Config::default() }, gpu_probe(Arc::new(AtomicUsize::new(0))), None);
     let (open, started) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
     q.submit(gate(open.clone(), started.clone())).unwrap();
     wait_for(|| started.load(Ordering::SeqCst));
@@ -228,8 +224,7 @@ fn a_full_queue_refuses_more() {
 
 #[test]
 fn unclaimed_results_are_capped() {
-    let q: Queue<u32> =
-        Queue::new(Config { max_finished: 3, ..Config::default() }, gpu_probe(Arc::new(AtomicUsize::new(0))), None);
+    let q: Queue<u32> = Queue::new(Config { max_finished: 3, ..Config::default() }, gpu_probe(Arc::new(AtomicUsize::new(0))), None);
     for i in 0..10 {
         q.submit(Job::new(format!("j{i}"), move |_: &Ctx| Ok(i))).unwrap();
     }

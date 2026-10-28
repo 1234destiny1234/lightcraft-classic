@@ -54,8 +54,6 @@ pub mod fonts;
 pub mod guard;
 pub mod hdr_texture;
 pub mod history_groups;
-/// The shared AI backend's queue and activity row (#491).
-mod ml;
 pub mod import;
 mod import_move;
 pub mod legacy;
@@ -74,6 +72,8 @@ pub mod media;
 pub mod memory;
 pub mod merge;
 pub mod midi;
+/// The shared AI backend's queue and activity row (#491).
+mod ml;
 mod model_download;
 pub mod open_path;
 pub mod originals;
@@ -1759,8 +1759,6 @@ mod tests_filesystem_history;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_focus_scan;
 #[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests_ml;
-#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_folder_metadata;
 #[cfg(test)]
 mod tests_folder_watch;
@@ -1804,6 +1802,8 @@ mod tests_lightroom_history;
 mod tests_mask_effects;
 #[cfg(test)]
 mod tests_merge;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_ml;
 #[cfg(test)]
 mod tests_move_to_share;
 #[cfg(test)]

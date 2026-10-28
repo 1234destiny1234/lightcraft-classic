@@ -102,9 +102,12 @@ fn the_rows_cancel_stops_the_batch() {
 #[test]
 fn a_job_failing_on_the_gpu_finishes_on_the_cpu_and_status_says_why() {
     let mut s = session();
-    s.ml_submit(Job::new("test:gpu", |ctx: &Ctx| {
-        if ctx.device().is_gpu() { Err(JobError::Device("device lost".into())) } else { Ok(Box::new(()) as Output) }
-    }))
+    s.ml_submit(Job::new(
+        "test:gpu",
+        |ctx: &Ctx| {
+            if ctx.device().is_gpu() { Err(JobError::Device("device lost".into())) } else { Ok(Box::new(()) as Output) }
+        },
+    ))
     .unwrap();
     wait_for(|| s.ml_queue().drain().iter().any(|f| matches!(f.outcome, Outcome::Done(_))));
     let st = s.execute("ml.status", &json!({})).unwrap();
