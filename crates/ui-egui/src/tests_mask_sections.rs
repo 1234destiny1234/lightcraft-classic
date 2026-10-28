@@ -14,7 +14,7 @@ const SETTLE: Duration = Duration::from_secs(5);
 fn masking() -> Headless {
     let services = Services { png: None, ..Default::default() };
     let app = LccApp::new(lcc_engine::Session::with_demo(), services);
-    let mut h = Headless::new(app, [1200.0, 1400.0], 1.0);
+    let mut h = Headless::new(app, [1200.0, 2000.0], 1.0);
     req(&mut h, "ui.set", json!({"view": "detail", "moduleBar": false}));
     exec(&mut h, "panel.masking", json!({}));
     exec(&mut h, "mask.add", json!({"kind": "radial"}));
