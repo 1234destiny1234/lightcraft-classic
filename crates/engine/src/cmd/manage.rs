@@ -196,7 +196,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Edit Capture Time",
             [],
             None,
-            "{ids?, time?: `2026-09-30T14:05:00` (the active photo gets it, the others shift by the same amount), each?: bool (every photo gets `time`), fromFile?: bool (each photo gets its original file's modification time, UTC), shift?: seconds, hours?: time-zone shift in hours} → {changed, captured: [..], noFile, unreadable: photos skipped because their capture time can't be read}",
+            "{ids?, time?: `2026-09-30T14:05:00` (the active photo gets it, the others shift by the same amount), each?: bool (every photo gets `time`), fromFile?: bool (each photo gets its original file's modification time, UTC), fromFilename?: bool (each photo gets the date and time its file name states, as in `IMG_20260921_143000.jpg` or `2026-09-21 14.30.00.heic`; a date alone is midnight), shift?: seconds, hours?: time-zone shift in hours (both also move fromFile / fromFilename times), dryRun?: bool (report, change nothing)} → {changed, captured: [..], noFile, noDateInName: photos whose file name holds no date, unreadable: photos skipped because their capture time can't be read}",
             has_selection,
             |s, p| {
                 use lcc_catalog::dates::{iso_seconds, normalize_iso, shift_iso};
@@ -242,6 +242,12 @@ pub fn specs() -> Vec<CommandSpec> {
                     }
                 }
                 let from_file = bool_or(p, "fromFile", false);
+                let from_name = bool_or(p, "fromFilename", false);
+                if from_file && from_name {
+                    return Err(bad(c, "choose fromFile or fromFilename, not both"));
+                }
+                let dry_run = bool_or(p, "dryRun", false);
+                let mut no_name = 0usize;
                 let mut ops = Vec::new();
                 let mut out = Vec::new();
                 let mut no_file = 0usize;
@@ -252,6 +258,12 @@ pub fn specs() -> Vec<CommandSpec> {
                         // the original's modification time (UTC; `hours` moves it to the camera's zone)
                         let Some(t) = s.catalog.photo(*id).and_then(|p| file_time(p)) else {
                             no_file += 1;
+                            continue;
+                        };
+                        t
+                    } else if from_name {
+                        let Some(t) = s.catalog.photo(*id).and_then(|p| lcc_catalog::dates::date_from_filename(&p.file_name)) else {
+                            no_name += 1;
                             continue;
                         };
                         t
@@ -280,13 +292,16 @@ pub fn specs() -> Vec<CommandSpec> {
                     return Err(bad(c, format!("the shift would take {out_of_range} photo(s) outside the years 0000–9999; nothing was changed")));
                 }
                 let n = ops.len();
-                if n > 0 {
-                    s.commit("Edit Capture Time", Op::Batch { ops })?;
-                }
                 if from_file && out.is_empty() {
                     return Err(bad(c, "none of the photos has a readable original file"));
                 }
-                Ok(json!({"changed": n, "captured": out, "noFile": no_file, "unreadable": unreadable}))
+                if from_name && out.is_empty() {
+                    return Err(bad(c, "none of the photos' file names holds a date"));
+                }
+                if n > 0 && !dry_run {
+                    s.commit("Edit Capture Time", Op::Batch { ops })?;
+                }
+                Ok(json!({"changed": n, "captured": out, "noFile": no_file, "noDateInName": no_name, "unreadable": unreadable, "dryRun": dry_run}))
             }
         ),
         cmd!(

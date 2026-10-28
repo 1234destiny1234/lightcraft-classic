@@ -512,6 +512,9 @@ pub struct AppSettings {
     pub double_click_develop: bool,
     /// Hide active filter text / indicator in Develop mode (Settings ▸ Interface ▸ Detail).
     pub hide_filter_in_develop: bool,
+    /// Presets panel: list the "User Presets" group first, after Favorites (issue #476; off by
+    /// default, as Lightroom Classic keeps groups in name order).
+    pub user_presets_first: bool,
     /// View ▸ View Options: the lines the loupe's info overlay shows in Info 1 and Info 2.
     #[serde(deserialize_with = "lenient")]
     pub loupe_info: LoupeInfo,
@@ -646,6 +649,7 @@ impl Default for AppSettings {
             zoom_to_focus: true,
             double_click_develop: false,
             hide_filter_in_develop: false,
+            user_presets_first: false,
             loupe_info: LoupeInfo::default(),
             lightroom_import: LightroomImport::Ask,
             edit_in_mode: EditInMode::Ask,
@@ -1109,6 +1113,16 @@ pub struct UiState {
     pub unnamed_anchor: Option<usize>,
     #[serde(skip)]
     pub unnamed_focus: bool,
+    /// The "More" faces selected on a person's page (photo, region), the name being typed to assign them to, the face
+    /// last clicked (Shift-click selects a range from it) and whether the name box should take the keyboard.
+    #[serde(skip)]
+    pub person_selected: std::collections::HashSet<(u64, usize)>,
+    #[serde(skip)]
+    pub person_assign: String,
+    #[serde(skip)]
+    pub person_anchor: Option<usize>,
+    #[serde(skip)]
+    pub person_assign_focus: bool,
     /// Local sidebar locations hidden with “Remove from Local” (folders on disk are untouched).
     pub hidden_locations: Vec<String>,
     /// Copies opened in an external editor this session (reloaded when the window is focused
@@ -1197,6 +1211,8 @@ pub struct UiState {
     /// Backspace on it removes that guide alone; a click away or leaving the tool clears it.
     #[serde(skip)]
     pub selected_guide: Option<(u64, usize)>,
+    /// White Balance Selector: side of the averaged square, in preview pixels (1, 3, 5, 9, 15).
+    pub wb_sample: u32,
     pub brush_size: f32,
     pub brush_feather: f32,
     pub brush_flow: f32,
@@ -1926,6 +1942,10 @@ impl Default for UiState {
             unnamed_name: String::new(),
             unnamed_anchor: None,
             unnamed_focus: false,
+            person_selected: Default::default(),
+            person_assign: String::new(),
+            person_anchor: None,
+            person_assign_focus: false,
             hidden_locations: Vec::new(),
             dragging_control: None,
             external_edits: Vec::new(),
@@ -1957,6 +1977,7 @@ impl Default for UiState {
             grading_hidden: None,
             tool: String::new(),
             selected_guide: None,
+            wb_sample: 5,
             brush_size: 0.04,
             brush_feather: 50.0,
             brush_flow: 60.0,

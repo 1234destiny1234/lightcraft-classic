@@ -1521,5 +1521,7 @@
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Abre el propio archivo original; al guardarlo se actualiza esta foto. Tus ajustes de aquí no se ven allí.",
   "Raw files and generated photos can only be edited as a copy with adjustments.": "Los archivos raw solo se pueden editar como copia con ajustes.",
   "File format, colour space and bit depth: Settings → External Editing.": "Formato de archivo, espacio de color y profundidad de bits: Ajustes → Edición externa.",
-  "Settings → External Editing → Edit In turns the question back on": "Ajustes → Edición externa → Editar en vuelve a activar la pregunta"
+  "Settings → External Editing → Edit In turns the question back on": "Ajustes → Edición externa → Editar en vuelve a activar la pregunta",
+  "Each photo gets the date and time in its file name (IMG_20260921_143000).": "Cada foto recibe la fecha y la hora de su nombre de archivo (IMG_20260921_143000).",
+  "No date in the active photo's file name": "No hay fecha en el nombre de archivo de la foto activa"
 }

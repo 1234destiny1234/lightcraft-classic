@@ -1735,5 +1735,7 @@
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Открывает сам исходный файл; при сохранении это фото обновится. Ваши настройки здесь там не видны.",
   "Raw files and generated photos can only be edited as a copy with adjustments.": "RAW-файлы можно редактировать только как копию с настройками.",
   "File format, colour space and bit depth: Settings → External Editing.": "Формат файла, цветовое пространство и разрядность: Настройки → Внешнее редактирование.",
-  "Settings → External Editing → Edit In turns the question back on": "Настройки → Внешнее редактирование → Редактировать в снова включает вопрос"
+  "Settings → External Editing → Edit In turns the question back on": "Настройки → Внешнее редактирование → Редактировать в снова включает вопрос",
+  "Each photo gets the date and time in its file name (IMG_20260921_143000).": "Каждому фото присваиваются дата и время из имени файла (IMG_20260921_143000).",
+  "No date in the active photo's file name": "В имени файла активного фото нет даты"
 }

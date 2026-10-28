@@ -1440,5 +1440,7 @@
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "直接打开原始文件；保存后此照片会更新。您在这里的调整在那里不可见。",
   "Raw files and generated photos can only be edited as a copy with adjustments.": "Raw 文件只能作为应用调整后的副本编辑。",
   "File format, colour space and bit depth: Settings → External Editing.": "文件格式、色彩空间和位深度：设置 → 外部编辑。",
-  "Settings → External Editing → Edit In turns the question back on": "设置 → 外部编辑 → 在其他应用中编辑 可重新开启此询问"
+  "Settings → External Editing → Edit In turns the question back on": "设置 → 外部编辑 → 在其他应用中编辑 可重新开启此询问",
+  "Each photo gets the date and time in its file name (IMG_20260921_143000).": "每张照片使用其文件名中的日期和时间（IMG_20260921_143000）。",
+  "No date in the active photo's file name": "当前照片的文件名中没有日期"
 }

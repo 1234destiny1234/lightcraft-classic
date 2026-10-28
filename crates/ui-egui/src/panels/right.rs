@@ -17,7 +17,7 @@ use lcc_engine::cmd::crop_aspects::{BUILTIN_ASPECTS, CustomAspect};
 #[path = "classic_crop.rs"]
 mod classic_crop;
 pub(crate) use classic_crop::transform_body;
-/// Develop's tool row under the histogram, each tool's drawer over the panels (fork-owned).
+/// Develop's tool row under the histogram, each tool's drawer in the panels' place (fork-owned).
 #[path = "classic_tools.rs"]
 mod classic_tools;
 
@@ -99,9 +99,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                     RightPanel::Activity => activity(app, ui, id),
                     RightPanel::None => {}
                 }
-                if classic_tools::drawer_open(app) {
-                    classic_tools::panels_under_drawer(app, ui, id);
-                }
+                // (a tool's drawer stands alone, as in Lightroom Classic: the Develop panels come
+                // back when the tool closes, #618)
                 crate::widgets::follow_focus(ui);
             });
             ui.data_mut(|d| d.insert_temp(egui::Id::new(AREA), scrolled.id));
