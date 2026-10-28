@@ -173,17 +173,12 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         RatingOp::Exactly => "=",
         RatingOp::AtMost => "≤",
     };
-    picker(
-        app,
-        ui,
-        "ratingOp",
-        op_label,
-        false,
-        || [("≥  at least", "atLeast", RatingOp::AtLeast), ("=  exactly", "exactly", RatingOp::Exactly), ("≤  at most", "atMost", RatingOp::AtMost)]
+    picker(app, ui, "ratingOp", op_label, false, || {
+        [("≥  at least", "atLeast", RatingOp::AtLeast), ("=  exactly", "exactly", RatingOp::Exactly), ("≤  at most", "atMost", RatingOp::AtMost)]
             .into_iter()
             .map(|(l, k, op)| (l.to_string(), json!({"ratingOp": k}), f.rating_op == op))
-            .collect(),
-    );
+            .collect()
+    });
     if let Some(r) = crate::rating::Rating::new("filter", f.rating).automation_ids("filter:star").show(ui) {
         filter(app, json!({"rating": r}));
     }
@@ -250,13 +245,8 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         Some(_) => "Merged",
         None => kind_label,
     };
-    picker(
-        app,
-        ui,
-        "kind",
-        kind_label,
-        f.kind.is_some() || f.merged.is_some(),
-        || [
+    picker(app, ui, "kind", kind_label, f.kind.is_some() || f.merged.is_some(), || {
+        [
             ("All types", Value::Null, None),
             ("Photos", json!("image"), Some(MediaKind::Image)),
             ("Raw", json!("raw"), Some(MediaKind::Raw)),
@@ -269,24 +259,19 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
                 .into_iter()
                 .map(|(l, m)| (l.to_string(), json!({"kind": null, "merged": m}), f.merged.as_deref() == Some(m))),
         )
-        .collect(),
-    );
+        .collect()
+    });
     let edited_label = match f.edited {
         None => "Edited or not",
         Some(true) => "Edited",
         Some(false) => "Unedited",
     };
-    picker(
-        app,
-        ui,
-        "edited",
-        edited_label,
-        f.edited.is_some(),
-        || [("Edited or not", Value::Null, None), ("Edited", json!(true), Some(true)), ("Unedited", json!(false), Some(false))]
+    picker(app, ui, "edited", edited_label, f.edited.is_some(), || {
+        [("Edited or not", Value::Null, None), ("Edited", json!(true), Some(true)), ("Unedited", json!(false), Some(false))]
             .into_iter()
             .map(|(l, v, e)| (l.to_string(), json!({"edited": v}), f.edited == e))
-            .collect(),
-    );
+            .collect()
+    });
     if f.immich.is_some() || !app.session.catalog.remote_links().is_empty() {
         let current = match f.immich.as_deref() {
             Some("linked") => "In Immich",
@@ -294,13 +279,8 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
             Some(_) => "Not in Immich",
             None => "Immich: any",
         };
-        picker(
-            app,
-            ui,
-            "immich",
-            current,
-            f.immich.is_some(),
-            || [
+        picker(app, ui, "immich", current, f.immich.is_some(), || {
+            [
                 ("Immich: any", Value::Null),
                 ("In Immich", json!("linked")),
                 ("Not in Immich", json!("notLinked")),
@@ -308,8 +288,8 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
             ]
             .into_iter()
             .map(|(l, v)| (l.to_string(), json!({"immich": v.clone()}), f.immich.as_deref() == v.as_str()))
-            .collect(),
-        );
+            .collect()
+        });
         #[cfg(not(target_arch = "wasm32"))]
         super::connections::smart_search_box(app, ui);
     }
