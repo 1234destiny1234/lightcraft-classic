@@ -24,6 +24,10 @@ pub struct Permissions {
     /// Write standard metadata fields (title, caption, keywords, …) of photos.
     #[serde(default)]
     pub metadata_write: bool,
+    /// Add files to the library (`library.add`): a tool's output, from the folder of the photo it
+    /// was made from, stacked on it or put in an album that holds it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub library_add: bool,
     /// Hosts the plug-in may send HTTP(S) requests to: `api.example.com`, or `*.example.com` for
     /// any sub-domain (not the bare domain).
     #[serde(default)]
@@ -83,6 +87,7 @@ impl Permissions {
         Permissions {
             catalog: self.catalog && other.catalog,
             metadata_write: self.metadata_write && other.metadata_write,
+            library_add: self.library_add && other.library_add,
             network: self.network.iter().filter(|h| other.network.contains(h)).cloned().collect(),
             fs: self
                 .fs
@@ -97,7 +102,7 @@ impl Permissions {
 
     /// True when nothing is allowed.
     pub fn is_empty(&self) -> bool {
-        !self.catalog && !self.metadata_write && self.network.is_empty() && self.fs.is_empty() && self.programs.is_empty()
+        !self.catalog && !self.metadata_write && !self.library_add && self.network.is_empty() && self.fs.is_empty() && self.programs.is_empty()
     }
 
     /// May the plug-in talk to `host`? Matching ignores ASCII case.
@@ -200,12 +205,13 @@ mod tests {
         let grant = Permissions {
             catalog: true,
             metadata_write: true,
+            library_add: true,
             network: vec!["a.com".into(), "b.com".into()],
             fs: vec![FsRoot { path: "/x".into(), write: false }],
             programs: vec![],
         };
         let e = grant.intersect(&req);
-        assert!(e.catalog && !e.metadata_write);
+        assert!(e.catalog && !e.metadata_write && !e.library_add);
         assert_eq!(e.network, vec!["a.com".to_string()]);
         assert_eq!(e.fs, vec![FsRoot { path: "/x".into(), write: false }]);
     }
