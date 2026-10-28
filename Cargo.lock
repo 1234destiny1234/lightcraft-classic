@@ -5527,7 +5527,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-winmsi"
-version = "26.44.0"
+version = "26.44.1"
 dependencies = [
  "windows-sys 0.61.2",
 ]

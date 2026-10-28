@@ -2,10 +2,12 @@
 //! new MSI; any other copy on Windows was unpacked from the portable zip and updates itself in
 //! place ([`crate::install`]).
 //!
-//! Windows Installer is asked where the key file of the app's main component is
-//! ([`lcc_winmsi::locate_component`]). The MSI registers that component on install and removes it on
-//! uninstall, so the answer is Windows' own record: nothing extra is installed to mark an MSI
-//! copy, and a zip copy can't be taken for one even when the MSI is installed elsewhere.
+//! Windows Installer is asked where every product that has the app's main component keeps its key
+//! file ([`lcc_winmsi::component_paths`]), and the running program is compared with each. The MSI
+//! registers that component on install and removes it on uninstall, so the answer is Windows' own
+//! record: nothing extra is installed to mark an MSI copy, a zip copy can't be taken for one even
+//! when the MSI is installed elsewhere, and an MSI built from the same template (upstream's, which
+//! shares the component's GUID) can't hide this one.
 
 use std::path::Path;
 
@@ -17,9 +19,9 @@ pub const APP_COMPONENT: &str = "{8A1D3A39-F7C1-47B1-97AE-40C80BF82F4A}";
 /// Whether the MSI installed `exe` (this program's path). `Ok(false)` off Windows and for any copy
 /// the MSI did not install; `Err` when Windows Installer could not say (a broken install).
 pub fn installed_by_msi(exe: &Path) -> Result<bool, String> {
-    match lcc_winmsi::locate_component(APP_COMPONENT) {
-        Ok(Some(installed)) => Ok(same_file(&installed, exe)),
-        Ok(None) | Err(lcc_winmsi::Error::Unsupported) => Ok(false),
+    match lcc_winmsi::component_paths(APP_COMPONENT) {
+        Ok(installed) => Ok(installed.iter().any(|p| same_file(p, exe))),
+        Err(lcc_winmsi::Error::Unsupported) => Ok(false),
         Err(e) => Err(e.to_string()),
     }
 }
