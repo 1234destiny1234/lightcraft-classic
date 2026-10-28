@@ -318,7 +318,17 @@ fn cases() -> Vec<(&'static str, Edit)> {
                         invert: false,
                         shape: MaskShape::Linear { start: Point::new(0.5, 0.0), end: Point::new(0.5, 0.6) },
                     }],
-                    adjust: lcc_develop::LocalAdjustments { exposure: -0.8, temp: -30.0, saturation: 20.0, ..Default::default() },
+                    adjust: lcc_develop::LocalAdjustments {
+                        exposure: -0.8,
+                        temp: -30.0,
+                        saturation: 20.0,
+                        grade_shadows_hue: 210.0,
+                        grade_shadows_sat: 40.0,
+                        grade_highlights_hue: 40.0,
+                        grade_highlights_sat: 30.0,
+                        grade_global_lum: 10.0,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 Mask {

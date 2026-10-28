@@ -262,8 +262,109 @@ pub fn date_runs_of<K: AsRef<str>>(
     runs
 }
 
+/// The capture time a file name states (`IMG_20260921_143000.jpg`, `2026-09-21-12-00-00.raw`,
+/// `PXL_20260921_143000123.jpg`, `IMG-20260921-WA0001.jpg`, `2026-09-21 14.30.00.heic`), as
+/// `YYYY-MM-DDTHH:MM:SS`; a date with no time after it is midnight. The first run of digits that
+/// starts a valid date in years 1800–2199 wins: year, month and day are four, two and two digits,
+/// each pair optionally separated by one of `-_. `, and a time may follow (`T`, `_`, `-`, `.` or
+/// a space, then hours, minutes and optional seconds, separated by nothing or one of `-_.:`; extra
+/// digits after the seconds, such as milliseconds, are ignored). Dates and times are checked by
+/// chrono (no 30 February, no 25:00). `None` when the name holds no such date.
+pub fn date_from_filename(name: &str) -> Option<String> {
+    let b = name.as_bytes();
+    let is_digit = |i: usize| b.get(i).is_some_and(u8::is_ascii_digit);
+    let two = |i: usize| -> Option<u32> {
+        let d = b.get(i..i.checked_add(2)?)?;
+        d.iter().all(u8::is_ascii_digit).then(|| u32::from(d[0] - b'0') * 10 + u32::from(d[1] - b'0'))
+    };
+    // one optional separator from `seps` at `i`: where the next field starts
+    let sep = |i: usize, seps: &[u8]| if b.get(i).is_some_and(|c| seps.contains(c)) { i + 1 } else { i };
+    for start in 0..b.len() {
+        if !is_digit(start) || (start > 0 && is_digit(start - 1)) {
+            continue;
+        }
+        let Some(year) = b.get(start..start + 4).filter(|d| d.iter().all(u8::is_ascii_digit)) else { continue };
+        let year = year.iter().fold(0i32, |a, d| a * 10 + i32::from(d - b'0'));
+        if !(1800..=2199).contains(&year) {
+            continue;
+        }
+        let i = start + 4;
+        let date_sep = b.get(i).copied().filter(|c| b"-_. ".contains(c));
+        let i = if date_sep.is_some() { i + 1 } else { i };
+        let Some(month) = two(i) else { continue };
+        // the same separator between month and day as between year and month
+        let i = i + 2;
+        let i = match date_sep {
+            Some(c) if b.get(i) == Some(&c) => i + 1,
+            Some(_) => continue,
+            None => i,
+        };
+        let Some(day) = two(i) else { continue };
+        let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, day) else { continue };
+        let end = i + 2;
+        let time = (|| {
+            let i = sep(end, b"T_-. ");
+            let h = two(i)?;
+            let i = sep(i + 2, b"-_.:");
+            let m = two(i)?;
+            let j = sep(i + 2, b"-_.:");
+            let s = two(j).unwrap_or(0);
+            chrono::NaiveTime::from_hms_opt(h, m, s)
+        })();
+        let time = match time {
+            Some(t) => t,
+            // a date that runs on into more digits (`202609211`) is a number, not a date
+            None if is_digit(end) => continue,
+            None => chrono::NaiveTime::MIN,
+        };
+        return Some(date.and_time(time).format("%Y-%m-%dT%H:%M:%S").to_string());
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn date_from_filename_reads_common_names() {
+        use super::date_from_filename as f;
+        assert_eq!(f("IMG_20260921_143000.jpg").as_deref(), Some("2026-09-21T14:30:00"));
+        assert_eq!(f("2026-09-21-12-00-00.raw").as_deref(), Some("2026-09-21T12:00:00"));
+        assert_eq!(f("PXL_20260921_143000123.jpg").as_deref(), Some("2026-09-21T14:30:00"));
+        assert_eq!(f("IMG-20260921-WA0001.jpg").as_deref(), Some("2026-09-21T00:00:00"));
+        assert_eq!(f("2026-09-21 14.30.15.heic").as_deref(), Some("2026-09-21T14:30:15"));
+        assert_eq!(f("Screenshot 2026-09-21 at 14.30.jpg").as_deref(), Some("2026-09-21T00:00:00"));
+        assert_eq!(f("scan_19850704.tif").as_deref(), Some("1985-07-04T00:00:00"));
+        // no date, impossible dates, numbers that only look like one
+        for name in ["DSC_1234.NEF", "IMG_20260230_120000.jpg", "202609211.jpg", "2026-09_21.jpg", "", "_DSC9999.ARW", "30000101.jpg"] {
+            assert_eq!(f(name), None, "{name}");
+        }
+        // a bad time leaves the date at midnight
+        assert_eq!(f("20260921_256100.jpg").as_deref(), Some("2026-09-21T00:00:00"));
+    }
+
+    #[test]
+    fn date_from_filename_never_panics_on_hostile_names() {
+        for name in [
+            "2",
+            "20",
+            "2026",
+            "2026-",
+            "2026-0",
+            "2026-09-",
+            "2026-09-2",
+            "20260921T",
+            "20260921T1",
+            "20260921T12:",
+            "é2026ü09ö21",
+            "\u{0}2026\u{0}",
+            "9999999999999999999999",
+        ] {
+            let _ = super::date_from_filename(name);
+        }
+        let long = "2".repeat(100_000);
+        assert_eq!(super::date_from_filename(&long), None);
+    }
+
     use super::*;
     use crate::{Op, Photo, Source};
 

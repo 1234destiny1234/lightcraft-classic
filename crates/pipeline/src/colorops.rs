@@ -146,7 +146,7 @@ pub struct ColorOps {
     pub skin: f32,
 }
 
-fn wheel(w: &lcc_develop::Wheel) -> WheelK {
+pub fn wheel(w: &lcc_develop::Wheel) -> WheelK {
     let h = oklch_hue_of_srgb_hue(w.hue);
     let s = (w.sat / 100.0) as f32 * 0.09;
     WheelK { a: s * h.cos(), b: s * h.sin(), lum: (w.lum / 100.0) as f32 * 0.12 }
@@ -251,11 +251,7 @@ impl ColorOps {
     #[inline]
     fn grade(&self, mut lab: [f32; 3]) -> [f32; 3] {
         if let Some((wheels, blending, balance)) = &self.grading {
-            let m = 0.5 - balance * 0.25;
-            let width = 0.15 + blending * 0.5;
-            let ws = 1.0 - smooth(m - width, m + width * 0.25, lab[0]);
-            let wh = smooth(m - width * 0.25, m + width, lab[0]);
-            let wm = (1.0 - ws - wh).max(0.0);
+            let [ws, wm, wh] = grade_zones(lab[0], *blending, *balance);
             for (k, wt) in wheels.iter().zip([ws, wm, wh, 1.0]) {
                 lab[1] += k.a * wt;
                 lab[2] += k.b * wt;
@@ -264,6 +260,51 @@ impl ColorOps {
         }
         oklab_to_2020(lab)
     }
+}
+
+/// How much OkLab lightness `l` belongs to the shadows, midtones and highlights of colour grading
+/// (`blending` 0..1, `balance` −1..1). The GPU mirrors it in `finish.wgsl`.
+#[inline]
+pub fn grade_zones(l: f32, blending: f32, balance: f32) -> [f32; 3] {
+    let m = 0.5 - balance * 0.25;
+    let width = 0.15 + blending * 0.5;
+    let ws = 1.0 - smooth(m - width, m + width * 0.25, l);
+    let wh = smooth(m - width * 0.25, m + width, l);
+    [ws, (1.0 - ws - wh).max(0.0), wh]
+}
+
+/// Number of per-mask colour-grading terms: (a, b, lightness) of the shadows, midtones,
+/// highlights and global wheels.
+pub const LOCAL_GRADE_TERMS: usize = 12;
+
+/// A mask's colour-grading wheels as alpha-summable terms (see [`LOCAL_GRADE_TERMS`]).
+pub fn local_grade_terms(a: &lcc_develop::LocalAdjustments) -> [f32; LOCAL_GRADE_TERMS] {
+    let mut t = [0.0; LOCAL_GRADE_TERMS];
+    for (i, w) in a.grading_wheels().iter().enumerate() {
+        let k = wheel(w);
+        t[i * 3] = k.a;
+        t[i * 3 + 1] = k.b;
+        t[i * 3 + 2] = k.lum;
+    }
+    t
+}
+
+/// Colour grading inside masks: the alpha-weighted sum `g` of the masks' [`local_grade_terms`]
+/// applied to linear Rec.2020 `rgb`, zones as the Color Grading panel's at its default blending (50)
+/// and balance (0). Sources: own design (the global grading's zones and wheels, weighted per mask).
+#[inline]
+pub fn local_grade(rgb: [f32; 3], g: &[f32; LOCAL_GRADE_TERMS]) -> [f32; 3] {
+    if g.iter().all(|v| *v == 0.0) {
+        return rgb;
+    }
+    let mut lab = oklab_from_2020(rgb);
+    let [ws, wm, wh] = grade_zones(lab[0], 0.5, 0.0);
+    for (i, wt) in [ws, wm, wh, 1.0].into_iter().enumerate() {
+        lab[1] += g[i * 3] * wt;
+        lab[2] += g[i * 3 + 1] * wt;
+        lab[0] += g[i * 3 + 2] * wt;
+    }
+    oklab_to_2020(lab)
 }
 
 /// Hue rotation (OkLCh radians) of a calibration primary at ±100.
@@ -454,5 +495,30 @@ mod tests {
         let bright = ops.apply([0.8, 0.8, 0.8], 0.0, 0.0);
         assert!(dark[2] > dark[0]);
         assert!((bright[2] - bright[0]).abs() < 0.02);
+    }
+
+    #[test]
+    fn mask_grading_tints_its_zone_and_scales_with_the_mask() {
+        let a = lcc_develop::LocalAdjustments { grade_shadows_hue: 220.0, grade_shadows_sat: 60.0, ..Default::default() };
+        let full = local_grade_terms(&a);
+        let dark = local_grade([0.01, 0.01, 0.01], &full);
+        let bright = local_grade([0.8, 0.8, 0.8], &full);
+        assert!(dark[2] > dark[0], "shadows turn blue: {dark:?}");
+        assert!((bright[2] - bright[0]).abs() < 0.02, "highlights keep their colour: {bright:?}");
+        // half covered by the mask: half the tint
+        let half = local_grade([0.01, 0.01, 0.01], &full.map(|v| v * 0.5));
+        assert!(half[2] - half[0] > 0.0 && half[2] - half[0] < dark[2] - dark[0]);
+        // neutral wheels change nothing
+        let none = local_grade_terms(&lcc_develop::LocalAdjustments::default());
+        assert_eq!(local_grade([0.3, 0.2, 0.1], &none), [0.3, 0.2, 0.1]);
+    }
+
+    #[test]
+    fn a_mask_from_before_grading_reads_as_ungraded() {
+        let a: lcc_develop::LocalAdjustments =
+            serde_json::from_str(r#"{"exposure": 0.5, "color_hue": 0.0, "color_sat": 0.0, "amount": 100.0}"#).unwrap();
+        assert_eq!(a.exposure, 0.5);
+        assert!(a.grading_wheels().iter().all(|w| w.hue == 0.0 && w.sat == 0.0 && w.lum == 0.0));
+        assert!(local_grade_terms(&a).iter().all(|v| *v == 0.0));
     }
 }

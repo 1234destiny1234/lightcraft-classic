@@ -37,6 +37,92 @@ pub const LOCAL: &[ControlSpec] = &[
     spec("defringe", "Defringe", -100.0, 100.0, 1.0, 0, Track::Centered),
 ];
 
+/// The mask's slider sections (issue #642), as Lightroom Classic groups them: (fold key, title,
+/// the [`LOCAL`] sliders in it). Color Grading follows Color ([`grading_section`]).
+pub const GROUPS: &[(&str, &str, &[&str])] = &[
+    ("light", "Light", &["exposure", "contrast", "highlights", "shadows", "whites", "blacks"]),
+    ("color", "Color", &["temp", "tint", "hue", "saturation"]),
+    ("effects", "Effects", &["texture", "clarity", "dehaze"]),
+    ("detail", "Detail", &["sharpness", "noise", "moire", "defringe"]),
+];
+
+/// The colour-grading zones of a mask: (key in the `grade_<key>_*` fields, label).
+pub const GRADE_ZONES: [(&str, &str); 4] = [("shadows", "Shadows"), ("midtones", "Midtones"), ("highlights", "Highlights"), ("global", "Global")];
+
+/// The sliders of one colour-grading zone (ids are the `LocalAdjustments` field names).
+pub fn grade_specs(zone: &str) -> [ControlSpec; 3] {
+    let (h, s, l): (&'static str, &'static str, &'static str) = match zone {
+        "midtones" => ("grade_midtones_hue", "grade_midtones_sat", "grade_midtones_lum"),
+        "highlights" => ("grade_highlights_hue", "grade_highlights_sat", "grade_highlights_lum"),
+        "global" => ("grade_global_hue", "grade_global_sat", "grade_global_lum"),
+        _ => ("grade_shadows_hue", "grade_shadows_sat", "grade_shadows_lum"),
+    };
+    let c = |id, label, min, max, track| ControlSpec { id, label, section: Section::Grading, min, max, default: 0.0, step: 1.0, decimals: 0, track };
+    [c(h, "Hue", 0.0, 360.0, Track::Rainbow), c(s, "Saturation", 0.0, 100.0, Track::Plain), c(l, "Luminance", -100.0, 100.0, Track::Centered)]
+}
+
+/// Does any slider of a section differ from 0?
+fn group_changed(a: &LocalAdjustments, ids: &[&str]) -> bool {
+    ids.iter().any(|k| local_get(a, k).abs() > 1e-9)
+}
+
+/// A mask slider section's title row: click folds it shut and open again (`section:mask:<key>`, kept
+/// in [`crate::state::UiState::folded_sections`], so open unless folded). A dot after the title
+/// marks a section whose sliders are not all at 0, so a folded one still shows it does something.
+/// Says whether the section is open.
+fn section_header(app: &mut LccApp, ui: &mut egui::Ui, key: &str, title: &str, changed: bool) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let id = format!("mask:{key}");
+    let open = !app.ui.section_folded(&id);
+    let title = crate::i18n::tr(title);
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::CollapsingHeader, true, open, title));
+    register(ui.ctx(), format!("section:{id}"), r);
+    let p = ui.painter();
+    if resp.hovered() {
+        p.rect_filled(r, 0.0, t.chrome.gamma_multiply(1.06));
+    }
+    let chevron = Rect::from_center_size(pos2(r.left() + 20.0, r.center().y), vec2(12.0, 12.0));
+    paint(p, chevron, if open { Icon::ChevronDown } else { Icon::ChevronRight }, t.icon);
+    let g = p.layout_no_wrap(title.to_string(), t.semibold(13.0), t.text_label);
+    let at = pos2(r.left() + 32.0, r.center().y - g.size().y / 2.0);
+    let end = at.x + g.size().x;
+    p.galley(at, g, t.text_label);
+    if changed {
+        p.circle_filled(pos2(end + 8.0, r.center().y), 2.5, t.accent);
+    }
+    if resp.clicked() {
+        app.ui.toggle_folded(&id);
+    }
+    open
+}
+
+/// The Color Grading section inside a mask (issue #642): one zone at a time (Shadows, Midtones,
+/// Highlights, Global, picked by the buttons), its Hue, Saturation and Luminance.
+fn grading_section(app: &mut LccApp, ui: &mut egui::Ui, a: &LocalAdjustments) {
+    let ids: Vec<&str> = GRADE_ZONES.iter().flat_map(|(z, _)| grade_specs(z).map(|s| s.id)).collect();
+    if !section_header(app, ui, "grading", "Color Grading", group_changed(a, &ids)) {
+        return;
+    }
+    let zone_id = egui::Id::new("maskGradeZone");
+    let zone: &str = ui.ctx().data(|d| d.get_temp::<usize>(zone_id)).and_then(|i| GRADE_ZONES.get(i)).map_or("shadows", |(z, _)| z);
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 16, right: 16, top: 2, bottom: 6 }).show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            for (i, (z, label)) in GRADE_ZONES.iter().enumerate() {
+                if text_button(ui, &format!("maskGradeZone:{z}"), label, *z == zone).clicked() {
+                    ui.ctx().data_mut(|d| d.insert_temp(zone_id, i));
+                }
+            }
+        });
+    });
+    for s in grade_specs(zone) {
+        let v = local_get(a, s.id);
+        let out = slider(ui, &s, v, true, None);
+        apply_slider_out(app, &s, out, |app, v| app.run("mask.adjust", json!({"values": {s.id: v}})));
+    }
+}
+
 pub fn local_get(a: &LocalAdjustments, key: &str) -> f64 {
     serde_json::to_value(a).ok().and_then(|v| v.get(key).and_then(|x| x.as_f64())).unwrap_or(0.0)
 }
@@ -218,6 +304,11 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 }
             });
         }
+        // the active mask's Amount, right under the tiles (as Camera Raw / Lightroom Classic place it)
+        if let Some((index, m)) = d.masks.iter().enumerate().find(|(_, m)| app.session.active_mask == Some(m.id)) {
+            ui.add_space(6.0);
+            amount_slider(app, ui, index, m);
+        }
     });
     divider(ui);
     let mut hovered_row = None;
@@ -276,9 +367,9 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             );
             let icon = m.components.first().map(|c| kind_label(&c.shape).1).unwrap_or(Icon::Mask);
             paint(ui.painter(), Rect::from_min_size(r.min + vec2(8.0, 7.0), vec2(16.0, 16.0)), icon, t.text_label);
-            // a long name is cut short (with …) before the eye, the full name on hover
+            // a long name is cut short (with …) before the bin and the eye, the full name on hover
             let color = if m.visible { t.text } else { t.text_disabled };
-            let g = one_line(ui.painter(), &m.name, t.font(13.0), color, r.width() - 32.0 - 32.0);
+            let g = one_line(ui.painter(), &m.name, t.font(13.0), color, r.width() - 32.0 - 56.0);
             let elided = g.elided;
             let at = pos2(r.left() + 32.0, r.center().y - g.size().y / 2.0);
             register(ui.ctx(), format!("maskName:{}", m.id), Rect::from_min_size(at, g.size()));
@@ -299,6 +390,18 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 );
                 if eye.clicked() {
                     let _ = app.run("mask.visible", json!({"id": m.id}));
+                }
+            }
+            // delete on hover, left of the eye (issue #642; Lightroom has it only in the menu)
+            if ui.rect_contains_pointer(r) {
+                let br = Rect::from_center_size(pos2(r.right() - 40.0, r.center().y), vec2(22.0, 22.0));
+                register(ui.ctx(), format!("maskDeleteRow:{}", m.id), br);
+                let bin = ui.interact(br, egui::Id::new(("maskDeleteRow", m.id)), Sense::click());
+                crate::widgets::announce(&bin, crate::i18n::tr("Delete Mask"));
+                paint(ui.painter(), br.shrink(3.0), Icon::Trash, if bin.hovered() { t.text } else { t.text_dim });
+                let bin = bin.on_hover_text(crate::i18n::tr("Delete Mask"));
+                if bin.clicked() {
+                    let _ = app.run("mask.delete", json!({"id": m.id}));
                 }
             }
             if resp.clicked() {
@@ -410,11 +513,16 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     }
     divider(ui);
     super::mask_effects::effect_row(app, ui, &m);
-    for s in LOCAL {
-        let v = local_get(&m.adjust, s.id);
-        let out = slider(ui, s, v, true, None);
-        apply_slider_out(app, s, out, |app, v| app.run("mask.adjust", json!({"values": {s.id: v}})));
-        if s.id == "blacks" {
+    for (key, title, ids) in GROUPS {
+        if !section_header(app, ui, key, title, group_changed(&m.adjust, ids)) {
+            continue;
+        }
+        for s in LOCAL.iter().filter(|s| ids.contains(&s.id)) {
+            let v = local_get(&m.adjust, s.id);
+            let out = slider(ui, s, v, true, None);
+            apply_slider_out(app, s, out, |app, v| app.run("mask.adjust", json!({"values": {s.id: v}})));
+        }
+        if *key == "light" {
             // the mask's own point curves, after the tone sliders (the Tone Curve's editor)
             let open = app.ui.flyout_open("maskCurve");
             if flyout_row(ui, "maskCurve", "Curve", Icon::Curve, open).clicked() {
@@ -424,7 +532,21 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 super::edit::curve_editor(app, ui, id, &d, super::edit::CurveTarget::Mask(m.id));
             }
         }
+        if *key == "color" {
+            divider(ui);
+            grading_section(app, ui, &m.adjust);
+        }
     }
+    ui.add_space(30.0);
+    let _ = Stroke::NONE;
+}
+
+/// The active mask's Amount slider, under a line naming the mask (its name, else "Mask N").
+fn amount_slider(app: &mut LccApp, ui: &mut egui::Ui, index: usize, m: &lcc_develop::Mask) {
+    let t = Tokens::get(ui.ctx());
+    let name = if m.name.trim().is_empty() { format!("{} {}", crate::i18n::tr("Mask"), index + 1) } else { m.name.clone() };
+    let r = ui.add(egui::Label::new(egui::RichText::new(name).font(t.semibold(12.0)).color(t.text_label)).truncate());
+    register(ui.ctx(), "maskAmountName", r.rect);
     let amt = ControlSpec {
         id: "amount",
         label: "Amount",
@@ -438,8 +560,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     };
     let out = slider(ui, &amt, m.adjust.amount, true, None);
     apply_slider_out(app, &amt, out, |app, v| app.run("mask.adjust", json!({"values": {"amount": v}})));
-    ui.add_space(30.0);
-    let _ = Stroke::NONE;
 }
 
 /// Translate fixed action labels, but never mutate or translate user-entered mask names.
