@@ -42,3 +42,32 @@ fn wb_selector_button_in_compare_opens_detail_like_w() {
     h.settle(SETTLE);
     assert_eq!(h.app.ui.tool, "", "a second click disarms it");
 }
+
+/// Hovering the photo with the selector armed shows its loupe (#644); `tool.wbPicker {sample}`
+/// sets the averaged square, snapped to an offered size, and a click still picks and disarms.
+#[test]
+fn wb_selector_shows_a_loupe_while_hovering() {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
+    let id = h.app.session.visible_cloned()[2];
+    h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [id.0], "active": id.0}}), T);
+    h.app.ui.view = ViewMode::Detail;
+    h.settle(SETTLE);
+    let r = h.request("engine.execute", json!({"command": "tool.wbPicker", "params": {"sample": 8}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(h.app.ui.wb_sample, 9, "snapped to an offered size");
+    h.settle(SETTLE);
+    let img = h.app.image_rect.expect("photo on screen");
+    let loupe = |h: &Headless| h.app.widgets.iter().any(|(w, _)| w == "canvas:wbLoupe");
+    assert!(!loupe(&h), "no loupe before the pointer is over the photo");
+    let pos = img.center();
+    h.app.synthetic.push(egui::Event::PointerMoved(pos));
+    h.settle(SETTLE);
+    assert!(loupe(&h), "the loupe follows the pointer over the photo");
+    h.app.synthetic.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.app.synthetic.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.settle(SETTLE);
+    assert_eq!(h.app.ui.tool, "", "one click picks and disarms");
+    let wb = h.app.session.catalog.photo(id).map(|p| p.develop.wb.mode);
+    assert_eq!(wb, Some(lcc_develop::WbMode::Custom));
+}
