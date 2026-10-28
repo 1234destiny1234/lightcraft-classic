@@ -656,7 +656,7 @@ fn ask_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
                 let enabled = v == "copyWithAdjustments" || ask.file_editable;
                 ui.add_enabled_ui(enabled, |ui| {
                     let r = ui.radio_value(&mut ask.mode, v.to_string(), egui::RichText::new(tr(label)).strong());
-                    crate::widgets::register(ui.ctx(), &format!("radio:editIn-{v}"), r.rect);
+                    crate::widgets::register(ui.ctx(), format!("radio:editIn-{v}"), r.rect);
                     ui.indent(v, |ui| ui.label(egui::RichText::new(tr(what)).small()));
                 });
             }
