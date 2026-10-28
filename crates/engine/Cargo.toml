@@ -38,6 +38,8 @@ lcc-denoise = { workspace = true, optional = true }
 lcc-meta = { workspace = true }
 lcc-lensdb = { workspace = true }
 lcc-faces = { workspace = true }
+# the shared AI job queue and device choice (#491)
+lcc-ml = { workspace = true }
 miniz_oxide = { workspace = true }
 lcc-merge = { workspace = true }
 lcc-geocode = { workspace = true }

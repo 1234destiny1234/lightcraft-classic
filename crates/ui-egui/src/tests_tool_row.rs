@@ -112,3 +112,18 @@ fn presets_and_the_fold_button_bring_the_tools_back() {
     assert_eq!(h.app.ui.right, RightPanel::Edit);
     assert!(!h.app.ui.right_collapsed && rect(&h, "icon:crop").is_some());
 }
+
+#[test]
+fn the_edit_button_closes_a_tools_drawer() {
+    let mut h = develop();
+    let edit = rect(&h, "icon:toolsEdit").expect("the Edit button");
+    let crop = rect(&h, "icon:crop").expect("Crop");
+    assert!(edit.right() <= crop.left(), "first in the row");
+    click(&mut h, "icon:masking");
+    assert_eq!(h.app.ui.right, RightPanel::Masking);
+    click(&mut h, "icon:toolsEdit");
+    assert_eq!(h.app.ui.right, RightPanel::Edit);
+    // a second click leaves the panels on screen
+    click(&mut h, "icon:toolsEdit");
+    assert_eq!(h.app.ui.right, RightPanel::Edit);
+}

@@ -108,5 +108,6 @@
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Otevře samotný původní soubor; uložením se tato fotka aktualizuje. Vaše úpravy odsud tam nejsou vidět.",
   "Raw files and generated photos can only be edited as a copy with adjustments.": "Soubory raw lze upravit jen jako kopii s úpravami.",
   "File format, colour space and bit depth: Settings → External Editing.": "Formát souboru, barevný prostor a bitová hloubka: Nastavení → Externí úpravy.",
-  "Settings → External Editing → Edit In turns the question back on": "Nastavení → Externí úpravy → Upravit v znovu zapne dotaz"
+  "Settings → External Editing → Edit In turns the question back on": "Nastavení → Externí úpravy → Upravit v znovu zapne dotaz",
+  "Indexing photos": "Indexování fotografií"
 }

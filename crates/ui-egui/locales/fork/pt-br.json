@@ -1519,6 +1519,7 @@
   "Raw files and generated photos can only be edited as a copy with adjustments.": "Arquivos raw só podem ser editados como cópia com ajustes.",
   "File format, colour space and bit depth: Settings → External Editing.": "Formato de arquivo, espaço de cor e profundidade de bits: Configurações → Edição externa.",
   "Settings → External Editing → Edit In turns the question back on": "Configurações → Edição externa → Editar em reativa a pergunta",
+  "Indexing photos": "Indexando fotos",
   "Each photo gets the date and time in its file name (IMG_20260921_143000).": "Cada foto recebe a data e a hora do nome do arquivo (IMG_20260921_143000).",
   "No date in the active photo's file name": "Nenhuma data no nome do arquivo da foto ativa"
 }

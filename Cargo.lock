@@ -4824,6 +4824,7 @@ dependencies = [
  "lcc-lensdb",
  "lcc-merge",
  "lcc-meta",
+ "lcc-ml",
  "lcc-peer",
  "lcc-pipeline",
  "lcc-plugins",
@@ -5093,6 +5094,15 @@ dependencies = [
  "quick-xml",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lcc-ml"
+version = "26.44.0"
+dependencies = [
+ "log",
+ "thiserror 2.0.21",
+ "web-time",
 ]
 
 [[package]]

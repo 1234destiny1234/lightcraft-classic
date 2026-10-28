@@ -108,5 +108,6 @@
   "Opens the original file itself; saving it updates this photo. Your edits here are not visible there.": "Apre il file originale stesso; salvandolo si aggiorna questa foto. Le regolazioni fatte qui non sono visibili lì.",
   "Raw files and generated photos can only be edited as a copy with adjustments.": "I file raw si possono modificare solo come copia con le regolazioni.",
   "File format, colour space and bit depth: Settings → External Editing.": "Formato file, spazio colore e profondità di bit: Impostazioni → Modifica esterna.",
-  "Settings → External Editing → Edit In turns the question back on": "Impostazioni → Modifica esterna → Modifica in riattiva la domanda"
+  "Settings → External Editing → Edit In turns the question back on": "Impostazioni → Modifica esterna → Modifica in riattiva la domanda",
+  "Indexing photos": "Indicizzazione delle foto"
 }
