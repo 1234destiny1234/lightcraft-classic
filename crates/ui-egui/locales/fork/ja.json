@@ -1507,5 +1507,7 @@
   "installed:": "インストール済み：",
   "Waiting for a plug-in's program": "プラグインのプログラムを待機中",
   "Plug-in Settings": "プラグインの設定",
-  "this plug-in has no settings": "このプラグインには設定がありません"
+  "this plug-in has no settings": "このプラグインには設定がありません",
+  "Each photo gets the date and time in its file name (IMG_20260921_143000).": "各写真にファイル名の日時（IMG_20260921_143000）を設定します。",
+  "No date in the active photo's file name": "アクティブな写真のファイル名に日付がありません"
 }
