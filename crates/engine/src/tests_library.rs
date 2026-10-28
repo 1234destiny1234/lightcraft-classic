@@ -872,3 +872,41 @@ fn the_hold_of_the_view_is_kept_with_the_library_and_holds_nothing_over_from_ano
     s.close_library().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Capture times read from file names: a name with a date sets it (plus any shift), a name
+/// without one is skipped and counted, a dry run changes nothing, and it is one undo step.
+#[test]
+fn capture_time_from_filename() {
+    let mut s = crate::Session::with_demo();
+    let ids: Vec<_> = s.catalog.photos().take(3).map(|p| p.id).collect();
+    let names = ["IMG_20260921_143000.jpg", "DSC_1234.NEF", "IMG_20260230_120000.jpg"];
+    let ops = ids
+        .iter()
+        .zip(names)
+        .map(|(id, n)| {
+            let source = s.catalog.photo(*id).unwrap().source.clone();
+            lcc_catalog::Op::Relink { id: *id, file_name: n.into(), source, format: None }
+        })
+        .collect();
+    s.commit("names", lcc_catalog::Op::Batch { ops }).unwrap();
+    let before: Vec<_> = ids.iter().map(|id| s.catalog.photo(*id).unwrap().captured.clone()).collect();
+    let all: Vec<_> = ids.iter().map(|i| i.0).collect();
+
+    let r = s.execute("photo.setCaptureTime", &serde_json::json!({"ids": all, "fromFilename": true, "dryRun": true})).unwrap();
+    assert_eq!(r["noDateInName"], 2, "{r}");
+    assert_eq!(r["captured"][0], "2026-09-21T14:30:00");
+    let now: Vec<_> = ids.iter().map(|id| s.catalog.photo(*id).unwrap().captured.clone()).collect();
+    assert_eq!(now, before, "a dry run changes nothing");
+
+    s.execute("photo.setCaptureTime", &serde_json::json!({"ids": all, "fromFilename": true, "hours": 2})).unwrap();
+    assert_eq!(s.catalog.photo(ids[0]).unwrap().captured.as_deref(), Some("2026-09-21T16:30:00"));
+    assert_eq!(s.catalog.photo(ids[1]).unwrap().captured, before[1], "no date in the name: unchanged");
+    s.execute("edit.undo", &serde_json::json!({})).unwrap();
+    assert_eq!(s.catalog.photo(ids[0]).unwrap().captured, before[0], "one undo step");
+
+    // nothing to read, and contradictory options, are refusals rather than silent no-ops
+    let r = s.execute("photo.setCaptureTime", &serde_json::json!({"ids": [ids[1].0], "fromFilename": true}));
+    assert!(r.is_err(), "{r:?}");
+    let r = s.execute("photo.setCaptureTime", &serde_json::json!({"ids": all, "fromFilename": true, "fromFile": true}));
+    assert!(r.is_err(), "{r:?}");
+}

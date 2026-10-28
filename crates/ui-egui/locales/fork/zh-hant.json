@@ -1506,5 +1506,7 @@
   "installed:": "已安裝：",
   "Waiting for a plug-in's program": "正在等待外掛程式的程式",
   "Plug-in Settings": "增效模組設定",
-  "this plug-in has no settings": "此增效模組沒有設定"
+  "this plug-in has no settings": "此增效模組沒有設定",
+  "Each photo gets the date and time in its file name (IMG_20260921_143000).": "每張照片使用其檔案名稱中的日期與時間（IMG_20260921_143000）。",
+  "No date in the active photo's file name": "目前照片的檔案名稱中沒有日期"
 }

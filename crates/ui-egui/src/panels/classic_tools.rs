@@ -1,13 +1,13 @@
 //! Develop's tool strip as Lightroom Classic has it (fork-owned): a row of the editing tools under
 //! the histogram (Crop, Remove, Red Eye, Masking, in the user's order), each opening its drawer
-//! above the Develop panels, which stay under it. A click on the tool in use closes its drawer, as
-//! Return and the drawer's Close do. The row starts with an Edit button that shows the Develop
-//! panels (closing any drawer), and a dot under a tool tells that the tool has been applied to
-//! the photo (a crop, spots, masks, red-eye fixes; #617). The right-edge strip keeps the fold
-//! button and Presets. A child module of `right`, so it uses that file's helpers.
+//! in the Develop panels' place: while a tool is in use the panel holds only its own controls, so
+//! the photo's global sliders don't crowd it (#618). A click on the tool in use closes its drawer,
+//! and the panels come back, as Return and the drawer's Close do. A child module of `right`, so it
+//! uses that file's helpers. The row starts with an Edit button that shows the Develop panels
+//! (closing any drawer), and a dot under a tool tells that it has been applied to the photo (a crop,
+//! spots, masks, red-eye fixes; #617).
 
 use egui::vec2;
-use lcc_catalog::PhotoId;
 use serde_json::json;
 
 use crate::LccApp;
@@ -26,11 +26,6 @@ const BUTTON_W: f32 = 40.0;
 /// over it, or the profile browser in its place).
 pub(super) fn develop_tools(app: &LccApp) -> bool {
     app.ui.module == ModuleId::Develop && app.ui.right.is_edit_tool()
-}
-
-/// Whether a tool's drawer is open over the panels.
-pub(super) fn drawer_open(app: &LccApp) -> bool {
-    develop_tools(app) && matches!(app.ui.right, RightPanel::Crop | RightPanel::Remove | RightPanel::Masking | RightPanel::RedEye)
 }
 
 /// The row of tools under the histogram, centred, with a rule under it.
@@ -84,13 +79,6 @@ fn applied(d: &lcc_develop::DevelopSettings, tool: RightPanel) -> bool {
         RightPanel::RedEye => !d.red_eye.is_empty(),
         _ => false,
     }
-}
-
-/// The Develop panels under an open drawer.
-pub(super) fn panels_under_drawer(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
-    ui.add_space(6.0);
-    divider(ui);
-    super::super::edit::show_controls(app, ui, id);
 }
 
 /// A tool's name for screen readers (its tooltip carries the shortcut).

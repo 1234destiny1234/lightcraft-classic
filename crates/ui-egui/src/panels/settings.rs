@@ -1156,6 +1156,8 @@ fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         t,
         crate::i18n::tr("Grouped: keywords inside the same keyword share a line naming it, and long lists and the suggestions are shortened."),
     );
+    heading(ui, t, crate::i18n::tr("Presets"));
+    check(ui, "settings.userPresetsFirst", &mut app.ui.settings.user_presets_first, "List User Presets first in the Presets panel");
     heading(ui, t, crate::i18n::tr("Detail View"));
     check(ui, "settings.navigator", &mut app.ui.navigator, "Show the Navigator while zoomed in");
     check(ui, "settings.hideFilterInDevelop", &mut app.ui.settings.hide_filter_in_develop, "Hide filter text in Develop mode");

@@ -1179,8 +1179,36 @@ pub struct LocalAdjustments {
     /// Colour overlay (hue degrees, saturation 0..100); sat 0 = none.
     pub color_hue: f64,
     pub color_sat: f64,
+    /// Colour grading inside the mask: per zone (shadows, midtones, highlights, global) a hue
+    /// (degrees 0..360), saturation (0..100) and luminance (−100..100), as the Color Grading
+    /// panel's wheels, with its default blending and balance. Absent in older catalogs: 0.
+    pub grade_shadows_hue: f64,
+    pub grade_shadows_sat: f64,
+    pub grade_shadows_lum: f64,
+    pub grade_midtones_hue: f64,
+    pub grade_midtones_sat: f64,
+    pub grade_midtones_lum: f64,
+    pub grade_highlights_hue: f64,
+    pub grade_highlights_sat: f64,
+    pub grade_highlights_lum: f64,
+    pub grade_global_hue: f64,
+    pub grade_global_sat: f64,
+    pub grade_global_lum: f64,
     /// Local vignette/grain are not in Lightroom; we keep the struct extensible.
     pub amount: f64,
+}
+
+impl LocalAdjustments {
+    /// The mask's colour-grading wheels (shadows, midtones, highlights, global) as [`Wheel`]s.
+    pub fn grading_wheels(&self) -> [Wheel; 4] {
+        let w = |hue: f64, sat: f64, lum: f64| Wheel { hue, sat, lum };
+        [
+            w(self.grade_shadows_hue, self.grade_shadows_sat, self.grade_shadows_lum),
+            w(self.grade_midtones_hue, self.grade_midtones_sat, self.grade_midtones_lum),
+            w(self.grade_highlights_hue, self.grade_highlights_sat, self.grade_highlights_lum),
+            w(self.grade_global_hue, self.grade_global_sat, self.grade_global_lum),
+        ]
+    }
 }
 
 impl Default for LocalAdjustments {
@@ -1205,6 +1233,18 @@ impl Default for LocalAdjustments {
             defringe: 0.0,
             color_hue: 0.0,
             color_sat: 0.0,
+            grade_shadows_hue: 0.0,
+            grade_shadows_sat: 0.0,
+            grade_shadows_lum: 0.0,
+            grade_midtones_hue: 0.0,
+            grade_midtones_sat: 0.0,
+            grade_midtones_lum: 0.0,
+            grade_highlights_hue: 0.0,
+            grade_highlights_sat: 0.0,
+            grade_highlights_lum: 0.0,
+            grade_global_hue: 0.0,
+            grade_global_sat: 0.0,
+            grade_global_lum: 0.0,
             amount: 100.0,
         }
     }
