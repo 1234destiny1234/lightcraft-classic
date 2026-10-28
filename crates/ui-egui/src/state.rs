@@ -1065,6 +1065,16 @@ pub struct UiState {
     pub unnamed_anchor: Option<usize>,
     #[serde(skip)]
     pub unnamed_focus: bool,
+    /// The "More" faces selected on a person's page (photo, region), the name being typed to assign them to, the face
+    /// last clicked (Shift-click selects a range from it) and whether the name box should take the keyboard.
+    #[serde(skip)]
+    pub person_selected: std::collections::HashSet<(u64, usize)>,
+    #[serde(skip)]
+    pub person_assign: String,
+    #[serde(skip)]
+    pub person_anchor: Option<usize>,
+    #[serde(skip)]
+    pub person_assign_focus: bool,
     /// Local sidebar locations hidden with “Remove from Local” (folders on disk are untouched).
     pub hidden_locations: Vec<String>,
     /// Copies opened in an external editor this session (reloaded when the window is focused
@@ -1882,6 +1892,10 @@ impl Default for UiState {
             unnamed_name: String::new(),
             unnamed_anchor: None,
             unnamed_focus: false,
+            person_selected: Default::default(),
+            person_assign: String::new(),
+            person_anchor: None,
+            person_assign_focus: false,
             hidden_locations: Vec::new(),
             dragging_control: None,
             external_edits: Vec::new(),
