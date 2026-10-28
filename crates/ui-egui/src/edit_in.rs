@@ -239,7 +239,14 @@ fn editor_for(app: &LccApp, photocraft: bool) -> String {
 
 /// Run the edit the user chose: a copy with the adjustments goes through the editor's own
 /// command (its file settings); a copy or the original through `photo.editIn` for each photo.
-fn run_choice(app: &mut LccApp, ctx: &egui::Context, params: &Value, editor: Option<bool>, mode: &str, ids: &[lcc_catalog::PhotoId]) -> Result<Value, String> {
+fn run_choice(
+    app: &mut LccApp,
+    ctx: &egui::Context,
+    params: &Value,
+    editor: Option<bool>,
+    mode: &str,
+    ids: &[lcc_catalog::PhotoId],
+) -> Result<Value, String> {
     let Some(photocraft) = editor else {
         let mut p = params.clone();
         if let Some(o) = p.as_object_mut() {
@@ -637,7 +644,11 @@ fn ask_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
                 ui.add_space(4.0);
             }
             let choices = [
-                ("copyWithAdjustments", "Edit a Copy with Adjustments", "Renders a copy of the photo with your edits applied and opens it in the editor."),
+                (
+                    "copyWithAdjustments",
+                    "Edit a Copy with Adjustments",
+                    "Renders a copy of the photo with your edits applied and opens it in the editor.",
+                ),
                 ("copy", "Edit a Copy", "Opens a copy of the original file, without your edits."),
                 ("original", "Edit Original", "Opens the original file itself; saving it updates this photo. Your edits here are not visible there."),
             ];
@@ -924,7 +935,11 @@ mod tests {
         h.app.session.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
         let n = h.app.session.catalog.photos().count();
         let r = h.app.run("photo.editInExternal", json!({})).unwrap();
-        assert_eq!((r["asked"].as_bool(), r["mode"].as_str(), r["fileEditable"].as_bool()), (Some(true), Some("copyWithAdjustments"), Some(true)), "{r}");
+        assert_eq!(
+            (r["asked"].as_bool(), r["mode"].as_str(), r["fileEditable"].as_bool()),
+            (Some(true), Some("copyWithAdjustments"), Some(true)),
+            "{r}"
+        );
         assert_eq!(h.app.session.catalog.photos().count(), n, "nothing is made before the choice");
         let shown = h.step_until(std::time::Duration::from_secs(60), |h| h.painted_text().iter().any(|t| t.contains("Edit a Copy")));
         assert!(shown, "the question shows");
