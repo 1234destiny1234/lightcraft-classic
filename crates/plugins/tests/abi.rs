@@ -331,7 +331,8 @@ fn program_start_writes_the_files_then_starts_one_run_at_a_time() {
         assert_eq!(run.found.bundle_id.as_deref(), Some("org.example.conv"), "the first installed bundle id in the entry's order");
     }
     let job = run.dir.path().join("job.txt");
-    assert_eq!(run.args, vec!["-i".to_string(), job.display().to_string()]);
+    // `{tmpDir}` is replaced as written: on Windows that is `C:…un/job.txt`, a valid path
+    assert_eq!(run.args, vec!["-i".to_string(), format!("{}/job.txt", run.dir.path().display())]);
     assert_eq!(std::fs::read_to_string(&job).unwrap(), "a\nb\n");
 
     // the run is active: a second start fails and starts nothing
