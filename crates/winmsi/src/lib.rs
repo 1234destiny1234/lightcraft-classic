@@ -6,7 +6,7 @@
 //!
 //! Every product is asked, not just the first Windows Installer finds (`MsiLocateComponentW` is
 //! documented as not guaranteed to find the right product): two MSIs built from the same template
-//! (Chromaforge's and upstream's) share the component's GUID, and each has its own folder.
+//! (this app's and upstream's) share the component's GUID, and each has its own folder.
 //!
 //! Windows Installer keeps this record itself: it is written when the MSI installs the component
 //! and removed when it is uninstalled, so nothing else has to be installed or kept in sync.
