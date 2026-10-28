@@ -54,6 +54,9 @@ pub struct Options {
     /// or one with `portable.txt` beside the program): it takes the portable zip, never an installer
     /// that would put the app somewhere else and leave this folder as it was.
     pub portable: bool,
+    /// What kind of copy this is ([`crate::copy_kind`], worked out once per check): whether a zip
+    /// update replaces this copy's files or is laid out for a manual install.
+    pub copy: crate::CopyKind,
     /// A feed URL that replaces the release's own (a mirror, or a test's local feed); it must be
     /// `https://`. The files it offers still have to be on this repository's releases.
     pub manifest_url: Option<String>,
@@ -71,6 +74,7 @@ impl Default for Options {
             target: Target::current(),
             prerelease: false,
             portable: false,
+            copy: crate::CopyKind::Other,
             manifest_url: None,
             extra_origin: None,
         }
@@ -163,7 +167,7 @@ pub fn from_release(opts: &Options, target: Target, release: Release, _cancel: O
         sha256,
         published: release.published.clone(),
         notes: release.notes.clone(),
-        action: if opts.portable && asset_kind == Kind::Archive && crate::install::self_updating_copy().is_some() {
+        action: if opts.portable && asset_kind == Kind::Archive && opts.copy.swappable() {
             "download it, replace this copy's files with the new ones and start the app again".into()
         } else if opts.portable && asset_kind == Kind::Archive {
             "download it and open the folder it is in, so you can unpack it over this copy".into()
@@ -375,6 +379,7 @@ mod tests {
             target: Some(Target { os: Os::Windows, arch: "x64" }),
             prerelease: false,
             portable: false,
+            copy: crate::CopyKind::Other,
             manifest_url: None,
             extra_origin: None,
         }

@@ -9,7 +9,7 @@
 //! | Windows | `.msi` | the installer runs (`msiexec`), then the app starts again |
 //! | macOS | `.dmg` | mounted, its app copied beside the running bundle, checked and swapped in, relaunched |
 //! | Linux | `.AppImage` | once the app has quit, the running file is replaced and the new one started |
-//! | Windows, a copy unpacked from the portable zip | `.zip` | unpacked beside the program, its files swapped in, the new version started ([`zipswap`]) |
+//! | Windows, a copy unpacked from the portable zip | `.zip` | unpacked beside the program, its files swapped in, the new version started once the app has quit, undone if it can't start ([`zipswap`]) |
 //! | anywhere else | `.tar.gz` / `.zip` | the folder it is in is shown, to unpack it yourself |
 //!
 //! The caller quits the app when [`Outcome::exit`] is `true` — the installer or the replacement
@@ -70,8 +70,8 @@ impl Outcome {
     }
 }
 
-/// What installing `file` (an asset of `kind`) on this machine would do.
-pub fn plan(kind: Kind, file: &Path, version: &str) -> Plan {
+/// What installing `file` (an asset of `kind`) on this copy (`copy`, from [`copy_kind`]) would do.
+pub fn plan(kind: Kind, file: &Path, version: &str, copy: &CopyKind) -> Plan {
     match kind {
         Kind::Msi => Plan {
             summary: format!("Run the {version} installer"),
@@ -102,14 +102,14 @@ pub fn plan(kind: Kind, file: &Path, version: &str) -> Plan {
             destination: current_exe(),
             restart: Restart::QuitAndRelaunch,
         },
-        Kind::Archive if let Some((dir, _)) = self_updating_copy() => Plan {
+        Kind::Archive if let Some((dir, _)) = copy.swaps() => Plan {
             summary: format!("Update this copy to {version}"),
             steps: vec![
-                "The new version is unpacked beside this one and checked.".into(),
-                "The app quits, and its files are replaced by the new ones (the previous ones are deleted on the next start).".into(),
-                "The new version starts. Your settings, and portable.txt with the portable data, stay as they are.".into(),
+                "The new version is unpacked beside this one and checked, and replaces this copy's files.".into(),
+                "When the app quits, the new version starts. Your settings, and portable.txt with the portable data, stay as they are.".into(),
+                "The previous files are kept until the new version is up; if it can't start, they are put back.".into(),
             ],
-            destination: Some(dir),
+            destination: Some(dir.to_path_buf()),
             restart: Restart::QuitAndRelaunch,
         },
         Kind::Archive => Plan {
@@ -130,10 +130,11 @@ pub fn plan(kind: Kind, file: &Path, version: &str) -> Plan {
     }
 }
 
-/// Apply `downloaded`: start the installer, replace the AppImage, or lay the file out. See
-/// [`Outcome::exit`].
+/// Apply `downloaded`: start the installer, replace the AppImage or this copy's files, or lay the
+/// file out. See [`Outcome::exit`]. The copy's kind is worked out again here, right before anything
+/// changes.
 pub fn install(kind: Kind, downloaded: &Downloaded, version: &str) -> Result<Outcome, UpdateError> {
-    install_with(kind, downloaded, version, &mut |f: &Path| reveal(f).map_err(|e| e.to_string()))
+    install_with(kind, downloaded, version, &copy_kind(), &mut |f: &Path| reveal(f).map_err(|e| e.to_string()))
 }
 
 /// [`install`], with the manual install's "show the file" done by `show` (so a headless caller
@@ -142,14 +143,15 @@ pub fn install_with(
     kind: Kind,
     downloaded: &Downloaded,
     version: &str,
+    copy: &CopyKind,
     show: &mut dyn FnMut(&Path) -> Result<(), String>,
 ) -> Result<Outcome, UpdateError> {
     match kind {
         Kind::Msi => install_msi(&downloaded.path),
         Kind::Dmg => install_dmg(&downloaded.path, version),
         Kind::AppImage => install_appimage(&downloaded.path),
-        Kind::Archive => match self_updating_copy() {
-            Some((dir, exe_name)) => install_zip(&downloaded.path, &dir, &exe_name, version),
+        Kind::Archive => match copy.swaps() {
+            Some((dir, exe_name)) => install_zip(&downloaded.path, dir, exe_name, version),
             None => show(&downloaded.path).map_err(UpdateError::Install).map(|()| Outcome::manual(&downloaded.path)),
         },
         Kind::Checksums => Err(UpdateError::Install("that file is the release's checksum list, not an update".into())),
@@ -189,50 +191,144 @@ fn current_exe() -> Option<PathBuf> {
 
 // ---------- Windows
 
-/// This copy's folder and program name when it was unpacked from the portable zip on Windows: a
-/// release program (`<binary>.exe`) that the MSI did not install. `None` elsewhere, for an MSI
-/// install, when Windows Installer can't say, and for a development build (`app.exe`).
-pub fn unpacked_copy() -> Option<(PathBuf, String)> {
-    if !cfg!(windows) {
-        return None;
+/// What kind of copy this is, for updating it. Worked out once per check ([`copy_kind`]) and
+/// handed to [`plan`] and [`install_with`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CopyKind {
+    /// Windows Installer installed it: it updates by running the new MSI.
+    Msi,
+    /// Unpacked from the portable zip on Windows (a release program, `<binary>.exe`, the MSI did
+    /// not install): it takes the portable zip. `swappable` when it can replace its own files (its
+    /// folder can be written and isn't under Program Files); otherwise the zip is laid out for a
+    /// manual install.
+    Zip { dir: PathBuf, exe_name: String, swappable: bool },
+    /// Anything else: another system, a development build (`app.exe`), or a copy Windows Installer
+    /// couldn't say anything about.
+    Other,
+}
+
+impl CopyKind {
+    /// The folder and program of a copy that replaces its own files.
+    fn swaps(&self) -> Option<(&Path, &str)> {
+        match self {
+            CopyKind::Zip { dir, exe_name, swappable: true } => Some((dir, exe_name)),
+            _ => None,
+        }
     }
-    let exe = std::env::current_exe().ok()?;
-    let name = exe.file_name()?.to_string_lossy().to_string();
+
+    /// Whether this copy replaces its own files from the zip.
+    pub fn swappable(&self) -> bool {
+        self.swaps().is_some()
+    }
+}
+
+/// What kind of copy this program is ([`CopyKind`]). Asks Windows Installer and writes a probe file
+/// beside the program, so a caller works it out once per check.
+pub fn copy_kind() -> CopyKind {
+    if !cfg!(windows) {
+        return CopyKind::Other;
+    }
+    let Ok(exe) = std::env::current_exe() else { return CopyKind::Other };
+    let (Some(dir), Some(name)) = (exe.parent(), exe.file_name().map(|n| n.to_string_lossy().to_string())) else { return CopyKind::Other };
     if !name.eq_ignore_ascii_case(&format!("{}.exe", lcc_brand::BINARY)) {
-        return None;
+        return CopyKind::Other;
     }
     match crate::msi::installed_by_msi(&exe) {
-        Ok(false) => Some((exe.parent()?.to_path_buf(), name)),
-        Ok(true) => None,
+        Ok(true) => CopyKind::Msi,
+        Ok(false) => {
+            // Program Files is where installers put programs: never swapped in place, even by an
+            // administrator who can write there (an MSI's folder would be repaired back)
+            let swappable = !under_program_files(dir) && zipswap::writable(dir, &name);
+            CopyKind::Zip { dir: dir.to_path_buf(), exe_name: name, swappable }
+        }
         Err(e) => {
             log::warn!("updates: could not tell whether the installer put {} there ({e}); it is updated by hand", exe.display());
-            None
+            CopyKind::Other
         }
     }
 }
 
-/// [`unpacked_copy`], when its folder can be written: the copy replaces its own files.
-pub(crate) fn self_updating_copy() -> Option<(PathBuf, String)> {
-    unpacked_copy().filter(|(dir, name)| zipswap::writable(dir, name))
+/// Whether `dir` is inside a Program Files folder (`%ProgramFiles%`, `%ProgramW6432%`,
+/// `%ProgramFiles(x86)%`).
+fn under_program_files(dir: &Path) -> bool {
+    let roots: Vec<PathBuf> = ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"]
+        .iter()
+        .filter_map(std::env::var_os)
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+        .collect();
+    inside_any(dir, &roots)
 }
+
+/// Whether `dir` is one of `roots` or inside one, compared without case after resolving both.
+fn inside_any(dir: &Path, roots: &[PathBuf]) -> bool {
+    let canonical = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()).to_string_lossy().to_lowercase();
+    let dir = canonical(dir);
+    roots.iter().map(|r| canonical(r)).any(|root| {
+        let root = root.trim_end_matches(['\\', '/']);
+        dir == root || dir.strip_prefix(root).is_some_and(|rest| rest.starts_with(['\\', '/']))
+    })
+}
+
+/// The pipe the new version's standard input reads from: held, unwritten, until this process ends,
+/// which is how the new version learns that it has ([`zipswap::on_start`]).
+static PIPE_TO_NEW_VERSION: std::sync::Mutex<Option<std::process::ChildStdin>> = std::sync::Mutex::new(None);
 
 /// Swap the zip's files into the copy in `dir` and start the new `exe_name` there.
 fn install_zip(zip: &Path, dir: &Path, exe_name: &str, version: &str) -> Result<Outcome, UpdateError> {
-    let files = zipswap::swap_in(zip, dir, exe_name, &mut |exe| {
-        Command::new(exe).env(lcc_brand::env_var(zipswap::AFTER_UPDATE), "1").current_dir(dir).spawn().map(|_| ()).map_err(|e| e.to_string())
+    let current = crate::Version::current().to_text();
+    let files = zipswap::swap_in(zip, dir, exe_name, &current, version, &mut |exe| {
+        let mut child = Command::new(exe)
+            .env(lcc_brand::env_var(zipswap::AFTER_UPDATE), "1")
+            .stdin(std::process::Stdio::piped())
+            .current_dir(dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        *PIPE_TO_NEW_VERSION.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = child.stdin.take();
+        Ok(())
     })?;
     log::info!("updates: {files} files of {} replaced by {version}", dir.display());
-    Ok(Outcome { message: format!("{version} is in place. The app restarts now."), exit: true })
+    Ok(Outcome { message: format!("{version} is in place. The app restarts when it quits."), exit: true })
 }
 
-/// In a version a zip update started ([`zipswap::AFTER_UPDATE`]): wait until the previous version
-/// has quit (at most [`zipswap::WAIT_FOR_EXIT`]), so the two never hold the library at once.
-/// `false` when it is still running after that: this one should end without opening anything.
-pub fn wait_for_previous_version() -> bool {
-    match std::env::current_exe() {
-        Ok(exe) => zipswap::finish_previous(&exe, zipswap::WAIT_FOR_EXIT),
-        Err(_) => true,
+pub use zipswap::Start;
+
+/// At the start of a copy unpacked from the zip, before the library is opened: when a zip update
+/// started this process, wait until the version it replaced has ended (however long quitting takes,
+/// so the two never run at once); then count this start of an unconfirmed update, or undo an update
+/// whose new version never came up and start the previous version ([`Start::Undone`]: end now).
+pub fn on_start() -> Start {
+    let Some(exe) = zip_copy_exe() else { return Start::Go };
+    let after_update = lcc_brand::env_is_set(zipswap::AFTER_UPDATE);
+    zipswap::on_start(
+        &exe,
+        after_update,
+        // the pipe closes when the old process ends; nothing is ever written to it
+        &mut || {
+            let _ = std::io::copy(&mut std::io::stdin().lock(), &mut std::io::sink());
+        },
+        &mut |previous| {
+            Command::new(previous).current_dir(previous.parent().unwrap_or(Path::new("."))).spawn().map(|_| ()).map_err(|e| e.to_string())
+        },
+    )
+}
+
+/// In a copy unpacked from the zip, once the app is up (its first frame, its library open): an
+/// update that put this version in place worked, so the previous files go.
+pub fn confirm_update() {
+    if let Some(exe) = zip_copy_exe() {
+        zipswap::confirm(&exe);
     }
+}
+
+/// This program, when it could be a copy unpacked from the zip (a release program on Windows). No
+/// Windows Installer question: only a copy a zip update swapped has a manifest beside it.
+fn zip_copy_exe() -> Option<PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let exe = std::env::current_exe().ok()?;
+    exe.file_name()?.to_string_lossy().eq_ignore_ascii_case(&format!("{}.exe", lcc_brand::BINARY)).then_some(exe)
 }
 
 #[cfg(windows)]
@@ -360,11 +456,13 @@ fn file_name(path: &Path) -> String {
 /// Tidy up after an update, once, when the app starts: log why the last AppImage swap did not
 /// happen (if it left a note in `stage`, the download folder), delete the `<file>.old` an
 /// update left beside the AppImage this copy runs from (`$APPIMAGE`; nothing without it), and
-/// delete the `.update-old` files a zip update left in a Windows copy unpacked from the zip. Never
+/// finish what a zip update left in a Windows copy unpacked from the zip ([`zipswap::clean_up`]). Never
 /// fails and never panics: anything it can't do is logged.
 pub fn clean_up_after_update(stage: &Path) {
-    if let Some((dir, name)) = unpacked_copy() {
-        zipswap::clean_up(&dir, &name);
+    if let Some(exe) = zip_copy_exe()
+        && let (Some(dir), Some(name)) = (exe.parent(), exe.file_name())
+    {
+        zipswap::clean_up(dir, &name.to_string_lossy());
     }
     #[cfg(unix)]
     if let Some(note) = linux::take_failure_note(stage) {
@@ -414,15 +512,53 @@ mod tests {
 
     #[test]
     fn plans_say_what_happens() {
-        let p = plan(Kind::Msi, Path::new("/tmp/a.msi"), "1.2.3");
+        let other = CopyKind::Other;
+        let p = plan(Kind::Msi, Path::new("/tmp/a.msi"), "1.2.3", &other);
         assert!(p.summary.contains("1.2.3") && p.summary.contains("installer"));
         assert!(!p.steps.is_empty());
         assert_eq!(p.restart, Restart::QuitAndRelaunch);
-        let a = plan(Kind::Archive, Path::new("/tmp/a.zip"), "1.2.3");
+        let a = plan(Kind::Archive, Path::new("/tmp/a.zip"), "1.2.3", &other);
         assert_eq!(a.restart, Restart::Manual);
         assert!(a.destination.is_some());
-        let c = plan(Kind::Checksums, Path::new("/tmp/SHA256SUMS.txt"), "1.2.3");
+        let c = plan(Kind::Checksums, Path::new("/tmp/SHA256SUMS.txt"), "1.2.3", &other);
         assert!(c.summary.contains("Nothing to install"));
+    }
+
+    /// A zip copy that can replace its own files plans to; one that can't (its folder can't be
+    /// written, or it is under Program Files) is a manual install, like any other copy.
+    #[test]
+    fn a_zip_copy_swaps_only_when_it_can() {
+        let copy = |swappable| CopyKind::Zip { dir: PathBuf::from("/tmp/copy"), exe_name: "app.exe".into(), swappable };
+        let swaps = plan(Kind::Archive, Path::new("/tmp/a.zip"), "1.2.3", &copy(true));
+        assert_eq!((swaps.restart, swaps.destination), (Restart::QuitAndRelaunch, Some(PathBuf::from("/tmp/copy"))));
+        assert_eq!(plan(Kind::Archive, Path::new("/tmp/a.zip"), "1.2.3", &copy(false)).restart, Restart::Manual);
+        assert_eq!(plan(Kind::Archive, Path::new("/tmp/a.zip"), "1.2.3", &CopyKind::Msi).restart, Restart::Manual);
+        assert!(copy(true).swappable() && !copy(false).swappable() && !CopyKind::Msi.swappable());
+    }
+
+    #[test]
+    fn program_files_is_recognised_whatever_the_case() {
+        let root = std::env::temp_dir().join(format!("lcc-pf-{}", std::process::id()));
+        let inside = root.join("Some App");
+        std::fs::create_dir_all(&inside).unwrap();
+        let roots = [root.clone()];
+        assert!(inside_any(&inside, &roots));
+        assert!(inside_any(&root, &roots));
+        assert!(inside_any(&PathBuf::from(inside.to_string_lossy().to_uppercase()), &roots) || !cfg!(windows));
+        // a sibling whose name only starts the same is not inside
+        let sibling = PathBuf::from(format!("{} (x86)", root.display()));
+        std::fs::create_dir_all(&sibling).unwrap();
+        assert!(!inside_any(&sibling, &roots));
+        assert!(!inside_any(&std::env::temp_dir(), &roots));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&sibling);
+    }
+
+    /// The test program is not a release program: no MSI, no zip copy, nothing swapped or waited for.
+    #[test]
+    fn a_development_build_is_neither_an_msi_nor_a_zip_copy() {
+        assert_eq!(copy_kind(), CopyKind::Other);
+        assert_eq!(on_start(), Start::Go);
     }
 
     #[test]
@@ -430,7 +566,7 @@ mod tests {
         // a cargo test binary is not inside an .app: there is nothing to replace, and above all
         // not whatever happens to be in /Applications
         assert_eq!(app_bundle(), None);
-        let p = plan(Kind::Dmg, Path::new("/tmp/a.dmg"), "1.2.3");
+        let p = plan(Kind::Dmg, Path::new("/tmp/a.dmg"), "1.2.3", &CopyKind::Other);
         assert_eq!(p.destination, None, "a program outside a bundle must not plan an install into {:?}", p.destination);
     }
 

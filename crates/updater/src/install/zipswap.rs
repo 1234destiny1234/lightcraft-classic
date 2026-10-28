@@ -1,49 +1,60 @@
 //! Updating a copy unpacked from the portable zip in place: unpack the new zip beside the program,
-//! swap its files in, start the new version, and let the old one quit.
+//! swap its files in, start the new version once the old one has quit, and keep the old files until
+//! the new version has shown it works.
 //!
 //! Windows doesn't let a running program's file be overwritten or deleted, but it does let it be
 //! renamed. So the running process swaps its own files, with no script or helper process:
 //!
 //! 1. The zip is unpacked into a fresh folder beside the program (`.<name>-update-<pid>`, on the same
-//!    drive, so each later move is a rename). An entry that would land outside it, a link, a zip
-//!    without the program, or more than [`MAX_ENTRIES`] files or [`MAX_UNPACKED`] bytes is refused
-//!    before anything is moved. The zip's single top folder (the release zips have one) is dropped.
-//! 2. Each unpacked file takes its place: the current file is renamed to `<file>.update-old`
-//!    ([`OLD_SUFFIX`]), the new one renamed in. Only the zip's files are touched: `portable.txt`, the
-//!    portable data folder and anything else the user put there stay as they are. A rename that
-//!    fails is retried for a moment (antivirus software holds new files briefly); if it still fails,
-//!    every file moved so far is put back.
-//! 3. The new program is started with `<PREFIX>_AFTER_UPDATE` set ([`AFTER_UPDATE`]) and this one quits. The new one waits until
-//!    the old program's file can be deleted, which is once the old process has ended, before it
-//!    opens the library ([`finish_previous`]); if the old one is still running after
-//!    [`WAIT_FOR_EXIT`] (the user cancelled quitting), the new one ends without opening anything.
-//!    If it can't be started, the swap is undone.
+//!    drive, so each later move is a rename). Refused before anything moves: an entry that would land
+//!    outside it, a name Windows can't hold as given ([`safe_name`]: `:` streams, `\`, a trailing dot
+//!    or space, device names such as `NUL`), a link, two entries for one file, a zip without the
+//!    program, more than [`MAX_ENTRIES`] files or [`MAX_UNPACKED`] bytes. The zip's single top folder
+//!    (the release zips have one) is dropped.
+//! 2. A manifest beside the program (`.<name>-update.json`, [`manifest_path`]) records the files
+//!    before the first one moves, and the swapping process holds an OS lock on it until it is done.
+//!    Each file is then renamed to `<file>.update-old` ([`OLD_SUFFIX`]) and the new one renamed in,
+//!    the program last. Only the zip's files are touched: `portable.txt`, the portable data folder
+//!    and anything else the person keeps there stay as they are. A rename refused for a moment
+//!    (antivirus software holds new files briefly) is retried; if one still fails, every file moved
+//!    so far is put back.
+//! 3. The new program is started with `<PREFIX>_AFTER_UPDATE` set ([`AFTER_UPDATE`]) and a pipe as
+//!    its standard input, which the old process holds until it ends (for any reason, a crash too).
+//!    The new one waits for the pipe to close before it does anything ([`on_start`]): if quitting is
+//!    cancelled, it starts when the old window does close.
+//! 4. The new version counts its start in the manifest, and once it is up (its first frame, with the
+//!    library open) it confirms the update ([`confirm`]): only then are the `.update-old` files
+//!    deleted. A start that finds an earlier start of the new version that never got that far puts
+//!    the previous files back, starts the previous version and ends ([`on_start`]).
 //!
-//! On the next start, [`clean_up`] deletes whatever `.update-old` files and unpack folders are left,
-//! and puts back a `.update-old` file whose replacement never arrived (an update cut off half way).
+//! [`clean_up`] (each start, in the background) finishes what is left: `.update-old` files that
+//! were still in use when the update was confirmed, the `.update-failed` files of an update that was
+//! undone, and unpack folders and probes of a process that ended half way. It acts only on the
+//! manifest's files and the program's own folder (never deeper), and not while another process
+//! holds the manifest's lock.
 //!
-//! The steps use only renames and file copies, so they run (and are tested) on every system; only
-//! Windows uses them.
+//! The steps use only renames, file copies and std's file locks, so they run (and are tested) on
+//! every system; only Windows uses them.
 
-use std::fs::{self, File};
-use std::io::{self, BufReader, Read};
+use std::fs::{self, File, TryLockError};
+use std::io::{self, BufReader, Read, Seek, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use serde_json::{Value, json};
+
 use crate::error::UpdateError;
 
-/// What a replaced file is renamed to until the next start deletes it.
+/// What a replaced file is renamed to until the new version confirms the update.
 pub const OLD_SUFFIX: &str = ".update-old";
+
+/// What a file of an update that was undone is renamed to until the next start deletes it.
+pub const FAILED_SUFFIX: &str = ".update-failed";
 
 /// The environment variable (`<PREFIX>_AFTER_UPDATE`, through [`lcc_brand::env_var`]) the new
 /// version is started with: it waits for the old one to quit. A variable, not an argument, so a
 /// version that doesn't know it (an older release) ignores it instead of refusing to start.
 pub const AFTER_UPDATE: &str = "AFTER_UPDATE";
-
-/// How long the new version waits for the old one to quit. Quitting can wait on the user (a
-/// running export, changes that couldn't be saved), so this is long; a new version still waiting
-/// after it does not start (the old one stays, and the next start is the new version).
-pub const WAIT_FOR_EXIT: Duration = Duration::from_secs(120);
 
 /// The most files a zip may hold (the release zip has about ten).
 pub const MAX_ENTRIES: usize = 4096;
@@ -51,21 +62,46 @@ pub const MAX_ENTRIES: usize = 4096;
 /// The most bytes a zip may unpack to.
 pub const MAX_UNPACKED: u64 = 4 << 30;
 
+/// The largest manifest read back (it lists at most [`MAX_ENTRIES`] short paths).
+const MAX_MANIFEST_BYTES: u64 = 1 << 20;
+
 /// How long a rename or delete that Windows refuses for a moment is retried.
 const RETRY_FOR: Duration = Duration::from_secs(3);
 const RETRY_PAUSE: Duration = Duration::from_millis(100);
 
-/// The unpack folder's name prefix for the program `exe_name` (`.app-update-`).
-fn stage_prefix(exe_name: &str) -> String {
-    let stem = Path::new(exe_name).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-    format!(".{stem}-update-")
+/// `name` in lower case, for comparing names the way Windows does.
+fn folded(name: &str) -> String {
+    name.to_lowercase()
 }
 
-/// `<file>.update-old` beside `file`.
-fn old_path(file: &Path) -> PathBuf {
+/// The program's stem (`app` for `app.exe`), which names the updater's own files beside it.
+fn stem(exe_name: &str) -> String {
+    Path::new(exe_name).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+}
+
+/// The unpack folder's name prefix for the program `exe_name` (`.app-update-`).
+fn stage_prefix(exe_name: &str) -> String {
+    format!(".{}-update-", stem(exe_name))
+}
+
+/// The manifest of the swap of the copy in `dir` whose program is `exe_name` (`.app-update.json`).
+pub fn manifest_path(dir: &Path, exe_name: &str) -> PathBuf {
+    dir.join(format!(".{}-update.json", stem(exe_name)))
+}
+
+/// `file` with `suffix` appended to its name (`app.exe.update-old`).
+fn with_suffix(file: &Path, suffix: &str) -> PathBuf {
     let mut name = file.file_name().map(|n| n.to_os_string()).unwrap_or_default();
-    name.push(OLD_SUFFIX);
+    name.push(suffix);
     file.with_file_name(name)
+}
+
+fn old_path(file: &Path) -> PathBuf {
+    with_suffix(file, OLD_SUFFIX)
+}
+
+fn failed_path(file: &Path) -> PathBuf {
+    with_suffix(file, FAILED_SUFFIX)
 }
 
 fn install_error(what: impl std::fmt::Display) -> UpdateError {
@@ -85,42 +121,29 @@ pub fn writable(dir: &Path, exe_name: &str) -> bool {
     }
 }
 
-/// Replace the files of the copy in `dir` (whose program is `exe_name`) with those in `zip`, then
-/// start the new program through `start`. `Ok(n)`: `n` files were replaced or added and the new
-/// version is starting; the caller quits. `Err`: nothing in `dir` changed.
-pub fn swap_in(zip: &Path, dir: &Path, exe_name: &str, start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Result<usize, UpdateError> {
-    let stage = dir.join(format!("{}{}", stage_prefix(exe_name), std::process::id()));
-    if stage.exists() {
-        fs::remove_dir_all(&stage).map_err(|e| install_error(format!("could not clear {}: {e}", stage.display())))?;
+// ---------- names
+
+/// Whether `part` (one component of a path inside the zip) names a file Windows can hold as given:
+/// no `\` or `/`, no `:` (a drive, `C:x`, or an alternate data stream, `a.exe:s`), no control
+/// characters or the other characters Windows refuses, no trailing dot or space (Windows drops
+/// them, so two names would land on one file), and not a device name (`CON`, `NUL`, `COM1`…, with
+/// any extension). Checked on every system, so the tests cover it wherever they run.
+fn safe_name(part: &str) -> bool {
+    const RESERVED: [&str; 4] = ["con", "prn", "aux", "nul"];
+    if part.is_empty() || part.ends_with('.') || part.ends_with(' ') {
+        return false;
     }
-    fs::create_dir(&stage).map_err(|e| install_error(format!("could not unpack the update beside the program ({}): {e}", stage.display())))?;
-    let result = unpack(zip, &stage, exe_name).and_then(|files| {
-        let mut moved = Vec::new();
-        let swapped = swap(&stage, dir, &files, &mut moved).and_then(|()| {
-            let exe =
-                files.iter().find(|f| is_program(f, exe_name)).map(|f| dir.join(f)).ok_or_else(|| install_error("the update has no program"))?;
-            start(&exe).map_err(|e| install_error(format!("the new version could not be started ({e})")))
-        });
-        match swapped {
-            Ok(()) => Ok(files.len()),
-            Err(e) => {
-                let problems = roll_back(&moved);
-                let e = match e {
-                    UpdateError::Install(why) => why,
-                    other => other.to_string(),
-                };
-                if problems.is_empty() {
-                    Err(install_error(format!("{e}; this copy was left as it was")))
-                } else {
-                    Err(install_error(format!("{e}; putting the previous files back also failed: {}", problems.join("; "))))
-                }
-            }
-        }
-    });
-    if let Err(e) = fs::remove_dir_all(&stage) {
-        log::warn!("updates: could not delete {}: {e}", stage.display());
+    if part.chars().any(|c| c.is_control() || matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
+        return false;
     }
-    result
+    let base = folded(part.split('.').next().unwrap_or(part).trim_end());
+    let numbered = |prefix: &str| base.strip_prefix(prefix).is_some_and(|n| n.len() == 1 && n.chars().all(|c| c.is_ascii_digit()));
+    !(RESERVED.contains(&base.as_str()) || numbered("com") || numbered("lpt"))
+}
+
+/// `path` (relative, inside the copy) when every component is a plain, [`safe_name`] name.
+fn safe_relative(path: &Path) -> bool {
+    path.components().count() > 0 && path.components().all(|c| matches!(c, Component::Normal(n) if n.to_str().is_some_and(safe_name)))
 }
 
 /// Whether `rel` (a path inside the zip) is the program itself.
@@ -128,7 +151,254 @@ fn is_program(rel: &Path, exe_name: &str) -> bool {
     rel.components().count() == 1 && rel.to_string_lossy().eq_ignore_ascii_case(exe_name)
 }
 
-/// Unpack `zip` into `stage`, its single top folder dropped; the files' paths, relative to `stage`.
+/// Whether `name` is one the updater gives its own files beside the program.
+fn updater_name(name: &str, exe_name: &str) -> bool {
+    let name = folded(name);
+    name.ends_with(OLD_SUFFIX)
+        || name.ends_with(FAILED_SUFFIX)
+        || name.starts_with(&folded(&stage_prefix(exe_name)))
+        || name == folded(&format!(".{}-update.json", stem(exe_name)))
+}
+
+// ---------- the manifest
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum State {
+    /// Files are being moved (by the process holding the lock, or one that stopped half way).
+    Swapping,
+    /// Every file is in place and the new version was started; it hasn't confirmed yet.
+    Swapped,
+    /// The new version came up: the `.update-old` files are no longer needed.
+    Confirmed,
+    /// The new version didn't come up and the previous files were put back: the `.update-failed`
+    /// files are no longer needed.
+    Undone,
+}
+
+impl State {
+    fn text(self) -> &'static str {
+        match self {
+            State::Swapping => "swapping",
+            State::Swapped => "swapped",
+            State::Confirmed => "confirmed",
+            State::Undone => "undone",
+        }
+    }
+
+    fn parse(s: &str) -> Option<State> {
+        [State::Swapping, State::Swapped, State::Confirmed, State::Undone].into_iter().find(|st| st.text() == s)
+    }
+}
+
+/// What one swap moved, and how far it got.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Manifest {
+    /// The version swapped from, and to.
+    from: String,
+    to: String,
+    /// The zip's files, relative to the program's folder (the program last).
+    files: Vec<PathBuf>,
+    /// Those of `files` the copy didn't have before (nothing to put back for them).
+    added: Vec<PathBuf>,
+    state: State,
+    /// How often the new version started without confirming.
+    attempts: u32,
+}
+
+impl Manifest {
+    fn to_json(&self) -> String {
+        let text = |list: &[PathBuf]| -> Vec<String> {
+            list.iter().map(|p| p.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")).collect()
+        };
+        json!({"from": self.from, "to": self.to, "files": text(&self.files), "added": text(&self.added), "state": self.state.text(), "attempts": self.attempts})
+            .to_string()
+    }
+
+    /// A list of relative paths, each segment a [`safe_name`] (no empty, `..` or rooted part).
+    fn paths(v: &Value) -> Option<Vec<PathBuf>> {
+        let list = v.as_array()?;
+        if list.len() > MAX_ENTRIES {
+            return None;
+        }
+        list.iter()
+            .map(|f| {
+                let s = f.as_str()?;
+                s.split('/').all(safe_name).then(|| s.split('/').collect::<PathBuf>())
+            })
+            .collect()
+    }
+
+    /// The manifest in `text`. It sits in a folder the person can write, so it is read as hostile:
+    /// every path must be a [`safe_relative`] one, and at most [`MAX_ENTRIES`] of them.
+    fn parse(text: &str) -> Option<Manifest> {
+        let v: Value = serde_json::from_str(text).ok()?;
+        let files = Manifest::paths(v.get("files")?)?;
+        let added = Manifest::paths(v.get("added")?)?;
+        if !added.iter().all(|a| files.contains(a)) {
+            return None;
+        }
+        Some(Manifest {
+            from: v.get("from")?.as_str()?.to_string(),
+            to: v.get("to")?.as_str()?.to_string(),
+            files,
+            added,
+            state: State::parse(v.get("state")?.as_str()?)?,
+            attempts: v.get("attempts")?.as_u64().and_then(|n| u32::try_from(n).ok())?,
+        })
+    }
+}
+
+/// The manifest file, open and locked by this process for as long as it is held.
+struct Held {
+    file: File,
+    path: PathBuf,
+}
+
+impl Held {
+    /// Create the manifest at `path`, locked. It must not exist yet.
+    fn create(path: &Path) -> io::Result<Held> {
+        let file = File::options().read(true).write(true).create_new(true).open(path)?;
+        file.try_lock().map_err(|e| match e {
+            TryLockError::Error(e) => e,
+            TryLockError::WouldBlock => io::Error::new(io::ErrorKind::WouldBlock, "the update's manifest is locked"),
+        })?;
+        Ok(Held { file, path: path.to_path_buf() })
+    }
+
+    /// Open the manifest at `path` and lock it: `Ok(None)` when there is none, or another process
+    /// holds it (it is swapping right now).
+    fn open(path: &Path) -> io::Result<Option<Held>> {
+        let file = match File::options().read(true).write(true).open(path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        match file.try_lock() {
+            Ok(()) => Ok(Some(Held { file, path: path.to_path_buf() })),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(TryLockError::Error(e)) => Err(e),
+        }
+    }
+
+    /// The manifest's contents; `None` when they don't read as one (it is then left alone).
+    fn read(&mut self) -> Option<Manifest> {
+        let mut text = String::new();
+        self.file.seek(io::SeekFrom::Start(0)).ok()?;
+        (&mut self.file).take(MAX_MANIFEST_BYTES).read_to_string(&mut text).ok()?;
+        let m = Manifest::parse(&text);
+        if m.is_none() {
+            log::warn!("updates: {} is not an update manifest that can be read; left alone", self.path.display());
+        }
+        m
+    }
+
+    fn write(&mut self, m: &Manifest) -> io::Result<()> {
+        self.file.set_len(0)?;
+        self.file.seek(io::SeekFrom::Start(0))?;
+        self.file.write_all(m.to_json().as_bytes())?;
+        self.file.sync_all()
+    }
+
+    /// Delete the manifest (the lock goes with the handle).
+    fn remove(self) {
+        let Held { file, path } = self;
+        let _ = file.unlock();
+        drop(file);
+        if let Err(e) = fs::remove_file(&path) {
+            log::warn!("updates: could not delete {}: {e}", path.display());
+        }
+    }
+}
+
+// ---------- the swap
+
+/// Replace the files of the copy in `dir` (whose program is `exe_name`, at version `from`) with
+/// those in `zip` (version `to`), then start the new program through `start`. `Ok(n)`: `n` files
+/// were replaced or added and the new version is starting; the caller quits. `Err`: nothing in
+/// `dir` changed.
+pub fn swap_in(
+    zip: &Path,
+    dir: &Path,
+    exe_name: &str,
+    from: &str,
+    to: &str,
+    start: &mut dyn FnMut(&Path) -> Result<(), String>,
+) -> Result<usize, UpdateError> {
+    // an earlier update still being finished: its leftovers first, and nothing new while it isn't done
+    let manifest = manifest_path(dir, exe_name);
+    if manifest.exists() {
+        clean_up(dir, exe_name);
+        if manifest.exists() {
+            return Err(install_error(
+                "the last update of this copy isn't finished (a file of it is still in use); quit every copy of the app, start it again, then try again",
+            ));
+        }
+    }
+    let stage = dir.join(format!("{}{}", stage_prefix(exe_name), std::process::id()));
+    if stage.exists() {
+        fs::remove_dir_all(&stage).map_err(|e| install_error(format!("could not clear {}: {e}", stage.display())))?;
+    }
+    fs::create_dir(&stage).map_err(|e| install_error(format!("could not unpack the update beside the program ({}): {e}", stage.display())))?;
+    let result = unpack(zip, &stage, exe_name).and_then(|files| swap_and_start(&stage, dir, exe_name, files, from, to, start));
+    if let Err(e) = fs::remove_dir_all(&stage) {
+        log::warn!("updates: could not delete {}: {e}", stage.display());
+    }
+    result
+}
+
+/// The swap itself, under the manifest's lock; everything is put back on any failure.
+fn swap_and_start(
+    stage: &Path,
+    dir: &Path,
+    exe_name: &str,
+    files: Vec<PathBuf>,
+    from: &str,
+    to: &str,
+    start: &mut dyn FnMut(&Path) -> Result<(), String>,
+) -> Result<usize, UpdateError> {
+    let path = manifest_path(dir, exe_name);
+    let mut held = Held::create(&path).map_err(|e| install_error(format!("could not write {}: {e}", path.display())))?;
+    let added = files.iter().filter(|f| !dir.join(f).exists()).cloned().collect();
+    let mut m = Manifest { from: from.to_string(), to: to.to_string(), files, added, state: State::Swapping, attempts: 0 };
+    if let Err(e) = held.write(&m) {
+        held.remove();
+        return Err(install_error(format!("could not write {}: {e}", path.display())));
+    }
+    let mut moved = Vec::new();
+    let swapped = swap(stage, dir, &m.files, &mut moved)
+        .and_then(|()| {
+            m.state = State::Swapped;
+            held.write(&m).map_err(|e| install_error(format!("could not write {}: {e}", path.display())))
+        })
+        .and_then(|()| {
+            let exe =
+                m.files.iter().find(|f| is_program(f, exe_name)).map(|f| dir.join(f)).ok_or_else(|| install_error("the update has no program"))?;
+            start(&exe).map_err(|e| install_error(format!("the new version could not be started ({e})")))
+        });
+    match swapped {
+        Ok(()) => {
+            // the lock goes; the manifest stays for the new version
+            let _ = held.file.unlock();
+            Ok(m.files.len())
+        }
+        Err(e) => {
+            let problems = roll_back(&moved);
+            held.remove();
+            let e = match e {
+                UpdateError::Install(why) => why,
+                other => other.to_string(),
+            };
+            if problems.is_empty() {
+                Err(install_error(format!("{e}; this copy was left as it was")))
+            } else {
+                Err(install_error(format!("{e}; putting the previous files back also failed: {}", problems.join("; "))))
+            }
+        }
+    }
+}
+
+/// Unpack `zip` into `stage`, its single top folder dropped; the files' paths, relative to `stage`,
+/// the program last.
 fn unpack(zip: &Path, stage: &Path, exe_name: &str) -> Result<Vec<PathBuf>, UpdateError> {
     let file = File::open(zip).map_err(|e| install_error(format!("could not open {}: {e}", zip.display())))?;
     let mut archive =
@@ -143,12 +413,21 @@ fn unpack(zip: &Path, stage: &Path, exe_name: &str) -> Result<Vec<PathBuf>, Upda
         let Some(path) = entry.enclosed_name() else {
             return Err(install_error(format!("the update zip names a file outside its folder ({:?})", entry.name())));
         };
+        // the name as stored too: `enclosed_name` reads it with this system's rules, under which
+        // `C:x` or `a\b` can look harmless on one system and not on another
+        if !entry.name().split('/').filter(|part| !part.is_empty()).all(safe_name) {
+            return Err(install_error(format!("the update zip names a file Windows can't hold as given ({:?})", entry.name())));
+        }
         if entry.is_symlink() {
             return Err(install_error(format!("the update zip holds a link ({:?})", entry.name())));
         }
-        if !entry.is_dir() && path.components().all(|c| matches!(c, Component::Normal(_))) && path.components().count() > 0 {
-            entries.push((i, path));
+        if entry.is_dir() || path.components().count() == 0 {
+            continue;
         }
+        if !safe_relative(&path) {
+            return Err(install_error(format!("the update zip names a file Windows can't hold as given ({:?})", entry.name())));
+        }
+        entries.push((i, path));
     }
     let top = single_top_folder(entries.iter().map(|(_, p)| p.as_path()));
     let files: Vec<(usize, PathBuf)> =
@@ -156,10 +435,13 @@ fn unpack(zip: &Path, stage: &Path, exe_name: &str) -> Result<Vec<PathBuf>, Upda
     if !files.iter().any(|(_, p)| is_program(p, exe_name)) {
         return Err(install_error(format!("the update zip has no {exe_name} at its top")));
     }
-    if let Some((_, p)) =
-        files.iter().find(|(_, p)| p.to_string_lossy().ends_with(OLD_SUFFIX) || p.to_string_lossy().starts_with(&stage_prefix(exe_name)))
-    {
+    if let Some((_, p)) = files.iter().find(|(_, p)| p.components().any(|c| updater_name(&c.as_os_str().to_string_lossy(), exe_name))) {
         return Err(install_error(format!("the update zip holds {} (a name the updater uses itself)", p.display())));
+    }
+    // one file twice (or two names Windows takes for one, differing only in case)
+    let mut seen = std::collections::HashSet::new();
+    if let Some((_, p)) = files.iter().find(|(_, p)| !seen.insert(folded(&p.to_string_lossy()))) {
+        return Err(install_error(format!("the update zip holds {} twice", p.display())));
     }
     let mut left = MAX_UNPACKED;
     for (i, rel) in &files {
@@ -228,7 +510,8 @@ fn swap(stage: &Path, dir: &Path, files: &[PathBuf], moved: &mut Vec<Moved>) -> 
         let old = if target.exists() {
             let old = old_path(&target);
             if old.exists() {
-                // left by an earlier update; still in use when that copy is still running
+                // a leftover nothing tracks any more (no manifest names it): the file in place is
+                // the one to keep
                 retry(|| fs::remove_file(&old)).map_err(|e| {
                     install_error(format!(
                         "{} from an earlier update can't be deleted ({e}); quit every copy of the app and try again",
@@ -237,7 +520,7 @@ fn swap(stage: &Path, dir: &Path, files: &[PathBuf], moved: &mut Vec<Moved>) -> 
                 })?;
             }
             retry(|| fs::rename(&target, &old)).map_err(|e| install_error(format!("could not move {} aside: {e}", target.display())))?;
-            // a read-only file can't be deleted later, by the new version's wait or the clean-up
+            // a read-only file can't be deleted later, once the update is confirmed
             clear_read_only(&old);
             Some(old)
         } else {
@@ -305,344 +588,181 @@ fn retry<T>(mut op: impl FnMut() -> io::Result<T>) -> io::Result<T> {
     }
 }
 
-/// In the new version started by [`swap_in`]: wait until the previous program, `<exe>.update-old`,
-/// can be deleted (its process has ended), for at most `wait`, and delete it. `true` once it is
-/// gone; `false` when it is still in use after `wait`.
-pub fn finish_previous(exe: &Path, wait: Duration) -> bool {
-    let old = old_path(exe);
-    let start = Instant::now();
-    loop {
-        match fs::remove_file(&old) {
-            Ok(()) => return true,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return true,
-            Err(_) if start.elapsed() < wait => std::thread::sleep(RETRY_PAUSE),
-            Err(e) => {
-                log::warn!("updates: the previous version ({}) is still running after {} s: {e}", old.display(), wait.as_secs());
-                return false;
+// ---------- the new version's start
+
+/// What a starting copy does after [`on_start`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Start {
+    /// Go on starting.
+    Go,
+    /// Go on starting: a zip update started this process, and the version it replaced has ended.
+    AfterUpdate,
+    /// The update was undone and `0`, the previous version, started in this one's place: end now,
+    /// before anything is opened.
+    Undone(PathBuf),
+}
+
+/// At the start of the copy whose program is `exe` (before the library is opened): when a zip
+/// update started it (`after_update`), wait for the old version to end (`wait_for_old`, which
+/// returns once the pipe from it closes); then, when the copy has an unconfirmed update, count this
+/// start, or undo the update when an earlier start of the new version never confirmed it. `start`
+/// starts the previous program after an undo.
+pub fn on_start(exe: &Path, after_update: bool, wait_for_old: &mut dyn FnMut(), start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Start {
+    let (Some(dir), Some(exe_name)) = (exe.parent(), exe.file_name().map(|n| n.to_string_lossy().to_string())) else { return Start::Go };
+    // only a version an update just put in place waits: a process that merely inherited the
+    // variable (a child of the new version) finds no previous program beside it
+    let waited = after_update && old_path(exe).exists();
+    if waited {
+        wait_for_old();
+    }
+    let go = if waited { Start::AfterUpdate } else { Start::Go };
+    let mut held = match Held::open(&manifest_path(dir, &exe_name)) {
+        Ok(Some(h)) => h,
+        Ok(None) => return go,
+        Err(e) => {
+            log::warn!("updates: could not open this copy's update manifest: {e}");
+            return go;
+        }
+    };
+    let Some(mut m) = held.read() else { return go };
+    match m.state {
+        // a swap that stopped half way (its process holds no lock any more): back to the previous version
+        State::Swapping => {
+            log::warn!("updates: the update from {} to {} stopped half way; the previous version is put back", m.from, m.to);
+            undo(dir, &exe_name, &mut held, &mut m, start)
+        }
+        State::Swapped if m.attempts > 0 => {
+            log::warn!("updates: {} started before without coming up; the previous version, {}, is put back", m.to, m.from);
+            undo(dir, &exe_name, &mut held, &mut m, start)
+        }
+        State::Swapped => {
+            m.attempts += 1;
+            if let Err(e) = held.write(&m) {
+                log::warn!("updates: could not count this start in the update manifest: {e}");
             }
+            go
+        }
+        State::Confirmed | State::Undone => go,
+    }
+}
+
+/// Put the previous files back (the new ones become `.update-failed`), record it, and start the
+/// previous program when this one's file was among them.
+fn undo(dir: &Path, exe_name: &str, held: &mut Held, m: &mut Manifest, start: &mut dyn FnMut(&Path) -> Result<(), String>) -> Start {
+    // the program is put back only when it was swapped: a swap stopped before reaching it left it
+    // as it was, and that is the program running now
+    let program_swapped = m.files.iter().any(|f| is_program(f, exe_name) && (old_path(&dir.join(f)).exists() || m.added.contains(f)));
+    for rel in &m.files {
+        let target = dir.join(rel);
+        let (old, failed) = (old_path(&target), failed_path(&target));
+        // a file the swap never reached: as it was
+        if !old.exists() && !m.added.contains(rel) {
+            continue;
+        }
+        if target.exists() {
+            let _ = fs::remove_file(&failed);
+            if let Err(e) = retry(|| fs::rename(&target, &failed)) {
+                log::warn!("updates: could not move {} aside: {e}", target.display());
+                continue;
+            }
+        }
+        if old.exists()
+            && let Err(e) = retry(|| fs::rename(&old, &target))
+        {
+            log::warn!("updates: could not put {} back: {e}", target.display());
+        }
+    }
+    m.state = State::Undone;
+    if let Err(e) = held.write(m) {
+        log::warn!("updates: could not record the undone update: {e}");
+    }
+    let exe = dir.join(exe_name);
+    if !program_swapped || !exe.is_file() {
+        return Start::Go;
+    }
+    match start(&exe) {
+        Ok(()) => Start::Undone(exe),
+        Err(e) => {
+            log::warn!("updates: the previous version could not be started ({e}); start it by hand");
+            Start::Undone(exe)
         }
     }
 }
 
-/// Delete what an update left in the copy in `dir` (whose program is `exe_name`): `.update-old`
-/// files, at most a few folders deep, and unpack folders other than this process's. Never fails:
-/// what can't be deleted now (a file still in use) is left for the next start.
-pub fn clean_up(dir: &Path, exe_name: &str) {
-    let prefix = stage_prefix(exe_name);
-    let ours = format!("{prefix}{}", std::process::id());
-    clean_dir(dir, &prefix, &ours, 0);
+/// In the new version, once it is up (its first frame, the library open): the update worked, so
+/// the previous files go. Nothing to do without an unconfirmed update.
+pub fn confirm(exe: &Path) {
+    let (Some(dir), Some(exe_name)) = (exe.parent(), exe.file_name().map(|n| n.to_string_lossy().to_string())) else { return };
+    let Ok(Some(mut held)) = Held::open(&manifest_path(dir, &exe_name)) else { return };
+    let Some(mut m) = held.read() else { return };
+    if m.state != State::Swapped {
+        return;
+    }
+    m.state = State::Confirmed;
+    if let Err(e) = held.write(&m) {
+        log::warn!("updates: could not confirm the update in its manifest: {e}");
+        return;
+    }
+    log::info!("updates: {} is up; the files of {} are deleted", m.to, m.from);
+    finish(dir, held, &m);
 }
 
-fn clean_dir(dir: &Path, prefix: &str, ours: &str, depth: usize) {
+/// Delete the leftovers a confirmed or undone update lists, and the manifest once none is left.
+fn finish(dir: &Path, held: Held, m: &Manifest) {
+    let leftover = |f: &Path| match m.state {
+        State::Confirmed => old_path(f),
+        _ => failed_path(f),
+    };
+    let mut left = 0usize;
+    for rel in &m.files {
+        let file = leftover(&dir.join(rel));
+        match fs::remove_file(&file) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => {
+                left += 1;
+                log::debug!("updates: {} is still in use ({e}); deleted next time", file.display());
+            }
+        }
+    }
+    if m.state == State::Undone {
+        log::warn!("updates: the update from {} to {} was undone; {} runs", m.from, m.to, m.from);
+    }
+    if left == 0 {
+        held.remove();
+    }
+}
+
+/// Finish what an update left in the copy in `dir` (whose program is `exe_name`), each start, in the
+/// background: the leftovers of a confirmed or undone update ([`confirm`]), and unpack folders and
+/// probes of a process that ended half way. Only the manifest's files and the program's own folder
+/// are looked at, and nothing while another process holds the manifest (it is swapping). Never
+/// fails: what can't be deleted now (a file still in use) is left for the next start.
+pub fn clean_up(dir: &Path, exe_name: &str) {
+    if let Ok(Some(mut held)) = Held::open(&manifest_path(dir, exe_name)) {
+        match held.read() {
+            Some(m) if matches!(m.state, State::Confirmed | State::Undone) => finish(dir, held, &m),
+            _ => {}
+        }
+    } else if manifest_path(dir, exe_name).exists() {
+        // another process holds it: a swap is running, its unpack folder is in use
+        return;
+    }
+    let prefix = folded(&stage_prefix(exe_name));
+    let ours = format!("{prefix}{}", std::process::id());
     let Ok(entries) = fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        let path = entry.path();
+        let name = folded(&entry.file_name().to_string_lossy());
         let Ok(kind) = entry.file_type() else { continue };
-        if kind.is_file() && name.ends_with(OLD_SUFFIX) {
-            // an update stopped between moving a file aside and putting the new one in (the power
-            // went off): the previous file is all there is, so it goes back
-            let original = path.with_file_name(name.trim_end_matches(OLD_SUFFIX));
-            if !original.exists() {
-                match fs::rename(&path, &original) {
-                    Ok(()) => log::warn!("updates: an interrupted update left {} aside; put back", original.display()),
-                    Err(e) => log::warn!("updates: {} could not be put back as {}: {e}", path.display(), original.display()),
-                }
-                continue;
-            }
-            match fs::remove_file(&path) {
-                Ok(()) => log::info!("updates: deleted the previous version's {}", path.display()),
-                Err(e) => log::debug!("updates: {} is still in use ({e}); deleted next time", path.display()),
-            }
-        } else if kind.is_file() && depth == 0 && name.starts_with(&format!("{prefix}probe-")) {
-            // a write probe left by a process that ended before deleting it
-            let _ = fs::remove_file(&path);
-        } else if kind.is_dir() && depth == 0 && name.starts_with(prefix) && name != ours {
-            if let Err(e) = fs::remove_dir_all(&path) {
-                log::debug!("updates: could not delete {}: {e}", path.display());
-            }
-        } else if kind.is_dir() && depth < 3 {
-            clean_dir(&path, prefix, ours, depth + 1);
+        if !name.starts_with(&prefix) || name == ours {
+            continue;
+        }
+        let gone = if kind.is_dir() { fs::remove_dir_all(entry.path()) } else { fs::remove_file(entry.path()) };
+        if let Err(e) = gone {
+            log::debug!("updates: could not delete {}: {e}", entry.path().display());
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-
-    fn scratch(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("lcc-zipswap-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
-        fs::create_dir_all(&d).unwrap();
-        d
-    }
-
-    /// A zip of `files` (path, contents), deflated.
-    fn zip_of(path: &Path, files: &[(&str, &str)]) {
-        let mut w = zip::ZipWriter::new(File::create(path).unwrap());
-        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-        for (name, body) in files {
-            w.start_file(*name, opts).unwrap();
-            w.write_all(body.as_bytes()).unwrap();
-        }
-        w.finish().unwrap();
-    }
-
-    /// A copy unpacked from an older zip, with the user's own files beside it.
-    fn copy_in(dir: &Path) {
-        fs::write(dir.join("app.exe"), "old app").unwrap();
-        fs::write(dir.join("app-cli.exe"), "old cli").unwrap();
-        fs::write(dir.join("LICENSE.txt"), "old licence").unwrap();
-        fs::write(dir.join("portable.txt"), "").unwrap();
-        fs::create_dir_all(dir.join("AppData")).unwrap();
-        fs::write(dir.join("AppData").join("settings.json"), "{}").unwrap();
-    }
-
-    fn read(p: &Path) -> String {
-        fs::read_to_string(p).unwrap()
-    }
-
-    #[test]
-    fn the_zip_replaces_its_files_and_starts_the_new_program() {
-        let root = scratch("swap");
-        let dir = root.join("copy");
-        fs::create_dir_all(&dir).unwrap();
-        copy_in(&dir);
-        let zip = root.join("app-2.0.0-windows-x64-portable.zip");
-        zip_of(
-            &zip,
-            &[
-                ("app-2.0.0-windows-x64-portable/app.exe", "new app"),
-                ("app-2.0.0-windows-x64-portable/app-cli.exe", "new cli"),
-                ("app-2.0.0-windows-x64-portable/LICENSE.txt", "new licence"),
-                ("app-2.0.0-windows-x64-portable/OFL-Inter.txt", "new font licence"),
-            ],
-        );
-        let mut started = Vec::new();
-        let n = swap_in(&zip, &dir, "app.exe", &mut |exe| {
-            started.push(exe.to_path_buf());
-            Ok(())
-        })
-        .unwrap();
-        assert_eq!(n, 4);
-        assert_eq!(started, [dir.join("app.exe")]);
-        assert_eq!(read(&dir.join("app.exe")), "new app");
-        assert_eq!(read(&dir.join("app-cli.exe")), "new cli");
-        assert_eq!(read(&dir.join("OFL-Inter.txt")), "new font licence", "a file the update adds is added");
-        // the previous files wait for the next start; the user's files are untouched
-        assert_eq!(read(&dir.join("app.exe.update-old")), "old app");
-        assert!(dir.join("portable.txt").is_file());
-        assert_eq!(read(&dir.join("AppData").join("settings.json")), "{}");
-        // no unpack folder is left
-        let leftovers: Vec<_> =
-            fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with(".app-update-")).collect();
-        assert!(leftovers.is_empty(), "{leftovers:?}");
-
-        // the new version's start: the previous program is deleted, then the rest
-        assert!(finish_previous(&dir.join("app.exe"), Duration::ZERO));
-        assert!(!dir.join("app.exe.update-old").exists());
-        clean_up(&dir, "app.exe");
-        assert!(!dir.join("app-cli.exe.update-old").exists() && !dir.join("LICENSE.txt.update-old").exists());
-        assert!(dir.join("portable.txt").is_file() && dir.join("AppData").join("settings.json").is_file());
-    }
-
-    #[test]
-    fn a_zip_without_a_top_folder_works_too_and_a_second_update_replaces_the_first_ones_leftovers() {
-        let root = scratch("flat");
-        let dir = root.join("copy");
-        fs::create_dir_all(&dir).unwrap();
-        copy_in(&dir);
-        fs::write(dir.join("app.exe.update-old"), "older app").unwrap();
-        let zip = root.join("u.zip");
-        zip_of(&zip, &[("app.exe", "new app"), ("docs/readme.txt", "hello")]);
-        swap_in(&zip, &dir, "app.exe", &mut |_| Ok(())).unwrap();
-        assert_eq!(read(&dir.join("app.exe")), "new app");
-        assert_eq!(read(&dir.join("app.exe.update-old")), "old app");
-        assert_eq!(read(&dir.join("docs").join("readme.txt")), "hello");
-    }
-
-    #[test]
-    fn a_program_that_cannot_start_puts_everything_back() {
-        let root = scratch("rollback");
-        let dir = root.join("copy");
-        fs::create_dir_all(&dir).unwrap();
-        copy_in(&dir);
-        let zip = root.join("u.zip");
-        zip_of(&zip, &[("top/app.exe", "new app"), ("top/app-cli.exe", "new cli"), ("top/NEW.txt", "added")]);
-        let err = swap_in(&zip, &dir, "app.exe", &mut |_| Err("refused".into())).unwrap_err();
-        assert!(err.to_string().contains("refused") && err.to_string().contains("left as it was"), "{err}");
-        assert_eq!(read(&dir.join("app.exe")), "old app");
-        assert_eq!(read(&dir.join("app-cli.exe")), "old cli");
-        assert!(!dir.join("NEW.txt").exists(), "a file the update added is removed again");
-        assert!(!dir.join("app.exe.update-old").exists());
-    }
-
-    #[test]
-    fn a_hostile_or_wrong_zip_changes_nothing() {
-        let root = scratch("hostile");
-        let dir = root.join("copy");
-        fs::create_dir_all(&dir).unwrap();
-        copy_in(&dir);
-        let cases: Vec<(&str, Vec<(&str, &str)>, &str)> = vec![
-            ("escape", vec![("app.exe", "new"), ("../evil.txt", "x")], "outside its folder"),
-            ("no-program", vec![("top/other.exe", "x"), ("top/LICENSE.txt", "x")], "no app.exe"),
-            ("program-not-at-top", vec![("a/b/app.exe", "x"), ("a/c.txt", "x")], "no app.exe"),
-            ("our-own-name", vec![("app.exe", "new"), ("app-cli.exe.update-old", "x")], "updater uses itself"),
-            ("empty", vec![], "no app.exe"),
-        ];
-        for (name, files, why) in cases {
-            let zip = root.join(format!("{name}.zip"));
-            zip_of(&zip, &files);
-            let err = swap_in(&zip, &dir, "app.exe", &mut |_| panic!("{name}: nothing may start")).unwrap_err();
-            assert!(err.to_string().contains(why), "{name}: {err}");
-            assert_eq!(read(&dir.join("app.exe")), "old app", "{name}");
-            assert!(!root.join("evil.txt").exists() && !dir.join("app.exe.update-old").exists(), "{name}");
-        }
-        // not a zip at all, and a zip that isn't there
-        let junk = root.join("junk.zip");
-        fs::write(&junk, b"PK\x03\x04 truncated").unwrap();
-        for zip in [junk, root.join("missing.zip")] {
-            let err = swap_in(&zip, &dir, "app.exe", &mut |_| panic!("nothing may start")).unwrap_err();
-            assert!(matches!(err, UpdateError::Install(_)), "{err}");
-            assert_eq!(read(&dir.join("app.exe")), "old app");
-        }
-    }
-
-    /// A name with a leading `/` is read as relative to the zip (the zip format has no absolute
-    /// names): it lands inside the copy, never at the drive's root.
-    #[test]
-    fn a_rooted_name_stays_inside_the_copy() {
-        let root = scratch("rooted");
-        let dir = root.join("copy");
-        fs::create_dir_all(&dir).unwrap();
-        copy_in(&dir);
-        let zip = root.join("u.zip");
-        zip_of(&zip, &[("/app.exe", "new app"), ("/rooted.txt", "x")]);
-        swap_in(&zip, &dir, "app.exe", &mut |_| Ok(())).unwrap();
-        assert_eq!(read(&dir.join("rooted.txt")), "x");
-        assert_eq!(read(&dir.join("app.exe")), "new app");
-    }
-
-    #[test]
-    fn the_top_folder_is_dropped_only_when_everything_is_in_it() {
-        let p = |v: &[&'static str]| single_top_folder(v.iter().map(Path::new));
-        assert_eq!(p(&["a/x", "a/y/z"]), Some(PathBuf::from("a")));
-        assert_eq!(p(&["a/x", "b/y"]), None);
-        assert_eq!(p(&["a/x", "y"]), None);
-        assert_eq!(p(&["x"]), None);
-        assert_eq!(p(&[]), None);
-    }
-
-    #[test]
-    fn clean_up_deletes_only_what_updates_leave() {
-        let dir = scratch("clean");
-        fs::write(dir.join("app.exe"), "app").unwrap();
-        fs::write(dir.join("app.exe.update-old"), "old").unwrap();
-        fs::write(dir.join("notes.old"), "the user's").unwrap();
-        fs::create_dir_all(dir.join("sub")).unwrap();
-        fs::write(dir.join("sub").join("x.dll.update-old"), "old").unwrap();
-        fs::create_dir_all(dir.join(".app-update-1")).unwrap();
-        fs::write(dir.join(".app-update-1").join("app.exe"), "half unpacked").unwrap();
-        let ours = dir.join(format!(".app-update-{}", std::process::id()));
-        fs::create_dir_all(&ours).unwrap();
-        clean_up(&dir, "app.exe");
-        assert!(!dir.join("app.exe.update-old").exists() && !dir.join("sub").join("x.dll.update-old").exists());
-        assert!(!dir.join(".app-update-1").exists());
-        assert!(ours.exists(), "this process's own unpack folder is left alone");
-        assert!(dir.join("notes.old").exists() && dir.join("app.exe").exists());
-    }
-
-    #[test]
-    fn the_program_is_swapped_last() {
-        let root = scratch("order");
-        let stage = root.join("stage");
-        fs::create_dir_all(&stage).unwrap();
-        let zip = root.join("u.zip");
-        zip_of(&zip, &[("top/app.exe", "new"), ("top/a.txt", "a"), ("top/z.txt", "z")]);
-        let files = unpack(&zip, &stage, "app.exe").unwrap();
-        assert_eq!(files.last().map(PathBuf::as_path), Some(Path::new("app.exe")), "{files:?}");
-        assert_eq!(files.len(), 3);
-    }
-
-    /// The power went off between moving a file aside and putting its replacement in: the next
-    /// start puts the previous file back instead of deleting the only copy.
-    #[test]
-    fn clean_up_puts_back_a_file_an_interrupted_update_left_aside() {
-        let dir = scratch("interrupted");
-        fs::write(dir.join("app-cli.exe.update-old"), "old cli").unwrap();
-        fs::write(dir.join("app.exe"), "app").unwrap();
-        fs::write(dir.join("app.exe.update-old"), "old app").unwrap();
-        clean_up(&dir, "app.exe");
-        assert_eq!(read(&dir.join("app-cli.exe")), "old cli", "the file with no replacement is back");
-        assert!(!dir.join("app-cli.exe.update-old").exists());
-        assert!(!dir.join("app.exe.update-old").exists(), "a replaced file's previous copy is deleted");
-        assert_eq!(read(&dir.join("app.exe")), "app");
-    }
-
-    #[test]
-    fn clean_up_deletes_a_write_probe_left_behind() {
-        let dir = scratch("probe");
-        fs::write(dir.join(".app-update-probe-1"), "").unwrap();
-        clean_up(&dir, "app.exe");
-        assert!(!dir.join(".app-update-probe-1").exists());
-        assert!(writable(&dir, "app.exe"));
-        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0, "the probe deletes itself");
-    }
-
-    /// A read-only previous file (a copy restored from a backup) is made deletable when it is moved
-    /// aside, so the new version's wait and the clean-up can delete it.
-    #[test]
-    fn a_read_only_file_is_replaced_and_its_previous_copy_deleted() {
-        let root = scratch("readonly");
-        let dir = root.join("copy");
-        fs::create_dir_all(&dir).unwrap();
-        copy_in(&dir);
-        for f in ["app.exe", "LICENSE.txt"] {
-            let mut p = fs::metadata(dir.join(f)).unwrap().permissions();
-            p.set_readonly(true);
-            fs::set_permissions(dir.join(f), p).unwrap();
-        }
-        let zip = root.join("u.zip");
-        zip_of(&zip, &[("top/app.exe", "new app"), ("top/LICENSE.txt", "new licence")]);
-        swap_in(&zip, &dir, "app.exe", &mut |_| Ok(())).unwrap();
-        assert_eq!(read(&dir.join("app.exe")), "new app");
-        assert!(finish_previous(&dir.join("app.exe"), Duration::ZERO), "the read-only program is deleted at once");
-        clean_up(&dir, "app.exe");
-        assert!(!dir.join("LICENSE.txt.update-old").exists());
-    }
-
-    #[test]
-    fn waiting_for_a_previous_version_that_is_not_there_returns_at_once() {
-        let dir = scratch("wait");
-        let started = Instant::now();
-        assert!(finish_previous(&dir.join("app.exe"), Duration::from_secs(30)));
-        assert!(started.elapsed() < Duration::from_secs(5));
-    }
-
-    /// On Windows the running program can be renamed but not deleted: the swap works while it runs,
-    /// and the new version's wait sees the old one as still running.
-    #[cfg(windows)]
-    #[test]
-    fn a_running_program_is_renamed_aside_and_waited_for() {
-        let root = scratch("running");
-        let dir = root.join("copy");
-        fs::create_dir_all(&dir).unwrap();
-        // a real program that keeps running: a copy of Windows' own `timeout`-free waiter, ping
-        let ping = PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32").join("PING.EXE");
-        fs::copy(&ping, dir.join("app.exe")).unwrap();
-        let mut child =
-            std::process::Command::new(dir.join("app.exe")).args(["-n", "30", "127.0.0.1"]).stdout(std::process::Stdio::null()).spawn().unwrap();
-        let zip = root.join("u.zip");
-        zip_of(&zip, &[("top/app.exe", "new app")]);
-        let swapped = swap_in(&zip, &dir, "app.exe", &mut |_| Ok(()));
-        let waited = swapped.is_ok().then(|| finish_previous(&dir.join("app.exe"), Duration::from_millis(300)));
-        let _ = child.kill();
-        let _ = child.wait();
-        swapped.unwrap();
-        assert_eq!(read(&dir.join("app.exe")), "new app");
-        assert_eq!(waited, Some(false), "the old program is still running");
-        assert!(finish_previous(&dir.join("app.exe"), Duration::from_secs(10)), "it can be deleted once it has quit");
-    }
-}
+mod tests;
