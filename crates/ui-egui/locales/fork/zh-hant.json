@@ -1520,5 +1520,7 @@
   "Settings → External Editing → Edit In turns the question back on": "設定 → 外部編輯 → 在其他應用程式中編輯 可重新開啟此詢問",
   "Indexing photos": "正在索引相片",
   "Each photo gets the date and time in its file name (IMG_20260921_143000).": "每張照片使用其檔案名稱中的日期與時間（IMG_20260921_143000）。",
-  "No date in the active photo's file name": "目前照片的檔案名稱中沒有日期"
+  "No date in the active photo's file name": "目前照片的檔案名稱中沒有日期",
+  "No supported photos found in this folder.": "在此資料夾中找不到支援的相片。",
+  "Include subfolders": "包含子資料夾"
 }

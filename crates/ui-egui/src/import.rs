@@ -50,17 +50,12 @@ pub(crate) fn note_dialog_bottom(ui: &egui::Ui) {
     }
 }
 
-fn yes() -> bool {
-    true
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ImportDialog {
     /// The files / folders that were scanned (shown as the source).
     pub sources: Vec<String>,
     /// When the source is a folder, whether to search recursively into its subfolders.
-    #[serde(default = "yes")]
     pub subfolders: bool,
     pub candidates: Vec<ImportCandidate>,
     pub checked: Vec<bool>,
@@ -147,45 +142,12 @@ fn file_type(c: &ImportCandidate) -> String {
     }
 }
 
-impl Default for ImportDialog {
-    fn default() -> Self {
-        ImportDialog {
-            sources: Vec::new(),
-            candidates: Vec::new(),
-            checked: Vec::new(),
-            copy: false,
-            move_files: false,
-            album: None,
-            new_album: String::new(),
-            preset: String::new(),
-            recipe: std::collections::BTreeMap::new(),
-            recipe_name: String::new(),
-            keywords: String::new(),
-            destination: String::new(),
-            organize: String::new(),
-            folder_template: String::new(),
-            rename: String::new(),
-            metadata_preset: String::new(),
-            creating_meta_preset: false,
-            new_meta_name: String::new(),
-            new_meta_creator: String::new(),
-            new_meta_copyright: String::new(),
-            dng: false,
-            trashed: Vec::new(),
-            on_deleted: "restore".into(),
-            scan_limited: false,
-            unreadable: 0,
-            unsupported: 0,
-            import_duplicates: false,
-            last_clicked: None,
-            immich: false,
-            library: None,
-            subfolders: true,
-        }
-    }
-}
-
 impl ImportDialog {
+    /// A clean review dialog with default import settings.
+    pub fn empty() -> Self {
+        ImportDialog { on_deleted: "restore".into(), subfolders: true, ..Default::default() }
+    }
+
     /// Whether any of the scanned sources is a directory.
     pub fn has_folder_source(&self) -> bool {
         self.sources.iter().any(|s| std::path::Path::new(s).is_dir())

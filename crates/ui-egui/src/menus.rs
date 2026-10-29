@@ -256,7 +256,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.pasteSettings", "Paste Selected Settings…", Some("Cmd+Shift+V"), "Photo>Develop Settings"),
     ("dialog.syncSettings", "Sync Settings…", Some("Cmd+Shift+S"), "Photo>Develop Settings"),
     ("view.focusSearch", "Find…", Some("Cmd+F"), "Library"),
-    ("dialog.import", "Import…", None, "File"),
+    ("dialog.import", "Import…", Some("Cmd+Shift+I"), "File"),
     ("dialog.export", "Export…", None, "File"),
     ("dialog.print", "Print…", Some("Cmd+P"), "File"),
     ("app.print", "Print to PDF", None, ""),
@@ -278,7 +278,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("merge.panoramaLast", "Panorama with Last Settings", Some("Ctrl+Shift+M"), "Photo>Photo Merge"),
     ("merge.hdrPanoramaLast", "HDR Panorama with Last Settings", None, "Photo>Photo Merge"),
     ("merge.focusStackLast", "Focus Stack with Last Settings", None, "Photo>Photo Merge"),
-    ("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File"),
+    ("file.addPhotos", "Import Photos…", None, "File"),
     ("file.addFolder", "Import from Folder…", None, "File"),
     // {path?, into?: open | new, name?, location?}: asks where the catalog goes unless `into` (or
     // Settings) says (#2672, `lightroom_destination`)
@@ -2051,7 +2051,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 }
             }
             if !matches!(app.ui.dialog, Some(Dialog::Import { .. })) {
-                app.ui.dialog = Some(Dialog::Import { opts: Box::new(crate::import::ImportDialog::default()) });
+                app.ui.dialog = Some(Dialog::Import { opts: Box::new(crate::import::ImportDialog::empty()) });
             }
             Ok(Value::Null)
         }

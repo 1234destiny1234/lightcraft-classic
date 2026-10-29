@@ -551,55 +551,38 @@ fn expand_report_noting(
             continue;
         }
         if p.is_dir() {
-            if subfolders {
-                // XMP sidecars are read with their photos, not skipped: they are left out of the count
-                let mut sidecars = 0usize;
-                let keep = |f: &Path| {
-                    let keep = is_supported(f);
-                    if !keep && is_xmp_sidecar(f) {
-                        sidecars = sidecars.saturating_add(1);
-                    }
-                    keep
-                };
-                let w = match note.as_mut() {
-                    Some(note) => crate::walk::files_in_noting(p, skip, limits, keep, &mut **note),
-                    None => crate::walk::files_in(p, skip, limits, keep),
-                };
-                if w.truncated {
-                    log::warn!(
-                        "import: stopped looking in {} after {} entries (limits: {} entries, {} folder levels)",
-                        p.display(),
-                        w.entries,
-                        limits.max_entries,
-                        limits.max_depth
-                    );
-                }
-                out.truncated |= w.truncated;
-                out.unreadable = out.unreadable.saturating_add(w.unreadable);
-                out.unsupported = out.unsupported.saturating_add(w.skipped.saturating_sub(sidecars));
-                out.files.extend(w.files.into_iter().map(|f| f.to_string_lossy().to_string()));
+            let walk_limits = if subfolders {
+                limits
             } else {
-                let Ok(rd) = std::fs::read_dir(p) else {
-                    out.unreadable = out.unreadable.saturating_add(1);
-                    continue;
-                };
-                let mut direct = Vec::new();
-                for e in rd.flatten() {
-                    let ep = e.path();
-                    if ep.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')) {
-                        continue;
-                    }
-                    if ep.is_file() {
-                        if is_supported(&ep) {
-                            direct.push(ep.to_string_lossy().to_string());
-                        } else if !is_xmp_sidecar(&ep) {
-                            out.unsupported = out.unsupported.saturating_add(1);
-                        }
-                    }
+                crate::walk::Limits { max_depth: 1, ..limits }
+            };
+            // XMP sidecars are read with their photos, not skipped: they are left out of the count
+            let mut sidecars = 0usize;
+            let keep = |f: &Path| {
+                let keep = is_supported(f);
+                if !keep && is_xmp_sidecar(f) {
+                    sidecars = sidecars.saturating_add(1);
                 }
-                direct.sort();
-                out.files.extend(direct);
+                keep
+            };
+            let w = match note.as_mut() {
+                Some(note) => crate::walk::files_in_noting(p, skip, walk_limits, keep, &mut **note),
+                None => crate::walk::files_in(p, skip, walk_limits, keep),
+            };
+            let truncated = if subfolders { w.truncated } else { w.entries >= limits.max_entries };
+            if truncated {
+                log::warn!(
+                    "import: stopped looking in {} after {} entries (limits: {} entries, {} folder levels)",
+                    p.display(),
+                    w.entries,
+                    limits.max_entries,
+                    limits.max_depth
+                );
             }
+            out.truncated |= truncated;
+            out.unreadable = out.unreadable.saturating_add(w.unreadable);
+            out.unsupported = out.unsupported.saturating_add(w.skipped.saturating_sub(sidecars));
+            out.files.extend(w.files.into_iter().map(|f| f.to_string_lossy().to_string()));
         } else {
             // explicitly named files are attempted even with an unknown extension (sniffed)
             out.files.push(p.to_string_lossy().to_string());
