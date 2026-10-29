@@ -1,3 +1,0 @@
-## Library
-
-- **Plug-ins add a tool's files to the library:** a `libraryAdd` permission lets a plug-in add a file a tool made from a photo (`library.add {path, from, stack?, album?}`): only from the folder of that photo's original or below it, stacked on the photo as Edit In does, and in an album that holds it; a file the library has already is read again when it changed, as Reload from Disk does, and nothing is listed twice. Commands and their prepare steps learn the Library source they were started from (`source`: an album, smart album, folder, All Photographs or another view; `plugin.run` and `plugin.prepare` take one to replace it). Host feature `libraryAdd`; the `program-tools` example adds what its program made. (no PR)

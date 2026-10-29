@@ -233,7 +233,9 @@ fn a_link_at_the_lock_file_is_never_created_or_locked_through() {
 
 /// A library folder that was moved away while open, with another library put at its path (a share
 /// mounted over the mount point), keeps that library's owner note when the lock is dropped: the note
-/// names another holder, so it isn't ours to remove (issue #3240).
+/// names another holder, so it isn't ours to remove (issue #3240). Unix only: Windows refuses to
+/// rename a folder while the lock file inside it is open, so the swap can't happen there.
+#[cfg(unix)]
 #[test]
 fn dropping_the_lock_keeps_an_owner_note_that_names_someone_else() {
     let _serial = serial();
