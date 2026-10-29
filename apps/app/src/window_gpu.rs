@@ -17,7 +17,9 @@ use eframe::wgpu;
 use lcc_engine::gpu::backend::{self, Backends, WindowRenderer};
 use std::path::PathBuf;
 
-/// Environment variable counting automatic relaunches after a failed start (bounds the chain).
+/// Environment variable counting automatic relaunches after a failed start (bounds the chain). The
+/// updater reads it too (`lcc_updater` `zipswap::WINDOW_RETRY`): a relaunch carries on the start of
+/// a new version a zip update put in place.
 const RETRY_VAR: &str = "WINDOW_RETRY";
 /// Never more relaunches than renderers to try.
 const MAX_RETRIES: u32 = 4;
