@@ -158,7 +158,8 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   build their bytes in code.
 - Every PR that adds an algorithm has a **"Sources:"** line naming what it was built from: a paper, a prose spec, or
   "own design".
-- No GPL/LGPL/AGPL/MPL dependency may enter the build; `cargo deny` enforces the licence allow-list.
+- No GPL/LGPL/AGPL/MPL dependency may enter the build; `cargo deny` enforces the licence allow-list. It also checks
+  that every crate comes from crates.io or a git repository listed under `[sources] allow-git` in `deny.toml`.
 - Licence: the workspace is MIT (`LICENSE`, `license = "MIT"`); `crates/segment` and `crates/fetch` stay Apache-2.0
   only, with their own `LICENSE-APACHE`. Keep the upstream notices in `LICENSE` and `NOTICE`.
 

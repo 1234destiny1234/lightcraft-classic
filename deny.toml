@@ -68,3 +68,9 @@ ignore = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# the git dependencies the workspace takes on purpose; a crate from any other git repository fails
+# `cargo xtask deny` (`cargo deny check sources`)
+allow-git = [
+    "https://github.com/emmertex/filmcraft",
+    "https://github.com/storytold/craft-libs",
+]

@@ -1622,6 +1622,7 @@ fn saved_presets_with_unknown_keys_still_export() {
     s.export_presets.push(ExportPreset {
         name: "Old".into(),
         params: json!({"format": "png", "retiredOption": 3, "watermark": {"text": "©", "retiredKey": true}}),
+        ..Default::default()
     });
     let p = s.export_params(&json!({"preset": "old", "quality": 80})).unwrap();
     let o = ExportOptions::from_params(&p).unwrap();

@@ -230,15 +230,19 @@ impl Conflict {
 }
 
 /// A named set of `app.export` params.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ExportPreset {
     pub name: String,
     pub params: serde_json::Value,
+    /// Settings from an imported preset (e.g. Lightroom Classic `.lrtemplate`) that have no
+    /// counterpart here and need to be configured manually.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unmapped: Vec<String>,
 }
 
 /// The built-in export presets (File → Export with Preset).
 pub fn builtin_presets() -> Vec<ExportPreset> {
-    let p = |name: &str, params: serde_json::Value| ExportPreset { name: name.into(), params };
+    let p = |name: &str, params: serde_json::Value| ExportPreset { name: name.into(), params, unmapped: Vec::new() };
     vec![
         p("JPEG (Small)", serde_json::json!({"format": "jpeg", "quality": 85, "longEdge": 2048, "colorSpace": "srgb"})),
         p("JPEG (Large)", serde_json::json!({"format": "jpeg", "quality": 92, "longEdge": 0, "colorSpace": "srgb"})),

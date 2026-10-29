@@ -114,7 +114,7 @@ fn a_preset_depth_is_judged_against_the_format_written() {
     use crate::export::ExportPreset;
     let mut s = Session::with_demo();
     let id = s.active().unwrap();
-    s.export_presets.push(ExportPreset { name: "Deep".into(), params: json!({"bitDepth": 16, "longEdge": 64}) });
+    s.export_presets.push(ExportPreset { name: "Deep".into(), params: json!({"bitDepth": 16, "longEdge": 64}), ..Default::default() });
     let p = s.export_params(&json!({"preset": "deep", "path": "/out/a.png"})).unwrap();
     let o = ExportOptions::from_params(&p).unwrap();
     assert_eq!((o.format, o.bit_depth), (ExportFormat::Png, Some(16)));

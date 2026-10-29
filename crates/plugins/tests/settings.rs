@@ -360,21 +360,28 @@ impl lcc_plugins::HostApi for Writes {
         self.0.push(params.clone());
         Ok(json!({}))
     }
+
+    fn library_add(&mut self, params: &Value) -> Result<Value, String> {
+        self.0.push(params.clone());
+        Ok(json!({"photo": "2", "added": true, "reloaded": false}))
+    }
 }
 
-/// A prepare step only reads: whatever it is granted, a host call that writes (metadata, its data,
+/// A prepare step only reads: whatever it is granted, a host call that writes (metadata, the library,
+/// its data,
 /// its settings, files, an HTTP request other than GET or HEAD) is refused there, and the same call
 /// from the command itself goes through.
 #[test]
 fn prepare_steps_can_only_read() {
-    let manifest = json!({"id": "test.readonly", "name": "Read only", "version": "1.0.0", "requires": ["settings"],
-        "permissions": {"metadataWrite": true, "network": ["example.invalid"]},
+    let manifest = json!({"id": "test.readonly", "name": "Read only", "version": "1.0.0", "requires": ["settings", "libraryAdd"],
+        "permissions": {"metadataWrite": true, "libraryAdd": true, "network": ["example.invalid"]},
         "settings": [{"key": "n", "label": "N", "type": "number", "min": 0, "max": 10, "default": 1, "prepare": true}],
         "commands": [{"id": "go", "label": "Go", "prepare": true, "dialog": [{"key": "b", "label": "B", "type": "bool"}]}]});
-    let grant = lcc_plugins::Permissions { metadata_write: true, network: vec!["example.invalid".into()], ..Default::default() };
+    let grant = lcc_plugins::Permissions { metadata_write: true, library_add: true, network: vec!["example.invalid".into()], ..Default::default() };
     let id = "test.readonly";
     for (req, runs) in [
         (r#"{"method":"metadata.setStandard","params":{"ids":["1"],"title":"t"}}"#, true),
+        (r#"{"method":"library.add","params":{"path":"/x/a.tif","from":"1"}}"#, true),
         (r#"{"method":"ns.set","params":{"photo":"1","key":"k","value":1}}"#, true),
         (r#"{"method":"settings.set","params":{"key":"n","value":5}}"#, true),
         (r#"{"method":"http.request","params":{"method":"POST","url":"http://example.invalid/x","body":"{}"}}"#, false),
