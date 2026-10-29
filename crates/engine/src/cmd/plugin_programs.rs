@@ -20,7 +20,7 @@ use lcc_plugins::programs::{EndStatus, check_quick_failure, wait_for_end, wait_f
 use lcc_plugins::{HostApi, Manager, StartRequest};
 use serde_json::Value;
 
-use super::plugins::{HostRequest, RelayHost, manager_for};
+use super::plugins::{HostRequest, RelayHost, Relayed, manager_for};
 use crate::Session;
 use crate::activity::Cancel;
 
@@ -81,12 +81,17 @@ impl HookHost {
 impl HostApi for HookHost {
     fn catalog(&mut self, method: &str, params: &Value) -> Result<Value, String> {
         self.reachable()?;
-        self.0.ask_within(Some(method.to_string()), params, ANSWER_WAIT)
+        self.0.ask_within(Relayed::Catalog(method.to_string()), params, ANSWER_WAIT)
     }
 
     fn set_metadata(&mut self, params: &Value) -> Result<Value, String> {
         self.reachable()?;
-        self.0.ask_within(None, params, ANSWER_WAIT)
+        self.0.ask_within(Relayed::SetMetadata, params, ANSWER_WAIT)
+    }
+
+    fn library_add(&mut self, params: &Value) -> Result<Value, String> {
+        self.reachable()?;
+        self.0.ask_within(Relayed::LibraryAdd, params, ANSWER_WAIT)
     }
 
     fn find_program(&mut self, program: &lcc_plugins::ProgramDecl) -> Vec<lcc_plugins::Found> {

@@ -2438,7 +2438,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 let added = |k: &str| v[k].as_array().map_or(0, |a| a.iter().filter(|r| r["skipped"] != true).count());
                 let (metas, exports) = (added("metadataPresets"), added("exportPresets"));
                 // what they couldn't carry over, named
-                let not_carried = |k: &str| {
+                let not_carried = |k: &str, max: usize| {
                     let mut names: Vec<&str> = v[k]
                         .as_array()
                         .into_iter()
@@ -2451,16 +2451,21 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                     if names.is_empty() {
                         return String::new();
                     }
-                    let shown: Vec<&str> = names.iter().take(3).copied().collect();
-                    crate::i18n::tr_format!(" — not carried over: {}{}", shown.join(", "), if names.len() > 3 { "…" } else { "" })
+                    let shown: Vec<&str> = names.iter().take(max).copied().collect();
+                    crate::i18n::tr_format!(" — not carried over: {}{}", shown.join(", "), if names.len() > max { "…" } else { "" })
                 };
                 if metas > 0 {
                     let msg = crate::i18n::tr_format!("Imported {n} metadata preset{}", if metas == 1 { "" } else { "s" }, n = metas);
-                    parts.push(msg + &not_carried("metadataPresets"));
+                    parts.push(msg + &not_carried("metadataPresets", 3));
                 }
                 if exports > 0 {
                     let msg = crate::i18n::tr_format!("Imported {n} export preset{}", if exports == 1 { "" } else { "s" }, n = exports);
-                    parts.push(msg + &not_carried("exportPresets"));
+                    parts.push(msg + &not_carried("exportPresets", 10));
+                    if let Some(first) =
+                        v["exportPresets"].as_array().and_then(|a| a.iter().find(|r| r["skipped"] != true)).and_then(|r| r["name"].as_str())
+                    {
+                        crate::panels::dialogs::apply_export_preset_to_open_dialog(app, &ctx, first);
+                    }
                 }
                 let profile_news = !parts.is_empty() || !problems.is_empty();
                 let msg = match (n, failed) {

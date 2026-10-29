@@ -2629,27 +2629,26 @@ impl Caches {
         self.date_groups = Some((cat.revision, g.clone()));
         g
     }
-    /// Cameras, lenses and keywords in the library (filter bar pickers).
+    /// Cameras, lenses and keywords in the library (filter bar pickers). Kept while only other things than metadata
+    /// changed (issue #538: a rating, a flag or an edit rebuilt them from every photo, on every change).
     pub fn filter_values(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<FilterValues> {
-        match &self.filter_values {
-            Some((r, v)) if *r == cat.revision => v.clone(),
-            _ => {
-                let distinct = |mut v: Vec<String>| {
-                    v.retain(|s| !s.trim().is_empty());
-                    v.sort_by_key(|s| s.to_lowercase());
-                    v.dedup();
-                    v
-                };
-                let lib = || cat.photos().filter(|p| p.in_library());
-                let v = std::sync::Arc::new(FilterValues {
-                    cameras: distinct(lib().map(|p| p.meta.camera.clone()).collect()),
-                    lenses: distinct(lib().map(|p| p.meta.lens.clone()).collect()),
-                    keywords: cat.keywords().into_iter().map(|(k, _)| k).collect(),
-                });
-                self.filter_values = Some((cat.revision, v.clone()));
-                v
+        let kept = self.filter_values.take().filter(|(r, _)| still_right(cat, *r, READS_META)).map(|(_, v)| v);
+        let v = kept.unwrap_or_else(|| {
+            // each value once, then sorted: a library has few distinct cameras, lenses and keywords but many photos
+            let distinct = |values: std::collections::HashSet<&str>| values.into_iter().map(str::to_string).collect::<Vec<_>>();
+            let lib = || cat.photos().filter(|p| p.in_library());
+            let named = |s: &&str| !s.trim().is_empty();
+            let mut cameras = distinct(lib().map(|p| p.meta.camera.as_str()).filter(named).collect());
+            let mut lenses = distinct(lib().map(|p| p.meta.lens.as_str()).filter(named).collect());
+            let mut keywords = distinct(lib().flat_map(|p| p.meta.keywords.iter().map(String::as_str)).collect());
+            for v in [&mut cameras, &mut lenses] {
+                v.sort_by_cached_key(|s| (s.to_lowercase(), s.clone()));
             }
-        }
+            keywords.sort();
+            std::sync::Arc::new(FilterValues { cameras, lenses, keywords })
+        });
+        self.filter_values = Some((cat.revision, v.clone()));
+        v
     }
     /// What the Add keyword box offers for `typed` (see [`panels::keywording::offers`]). Kept apart
     /// from [`Self::suggestions`]: both are asked for on every frame of typing, and each looks

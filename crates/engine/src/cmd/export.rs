@@ -50,7 +50,18 @@ impl Session {
 }
 
 fn list(s: &Session) -> Value {
-    Value::Array(s.all_export_presets().into_iter().map(|(p, builtin)| json!({"name": p.name, "builtin": builtin, "params": p.params})).collect())
+    Value::Array(
+        s.all_export_presets()
+            .into_iter()
+            .map(|(p, builtin)| {
+                let mut v = json!({"name": p.name, "builtin": builtin, "params": p.params});
+                if !p.unmapped.is_empty() {
+                    v["unmapped"] = json!(p.unmapped);
+                }
+                v
+            })
+            .collect(),
+    )
 }
 
 /// Params that describe a selection or a single file, not the export settings. The destination
@@ -86,7 +97,7 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
     // `format`, its `bitDepth` is judged when it exports, against the format written then
     let format = params.get("format").and_then(Value::as_str).map(|_| crate::export::ExportOptions::export_format(&params, Default::default()));
     crate::export::ExportOptions::validate_as(ID, &params, format)?;
-    let preset = ExportPreset { name: name.to_string(), params };
+    let preset = ExportPreset { name: name.to_string(), params, unmapped: Vec::new() };
     match s.export_presets.iter_mut().find(|x| x.name.eq_ignore_ascii_case(name)) {
         Some(x) => *x = preset,
         None => s.export_presets.push(preset),

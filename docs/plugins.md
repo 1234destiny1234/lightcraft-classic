@@ -8,7 +8,7 @@ plug-ins are not supported.
 
 | Contribution | Manifest | Request it receives |
 |---|---|---|
-| Menu commands, optionally with a dialog | `commands: [{id, label, menu, dialog, prepare?}]` | `{"hook":"command","command","args","selection"}`; with `prepare: true`, first `{"hook":"command.prepare","command","selection"}` (see [Settings, remembered values and prepare steps](#settings-remembered-values-and-prepare-steps)) |
+| Menu commands, optionally with a dialog | `commands: [{id, label, menu, dialog, prepare?}]` | `{"hook":"command","command","args","selection","source"}`; with `prepare: true`, first `{"hook":"command.prepare","command","selection","source"}` (`source`: see [Adding files to the library](#adding-files-to-the-library); see [Settings, remembered values and prepare steps](#settings-remembered-values-and-prepare-steps)) |
 | Settings (the plug-in's page in the Plug-in Manager) | `settings: [{key, label, type, …, prepare?}]` | none, or `{"hook":"settings.prepare"}` when a field has `prepare: true`; the plug-in reads them with `settings.get` |
 | Export post-processing | `hooks.export: true` | `{"hook":"export","files":[{path, photo}]}`; the exported files are lent to the call for reading and writing |
 | Metadata and keyword suggestions | `hooks.metadata: true` | `{"hook":"metadata","photos":[photo.inspect JSON]}` → `{"suggestions":[{photo, fields?, keywords?}]}` |
@@ -17,7 +17,7 @@ plug-ins are not supported.
 | Programs it starts (an installed tool, such as a raw converter) | `permissions.programs: [{id, name, macBundleIds?, windowsExe?, linuxExe?}]` | `{"hook":"program.end","run","program","status","code","tmpDir"}` when a run ends (see [Programs](#programs)) |
 | Custom metadata fields (Metadata panel ▸ Plug-in fields) | `metadataFields: [{key, label, type, …, readOnly?}]` | none: the values are the plug-in's namespace entries under each field's `key` (`ns.set {photo, key, value}`); the user edits them in the panel on every selected photo (`plugin.setField {ids}`; differing values read `< mixed >`), read-only ones only the plug-in sets. The plug-in's data stays the source; the app keeps an in-memory index of it (`Photo.plugin_fields`, never saved with the catalog, so its format is unchanged: rebuilt when a library opens and after every plug-in command and export hook): Library filter text search finds the values (`key:value` for one field), smart-album and filter rules test them as `plugin:<id>/<key>` (Rules ▸ Plug-in Fields; text operators, number fields compare as numbers: is ≥, is between, …), and XMP sidecars carry them as `lcpf:fields` (a bag of `{lcpf:plugin, lcpf:key, lcpf:value}`, namespace `<homepage>/ns/plugin-fields/1.0/`, from `homepage` in `brand.toml`) when metadata is saved, and give them back to the plug-in's data on import, Synchronize Folder and Read Metadata from File (installed, enabled plug-ins only; read-only fields included; values the field doesn't take are skipped) |
 
-Commands appear under File ▸ Plug-ins and run as the engine command `plugin.run {plugin, command, args?, ids?}`. The UI, CLI,
+Commands appear under File ▸ Plug-ins and run as the engine command `plugin.run {plugin, command, args?, ids?, source?}`. The UI, CLI,
 control channel and MCP all use this command. `plugin.commands` lists the commands so front
 ends can build menus and dialogs. Dialog fields are `{key, label, type}`, where `type` is one of
 `text` (`default`), `number` (`min`, `max`, `default`), `bool` (`default`) or `choice`
@@ -86,6 +86,7 @@ are the granted permissions intersected with the requested ones.
 |---|---|
 | `catalog: true` | `catalog.query`, `photo.inspect`, `catalog.stats`, `keyword.list` (read-only) |
 | `metadataWrite: true` | `metadata.setStandard {ids, title?, caption?, keywords?, addKeywords?, …}` |
+| `libraryAdd: true` | `library.add {path, from, stack?, album?}`: adds a file a tool made from a photo to the library, from that photo's folder only (see [Adding files to the library](#adding-files-to-the-library)). Requires `libraryAdd`. |
 | `network: ["api.example.com", "*.example.org"]` | `http.request` to those hosts only. Redirects are not followed: the plug-in has to request the new URL itself, and that request is checked again. A binary body goes as `bodyBase64` (with `contentType`) instead of `body`. |
 | `fs: [{path: "/abs/dir", write?}]` | `fs.readText`, `fs.readBytes`, `fs.list`, `fs.exists` below each root, and `fs.writeText`, `fs.writeBytes`, `fs.remove` (files only) below writable roots. Bytes travel as base64 (`{path}` → base64 text; `{path, base64}`). `..` is rejected, and symbolic links are resolved so a link cannot lead out of a root. Files lent to a call (an export hook's or destination's exported files, a publish upload's rendered file) can be read and rewritten without any root, never removed. A program run's folder is lent to its `program.end` call for reading. |
 | `programs: [{id, name, macBundleIds?, windowsExe?, linuxExe?}]` | `program.start` of those programs, with the arguments the plug-in chooses on each run (see [Programs](#programs)); `program.list` needs nothing. Only the user grants one, by ticking it in the install dialog or the Plugin Manager. `plugin.install` with `grant` and `plugin.grant`, whoever calls them (MCP, the control channel, an action, the command line), may repeat the programs already granted (they stay granted) or leave them out (revoked), and refuse a grant that names any other program or a wider entry than the granted one, changing nothing. The control channel's input requests (`ui.pointer`, `ui.clickWidget`, `ui.key`) work the dialog as the user's mouse and keyboard would, so a row ticked through them counts as the user's: give the control port only to agents you would let tick it. |
@@ -179,6 +180,59 @@ Plug-in Manager show which program it is, not how the plug-in will use it.
   still watches (each run holds a lock file next to its folder).
 - The web build has no programs: `program.start` returns an error there.
 
+## Adding files to the library
+
+A tool such as a raw converter or a noise reducer makes new files from the photos it is sent. A
+plug-in with the **`libraryAdd`** permission adds them to the library, stacked on the photo each
+came from or in the album the user sent them from. It requires the host feature `libraryAdd`
+(`"requires": ["libraryAdd"]`, see [Compatibility](#compatibility-requires-and-version)), which
+covers the permission, `library.add` and `source`.
+
+- **`source`**: the `command` and `command.prepare` requests say where the command was started:
+  the Library source shown in the left panel, whatever search or filter is on top of it.
+
+  | `source` | Started from |
+  |---|---|
+  | `{kind: "album", id, name, quick?}` | a regular album: also the Quick Collection (`quick: true`) and saved creations |
+  | `{kind: "smartAlbum", id, name}` | a smart album |
+  | `{kind: "folder", path}` | a folder of the library, or a folder on disk being browsed |
+  | `{kind: "allPhotos"}` | All Photographs |
+  | `{kind: "other", name}` | another view: `picks`, `recentlyAdded`, `previousImport`, `previousExport`, `missing`, `recentlyDeleted`, and `albumFolder` (an album folder, which holds albums, not photos) |
+
+  It is the session's source, as the selection is the session's selection, so the menu, the
+  control channel and MCP all send it; `plugin.run` and `plugin.prepare` take a `source` of their
+  own to replace it. A plug-in that hands photos to a tool keeps it (in the run's files, say) to
+  use when the results come back, as the user may have moved on by then. In Rust:
+  `req.source()`, and `req.source_album()` for the id of an album that can hold photos.
+- **`library.add {path, from, stack?, album?}`** (`host::library_add(path, from, stack, album)`)
+  → `{photo, added, reloaded}`:
+  - `from` is the photo the file was made from: a photo of the library (not in Recently Deleted)
+    with a file. `path` is an absolute path to a file in the folder of `from`'s original or below
+    it, after symbolic links are resolved; that is where such tools write by default. It can't
+    be `from`'s original itself. A path reached through a link is added under the folder's own
+    path, so the same file is never in the library twice.
+  - The file is imported in place, as a new photo with its own settings: `from`'s develop
+    settings are not copied. A copy of a file the library has elsewhere is added too.
+  - `stack: true` stacks it directly above `from`, in `from`'s stack or a new one, as Edit In
+    does. Without it, `library.add` doesn't stack it (the import may still stack a file by its
+    own rules, such as a DNG's link to the file it was derived from).
+  - `album` (an id from `source`) adds it to that album, which must be a regular album that
+    holds `from`, so a plug-in can only file a result next to its source. A photo that left the
+    album while the tool ran gives an error: try again without `album`.
+  - A file the library has already returns that photo with `added: false`; `stack` and `album`
+    still apply, and nothing is listed twice. If the file changed since the library read it (a
+    tool wrote over its earlier result), it is read again as *Reload from Disk* (`photo.reload`)
+    does, with `reloaded: true`: new size, dimensions and content hash, cached previews dropped;
+    the photo keeps its id, settings, stack and albums. A photo the user had deleted comes back
+    from Recently Deleted (`added: true`), read again the same way when the file changed.
+  - Everything is checked before the library changes; an error adds nothing (should a later step
+    fail after all, what was done is undone). What does change is one undo step ("Add from
+    Plug-in"), and the user's selection stays as it was.
+  - It is a write: prepare steps can't call it. In `program.end`, the call is answered on the UI
+    thread, like the hook's catalog reads.
+
+The `program-tools` example (below) does the whole round trip.
+
 ## Limits
 
 Each call runs in a fresh instance. It has an instruction budget, a wall-clock budget (time spent
@@ -196,7 +250,7 @@ hook that's never called, a host call that fails as an unknown method).
 
 - **The host's list** is `lcc_plugins::HOST_FEATURES`, and `plugin.list` returns it as
   `host: {abi, features}`. Everything the host had when `requires` arrived is the baseline and
-  has no name. Names so far: `programs` ([Programs](#programs)), `settings` ([below](#settings-remembered-values-and-prepare-steps)). Every manifest field, permission group or host call added
+  has no name. Names so far: `programs` ([Programs](#programs)), `settings` ([below](#settings-remembered-values-and-prepare-steps)), `libraryAdd` ([Adding files to the library](#adding-files-to-the-library)). Every manifest field, permission group or host call added
   from then on gets a name there in the change that adds it, and its documentation here says
   which name to require.
 - **Names** are `[A-Za-z0-9._-]{1,64}`, at most 64, none repeated; anything else is a manifest
@@ -257,7 +311,7 @@ The guest SDK is `sdk/plugin` (`lcc-plugin-sdk`). Six examples, each a complete 
 | `sdk/examples/batch-metadata` | a small useful tool (`catalog` + `metadataWrite`): *Title / Caption from Template…* fills the title or caption of the selected photos from a template with tokens (`{name}`, `{file}`, `{date}`, `{year}`, `{camera}`, `{n}` with a start number); *Add Keywords…* adds comma-separated keywords. Every write goes through `metadata.setStandard` |
 | `sdk/examples/export-tools` | **export hooks**: a post-process hook that reads each exported file (binary, `host::read_bytes`) and records its CRC-32; an **export destination** "WebDAV Upload" that `PUT`s the files to a server (`host::http_bytes`, basic auth, a dry-run switch) |
 | `sdk/examples/publish-folder` | a **publish service** "Local Gallery": copies each rendered photo into a gallery folder (one writable `fs` root), keeps an `index.json`, replaces on re-publish and deletes on removal |
-| `sdk/examples/program-tools` | **programs**: *Send to Converter* writes the selected photos' ids into the run's folder and starts a granted program on that list (`host::program_start`); its **`program.end`** hook reads the program's `result.txt` and records each photo's result, or logs the exit code when the program failed |
+| `sdk/examples/program-tools` | **programs and adding files** (`requires: ["programs", "libraryAdd"]`): *Send to Converter* writes the selected photos' ids and originals, and the album it was started from, into the run's folder and starts a granted program on that list (`host::program_start`); its **`program.end`** hook reads the program's `result.txt` and adds each result to the library, stacked on its photo and in that album (`host::library_add`), or logs the exit code when the program failed |
 | `sdk/examples/keyword-picker` | **settings, remembered values and a prepare step** (`requires: ["settings"]`): *Apply Keyword…* adds (or, with a switch that is never remembered, removes) one keyword on the selected photos, picked from the keywords in use. Its prepare step offers the keywords used on at least *n* photos (a setting), most used first or A to Z (another), runs at once when only one qualifies and explains when none does |
 | `sdk/examples/custom-fields` | **custom metadata fields** Client / Job / Usage (editable in the Metadata panel) and Delivered (read-only), a *Set Job Fields…* command for the selection, an export hook that marks exported photos delivered, and a metadata provider that suggests the client as a keyword |
 
@@ -343,8 +397,8 @@ The manifest fields:
 
 | `req.hook()` | Fields (`req.get(…)`, helpers) | Reply |
 |---|---|---|
-| `command` | `req.command()`, `req.arg(key)`, `req.selection()` (photo ids as strings) | anything; `message` is shown |
-| `command.prepare` | `req.command()`, `req.selection()` | exactly one of `{dialog: {<key>: {options?, default?}}}`, `{run: args}`, `{message}`; host calls may only read |
+| `command` | `req.command()`, `req.arg(key)`, `req.selection()` (photo ids as strings), `req.source()` | anything; `message` is shown |
+| `command.prepare` | `req.command()`, `req.selection()`, `req.source()` | exactly one of `{dialog: {<key>: {options?, default?}}}`, `{run: args}`, `{message}`; host calls may only read |
 | `settings.prepare` | | `{fields: {<key>: {options?, default?}}}`, for fields with `prepare: true`; host calls may only read |
 | `export` | `req.files()` → `(path, photo)` of the written files | anything |
 | `export.destination` | `req.destination()`, `req.arg(key)`, `req.files()` | anything; `message` is shown |
@@ -360,6 +414,7 @@ The manifest fields:
 | `host::call(method, params)` | any of the below | |
 | `host::query(params)` | `catalog.query` (also `photo.inspect`, `catalog.stats`, `keyword.list` via `call`) | `catalog` |
 | `host::call("metadata.setStandard", {ids, title?, caption?, keywords?, addKeywords?, …})` | writes standard fields | `metadataWrite` |
+| `host::library_add(path, from, stack, album)` | `library.add {path, from, stack?, album?}` → `{photo, added, reloaded}` | `libraryAdd` |
 | `host::ns_get(photo)`, `host::ns_set(photo, key, value)` | `ns.get`, `ns.set`, `ns.photos` | nothing (own namespace; also holds `metadataFields` values) |
 | `host::read_text`, `host::write_text`, `host::read_bytes`, `host::write_bytes`, `host::remove`, `host::exists` | `fs.*` | an `fs` root (or a lent file) |
 | `host::http(method, url, headers, body)`, `host::http_bytes(…)` | `http.request` → `{status, contentType, location, body}` | the URL's host in `network` |
@@ -401,8 +456,8 @@ The manifest fields:
 
 `plugin.list`, `plugin.inspectFile {path}`, `plugin.install {path, grant?, allowDowngrade?}`,
 `plugin.uninstall {id}`, `plugin.enable {id, enabled}`, `plugin.grant {id, grant}`,
-`plugin.log {id}`, `plugin.commands`, `plugin.prepare {plugin, command, ids?}`,
-`plugin.run {plugin, command, args?, ids?}`, `plugin.settings {id}`, `plugin.setSettings {id, values}`,
+`plugin.log {id}`, `plugin.commands`, `plugin.prepare {plugin, command, ids?, source?}`,
+`plugin.run {plugin, command, args?, ids?, source?}`, `plugin.settings {id}`, `plugin.setSettings {id, values}`,
 `plugin.suggestMetadata {ids?}`, `plugin.postExport {files}`, `plugin.publishServices`,
 `plugin.exportDestinations`, `plugin.exportTo {plugin, destination, files, args?}`,
 `plugin.metadataFields {id?}`, `plugin.setField {plugin, field, value, id?}`.
@@ -512,8 +567,9 @@ filters turn it (long edge 2048, cached per photo and stack; a change of the sta
 - Network and filesystem permissions are fixed in the manifest: a WebDAV destination for "any
   server the user types" isn't possible; the author names the hosts.
 - No plug-in store, signing or automatic updates; Lightroom Lua plug-ins don't run.
-- Programs: a plug-in can't add what a program made to the library, read its output while it runs,
-  or stop it; ✕ only stops waiting. Versions are read on macOS only.
+- Programs: a plug-in can't read a program's output while it runs, or stop it; ✕ only stops
+  waiting. It adds what a program made only from the folder of the source photo, and can't make
+  an album for the results. Versions are read on macOS only.
 - Pixel filters: a Display filter with `overlap` > 0 still works in output pixels (it runs after
   every develop step, so a native-resolution pass would mean a full-size develop per preview), so
   a preview and a larger export of one differ.

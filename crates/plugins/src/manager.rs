@@ -770,12 +770,28 @@ impl Manager {
     /// gives the declared dialog with the error, or the error when that dialog can't be shown (a
     /// choice whose options only the plug-in can give).
     pub fn prepare_command(&mut self, id: &str, command: &str, selection: &[String], host: &mut dyn HostApi) -> Result<Prepared> {
+        self.prepare_command_from(id, command, selection, &Value::Null, host)
+    }
+
+    /// [`Manager::prepare_command`] for a command started from `source`, the Library source the
+    /// user was in (`{kind, id?, name?, path?}`; null: none), which the request carries.
+    pub fn prepare_command_from(
+        &mut self,
+        id: &str,
+        command: &str,
+        selection: &[String],
+        source: &Value,
+        host: &mut dyn HostApi,
+    ) -> Result<Prepared> {
         let p = self.plugins.get(id).ok_or_else(|| Error::NotFound(id.into()))?;
         let decl = p.plugin.manifest().command(command).ok_or_else(|| Error::Params(format!("plug-in {id} has no command {command:?}")))?.clone();
         if !decl.prepare {
             return Ok(Prepared::Dialog { fields: decl.dialog, error: None });
         }
-        let req = json!({"hook": "command.prepare", "command": command, "selection": cap(selection)});
+        let mut req = json!({"hook": "command.prepare", "command": command, "selection": cap(selection)});
+        if !source.is_null() {
+            req["source"] = source.clone();
+        }
         let answer = self.invoke(id, &req, host, &[]).and_then(|v| {
             prepared_answer(&decl.dialog, &v).map_err(|e| {
                 // invoke logged failed calls; an answer that doesn't fit is logged here
@@ -799,10 +815,24 @@ impl Manager {
     /// as `{message, ran: false}` and nothing runs; with the arguments it gave, it runs with those
     /// when `args` is null; with a dialog, `args` are checked against the fields as prepared.
     pub fn run_command(&mut self, id: &str, command: &str, args: &Value, selection: &[String], host: &mut dyn HostApi) -> Result<Value> {
+        self.run_command_from(id, command, args, selection, &Value::Null, host)
+    }
+
+    /// [`Manager::run_command`] for a command started from `source` (see
+    /// [`Manager::prepare_command_from`]): its prepare step and the command get it.
+    pub fn run_command_from(
+        &mut self,
+        id: &str,
+        command: &str,
+        args: &Value,
+        selection: &[String],
+        source: &Value,
+        host: &mut dyn HostApi,
+    ) -> Result<Value> {
         let p = self.plugins.get(id).ok_or_else(|| Error::NotFound(id.into()))?;
         let decl = p.plugin.manifest().command(command).ok_or_else(|| Error::Params(format!("plug-in {id} has no command {command:?}")))?;
         let declared = decl.dialog.clone();
-        let (fields, checked) = match self.prepare_command(id, command, selection, host)? {
+        let (fields, checked) = match self.prepare_command_from(id, command, selection, source, host)? {
             Prepared::Message(m) => return Ok(json!({"message": m, "ran": false})),
             Prepared::Run(given) if args.is_null() => (declared, given),
             Prepared::Run(_) => {
@@ -819,7 +849,10 @@ impl Manager {
         if !args.is_null() {
             self.remember(id, &command_scope(command), &fields, &checked);
         }
-        let req = json!({"hook": "command", "command": command, "args": checked, "selection": cap(selection)});
+        let mut req = json!({"hook": "command", "command": command, "args": checked, "selection": cap(selection)});
+        if !source.is_null() {
+            req["source"] = source.clone();
+        }
         self.invoke(id, &req, host, &[])
     }
 

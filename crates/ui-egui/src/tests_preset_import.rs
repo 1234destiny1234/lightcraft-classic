@@ -159,3 +159,98 @@ fn importing_presets_keeps_presets_on_the_left_in_develop() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Importing a Lightroom Classic `.lrtemplate` export preset preserves its supported settings in
+/// the Export dialog and clearly lists any unsupported settings so the user can see what needs to
+/// be configured manually.
+#[test]
+fn importing_lightroom_export_preset_populates_export_dialog_and_lists_unsupported_settings() {
+    use lcc_engine::export::{Conflict, DestinationMode, ExportFormat, MetadataPolicy, OutputSpace, ResizeMode, SharpenAmount, SharpenFor};
+    let dir = temp_dir("lr-export-preset");
+    let out_dir = dir.join("client_out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    let template = format!(
+        r#"s = {{
+	id = "3A1B0C55-0000-0000-0000-000000000201",
+	internalName = "Client Proof",
+	title = "Client Proof",
+	type = "Export",
+	value = {{
+		collisionHandling = "overwrite",
+		embeddedMetadataOption = "copyrightOnly",
+		exportServiceProvider = "com.adobe.ag.export.file",
+		export_bitDepth = 16,
+		export_colorSpace = "DisplayP3",
+		export_destinationPathPrefix = "{folder}",
+		export_destinationPathSuffix = "Proofs",
+		export_destinationType = "specificFolder",
+		export_postProcessing = "openInPhotoshop",
+		export_useSubfolder = true,
+		format = "JPEG",
+		initialSequenceNumber = 10,
+		jpeg_limitSize = 800,
+		jpeg_quality = 0.82,
+		jpeg_useLimitSize = true,
+		outputSharpeningLevel = 1,
+		outputSharpeningMedia = "screen",
+		outputSharpeningOn = true,
+		reimportExportedPhoto = true,
+		removeLocationMetadata = true,
+		renamingTokensOn = true,
+		size_doConstrain = true,
+		size_doNotEnlarge = true,
+		size_maxHeight = 1600,
+		size_maxWidth = 1600,
+		size_resizeType = "longEdge",
+		size_resolution = 300,
+		size_resolutionUnits = "inch",
+		size_units = "pixels",
+		tokenCustomString = "Proof",
+		tokens = "{{{{custom_token}}}}-{{{{naming_sequenceNumber_3Digits}}}}",
+		useWatermark = true,
+	}},
+	version = 0,
+}}
+"#,
+        folder = out_dir.to_string_lossy().replace('\\', "\\\\")
+    );
+    let file = dir.join("Client Proof.lrtemplate");
+    std::fs::write(&file, template).unwrap();
+
+    let mut h = app();
+    h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), T);
+    h.settle(SETTLE);
+
+    let r = h.request("engine.execute", json!({"command": "file.importPresets", "params": {"paths": [file.to_string_lossy()]}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+
+    // The toast clearly lists the unsupported settings
+    let t = toast(&h);
+    assert!(t.contains("Imported 1 export preset"), "{t}");
+    assert!(t.contains("watermark") && t.contains("after export action") && t.contains("add to this catalog"), "{t}");
+
+    // The Export dialog retains all supported settings from the imported preset
+    let Some(crate::state::Dialog::Export { opts, full_size, resize, limit_kb, dir: export_dir, .. }) = &h.app.ui.dialog else {
+        panic!("expected Export dialog to be open");
+    };
+    assert_eq!(opts.format, ExportFormat::Jpeg);
+    assert_eq!(opts.quality, 82);
+    assert_eq!(*limit_kb, 800);
+    assert_eq!(opts.color_space, OutputSpace::DisplayP3);
+    assert!(!*full_size);
+    assert_eq!((resize.mode, resize.value as u32, resize.dont_enlarge), (ResizeMode::LongEdge, 1600, true));
+    assert_eq!(opts.ppi, 300);
+    assert_eq!((opts.sharpen, opts.sharpen_amount), (SharpenFor::Screen, SharpenAmount::Low));
+    assert_eq!((opts.metadata, opts.remove_location), (MetadataPolicy::Copyright, true));
+    assert_eq!((opts.naming.as_str(), opts.custom_text.as_str(), opts.start_number), ("{custom}-{seq:3}", "Proof", 10));
+    assert_eq!(opts.destination_mode, DestinationMode::SpecificFolder);
+    assert_eq!(export_dir.as_str(), out_dir.to_string_lossy().as_ref());
+    assert_eq!(opts.subfolder, "Proofs");
+    assert_eq!(opts.conflict, Conflict::Overwrite);
+
+    // And the Export dialog itself displays the unsupported-settings note
+    let w = h.request("ui.widgets", json!({"filter": "label:exportPresetUnmapped"}), T);
+    assert!(w["result"].as_array().is_some_and(|a| !a.is_empty()), "unsupported settings note shown in Export dialog: {w}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
