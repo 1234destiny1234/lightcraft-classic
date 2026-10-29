@@ -397,7 +397,7 @@ fn parse_one(id: u32, flags: u32, params: &[u8]) -> Option<Opcode> {
             let origin = [f(&mut r)?, f(&mut r)?];
             let mp = r.u32()?;
             let n = (pv as usize).checked_mul(ph as usize)?.checked_mul(mp as usize)?;
-            if n == 0 || n * 4 > r.remaining() {
+            if n == 0 || n > r.remaining() / 4 {
                 return None;
             }
             let gains = (0..n).map(|_| r.f32()).collect::<Option<_>>()?;
@@ -406,7 +406,7 @@ fn parse_one(id: u32, flags: u32, params: &[u8]) -> Option<Opcode> {
         10..=13 => {
             let area = r.area()?;
             let n = r.u32()? as usize;
-            if n * 4 > r.remaining() {
+            if n > r.remaining() / 4 {
                 return None;
             }
             let v: Vec<f32> = (0..n).map(|_| r.f32()).collect::<Option<_>>()?;
@@ -840,6 +840,21 @@ pub(crate) mod tests {
         apply_list(&[Opcode::FixBadPixelsList { bayer_phase: 0, points: vec![], rects }], &mut tall, w, h, 1, None, 1.0);
         assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
         assert!(tall.iter().all(|&v| v == 0.5));
+    }
+
+    /// Opcode counts whose byte size overflows `usize` (32-bit targets) or exceeds the data are refused.
+    #[test]
+    fn opcode_counts_beyond_the_remaining_bytes_are_refused() {
+        let mut gain_map = area([0, 0, 1, 1, 0, 1, 1, 1]);
+        for value in [u32::MAX, 1] {
+            gain_map.extend_from_slice(&value.to_be_bytes());
+        }
+        gain_map.extend(be(&[1.0, 1.0, 0.0, 0.0]));
+        gain_map.extend_from_slice(&1u32.to_be_bytes());
+        assert!(parse_one(9, 0, &gain_map).is_none());
+        let mut delta = area([0, 0, 1, 1, 0, 1, 1, 1]);
+        delta.extend_from_slice(&u32::MAX.to_be_bytes());
+        assert!(parse_one(10, 0, &delta).is_none());
     }
 
     pub(crate) struct ListWriter(pub Vec<u8>, pub u32);

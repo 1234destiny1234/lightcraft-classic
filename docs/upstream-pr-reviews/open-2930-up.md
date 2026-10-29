@@ -1,6 +1,6 @@
 # Upstream open PRs 2930 and up: review
 
-Reviewed 2026-10-26 against fork `main`. ADOPT = ported (adapted to the fork's names), LEARN = idea taken in
+Reviewed 2026-10-26 (rows from 3192 on: r6, 2026-10-29) against fork `main`. ADOPT = ported (adapted to the fork's names), LEARN = idea taken in
 the fork's own form (or noted for later), SKIP = not taken. "Stacked" = built on another open upstream PR.
 
 | PR | Title | Decision | Reason | Fork PR |
@@ -198,3 +198,90 @@ Closed upstream without merging.
 | 3185 | Hidden entries: folder walks read no extra metadata on macOS; auto-import skips hidden files (follow-up to #3045) | LEARN | hidden-entry follow-up to #3045 (macOS) | — |
 | 3186 | feat(upstream OCR crate): read text with PP-OCRv6 and a HierText benchmark example (part 1b, stacked on #3181) | SKIP | stacked on #3181 | — |
 | 3188 | Drop the sign from slider text that rounds to zero | SKIP | UI change in fork-owned ui-egui, or no user-visible gain | — |
+| 3103 | refactor: shared module layout (craft-contrib#20) | SKIP | upstream repository layout refactor | (r6 PR) |
+| 3192 | Bump winit for Wayland gestures and drag-and-drop support | SKIP | winit bump; egui 0.37 migration deferred | (r6 PR) |
+| 3194 | LR-MASK-BRUSH: preserve Lightroom brush feathering and erasures | SKIP | LR brush CenterWeight semantics changed on an unconfirmed reading; open and unverified against real sidecars | (r6 PR) |
+| 3195 | Integration: 4 PRs (task queue, menus, accessibility, autosave) | SKIP | integration of 4 PRs, UI/menus | (r6 PR) |
+| 3196 | MENU-BAR: the macOS menu bar keeps every row when two rows run the same command | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3197 | Issue #3191: encode DNG WhiteLevel tag as LONG instead of RATIONAL | SKIP | duplicate of 3199; rejects fractional white levels with an error, which would break float DNG export | (r6 PR) |
+| 3198 | CI: satisfy Rust 1.95 Clippy checks | SKIP | clippy-only | (r6 PR) |
+| 3199 | Issue #3191: write the DNG WhiteLevel as LONG, never RATIONAL | ADOPT | float DNG WhiteLevel written as LONG with fractional white rescaled (the safer of 3197/3199) | (r6 PR) |
+| 3200 | MENU-BAR: shortcut hints on macOS list modifiers in the menu bar's order (⇧⌘I, not ⌘⇧I) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3201 | LR-BEHAV-LOCALE: the Edit menu drops its 18-row Language submenu; Settings has the choice | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3202 | MENU-HELP-HELP: on macOS Check for Updates… is in the app menu, and Help opens with the app Help (⇧⌘?) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3203 | MENU-WINDOW-BRINGFRONT: the macOS Window menu lists the open windows | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3204 | LR-BEHAV-TITLEBAR: center the macOS traffic lights on the top bar | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3206 | Issue #3175: Read Metadata from File can skip photos whose sidecar changes nothing | SKIP | feature (Read Metadata skip); not a fix | (r6 PR) |
+| 3207 | LR-META-XMP: photo.sidecarPaths reports where each photo's sidecar is | SKIP | feature (sidecarPaths command); no user-visible gain | (r6 PR) |
+| 3208 | LR-BEHAV-BG-TASKS: on macOS a running job keeps the Mac awake and the app out of App Nap | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3209 | LR-BEHAV-ACCESS: the sidebar's disclosure triangles name their row | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3210 | LR-IMP-FORMATS: reject invalid Canon CR2 slice geometry | ADOPT | CR2 slice geometry validated (raw part only; clippy-only files skipped) | (r6 PR) |
+| 3211 | LR-BEHAV-ACCESS: Increase contrast follows macOS until you choose (stacked on #2373) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3212 | LR-BEHAV-ACCESS: a date header in the photo grid is named with the text it shows | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3213 | MENU-FILE-CLOSE: document that closing the window quits the app | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3214 | LR-BEHAV-ACCESS: a slider's value field is named "<slider> value" and describes how to use it | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3215 | LR-BEHAV-ACCESS: Reduce transparency follows macOS until you choose (stacked on #3211) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3216 | LR-BEHAV-ACCESS: a filmstrip thumbnail is named like the grid's cell for the same photo | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3217 | MENU-HELP-FEEDBACK: the macOS Help menu has one feedback row, the app's | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3218 | MENU-VIEW-ENTERFULLSCREEN: the macOS View menu has one window full-screen row, Enter or Exit Full Screen on ⌃⌘F | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3219 | LR-BEHAV-BG-TASKS: on macOS the Dock icon shows how many jobs are running (stacked on #3208) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3220 | MENU-HELP-HELP: on macOS the Help menu is registered with AppKit after the menu bar is installed | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3221 | LR-VIEW-PHOTOGRID: the grid's empty view names Import Photos' shortcut as the keymap has it | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3222 | LR-BEHAV-LOCALIZE: add Korean interface and README | SKIP | Korean interface; fork i18n catalogs differ | (r6 PR) |
+| 3223 | LR-BEHAV-BG-TASKS: on macOS a notification tells you when a job has finished (stacked on #3219) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3224 | Scan the whole repository again in SonarCloud | SKIP | upstream CI (SonarCloud) | (r6 PR) |
+| 3225 | MENU-EDIT-SELECTNONE: Edit lists Select Only Active Photo and Paste Settings from Previous with their kin, and the macOS Edit menu keeps single separators | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3226 | LR-BEHAV-TOAST: keep notifications readable in light themes | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3227 | LR-BEHAV-PANEL-RESIZE: close or group panels from tool icons | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3230 | Issue #3228: the hard-link originals test holds under SeBackupPrivilege (Git Bash, the CI gate) | SKIP | Windows-only test tweak | (r6 PR) |
+| 3231 | Issue #1337: restart instead of stopping when the window's GPU device is lost | SKIP | windowed GPU-device-loss restart; cannot be verified unattended | (r6 PR) |
+| 3232 | Fix/nr shadow luminance bounds | SKIP | 485-line GPU/pipeline noise-reduction change; too large to take unrun | (r6 PR) |
+| 3233 | Reject signed ports in Url::parse | ADOPT | signed ports refused (fetch) | (r6 PR) |
+| 3234 | Reject signed numbers in Content-Range parsing | ADOPT | signed Content-Range numbers refused (fetch) | (r6 PR) |
+| 3235 | Show the remembered crop ratio's box on an untouched photo | SKIP | UI change in fork-owned ui-egui | (r6 PR) |
+| 3236 | chore(deps): bump the cargo-dependencies group across 1 directory with 7 updates | SKIP | dependency bump group; fork manages its own deps | (r6 PR) |
+| 3237 | Load face embedding caches larger than 1 GiB instead of rescanning | ADOPT | face embedding caches over 1 GiB are read record by record | (r6 PR) |
+| 3241 | feat(raw): integrate FlashRaw for high-performance camera RAW decoding | SKIP | new raw decoder dependency (FlashRaw); needs a licence/security review of a big dependency | (r6 PR) |
+| 3242 | Reject EXIF offsets beyond 18 hours | ADOPT | EXIF time zone offset limited to 18:00 | (r6 PR) |
+| 3243 | LR-VIEW-FILMSTRIP: a stack badge's tooltip names the stack toggle's key as bound (stacked on #2164) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3245 | LR-ENHANCE-DENOISE: research pretrained RAW denoising models and lice… | SKIP | research document | (r6 PR) |
+| 3253 | LR-BEHAV-ACCESS: an icon button's accessible name is its label, with the shortcut as its description | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3255 | LR-BEHAV-LOCALE: Settings ▸ General ▸ Language can sync with the system again (stacked on #3146) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3256 | doc_path: keep the gvfs test path under cfg(not(windows)) | SKIP | fork already has this gvfs test layout | (r6 PR) |
+| 3257 | LR-BEHAV-TEXTFIELD: emoji are in color on macOS | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3258 | Library lock: Only remove the owner note this lock wrote (#3240) | ADOPT | a library lock removes only the owner note it wrote (fork keeps read_no_follow) | (r6 PR) |
+| 3259 | LR-BEHAV-ACCESS: a button that does something reads as a button and one of several choices as a radio button (stacked on #2078) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3260 | LR-BEHAV-ACCESS: a dialog is exposed to screen readers as a dialog, not a group (stacked on #2078) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3261 | LR-BEHAV-EMPTY-STATES: the grid's title, count and empty-view messages are read by screen readers (stacked on #2891) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3262 | LR-BEHAV-ACCESS: the photo in Detail is named with its file name (stacked on #2078) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3263 | LR-BEHAV-ACCESS: a photo thumbnail is a selectable cell, not a check box (stacked on #3216) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3265 | LR-BEHAV-ACCESS: the grid's Thumbnail size reads as a slider (stacked on #2078) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3266 | LRC-DEV-TONAL: consolidate tonal processing as V3 | SKIP | new tonal process version V3; needs process-version work and render comparison | (r6 PR) |
+| 3267 | Reject ZIP entries with inconsistent decoded sizes | ADOPT | ZIP entries with inconsistent decoded sizes refused (geocode) | (r6 PR) |
+| 3268 | LR-REM-CONTENTAWARE: generate masked replacements with ComfyUI | SKIP | ComfyUI integration feature; network/process spawn, not a fix | (r6 PR) |
+| 3269 | Grant network access so update checks can reach GitHub | SKIP | upstream packaging/updater permission | (r6 PR) |
+| 3273 | LR-BEHAV-ACCESS: panels and bars are named as landmarks and toolbars (stacked on #2078) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3274 | Toggle color labels with keyboard shortcuts | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3275 | Honor CARGO_BUILD_TARGET in FreeBSD packaging for aarch64 release builds | SKIP | upstream FreeBSD packaging | (r6 PR) |
+| 3276 | LRC-LIB-FOLDERS: the home folder and Local's built-in places can't be renamed or moved | SKIP | UI/library folders feature in fork-owned panels | (r6 PR) |
+| 3279 | LR-EDIT-DETAIL-DENOISE: AI Denoise for finished pictures (JPEG, PNG, TIFF …) with a model of their own | SKIP | AI denoise feature for finished pictures; large | (r6 PR) |
+| 3281 | Develop exports from a source at least twice the output size | SKIP | export source level change (memory/time), overlaps 3304; fork's export path diverged | (r6 PR) |
+| 3282 | segment: opt-in CUDA device for SAM 3 on Linux and Windows | SKIP | opt-in CUDA device; native dependency, unverifiable here | (r6 PR) |
+| 3283 | Refuse a signed or malformed Content-Length in HTTP responses | ADOPT | signed or malformed Content-Length refused (fetch) | (r6 PR) |
+| 3284 | Issue #3250: choose how many of a person's faces a name suggestion is based on | SKIP | face feature, UI settings | (r6 PR) |
+| 3285 | Issue #3246: choose the face that shows a person in People | SKIP | face feature, UI | (r6 PR) |
+| 3286 | FACES: a person's page finds its look-alikes in seconds, not minutes | SKIP | faces feature performance in fork-owned UI path; needs run | (r6 PR) |
+| 3287 | LR-BEHAV-BG-TASKS: an Auto Import taken out of the waiting line gives its files back (stacked on #1943) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3288 | MENU-VIEW-SORT: the Sort menus offer only what the view uses | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3289 | LR-FILT-SORT: a new sort order or reshuffle keeps the active photo in view | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3290 | LR-FILT-SORT: a shuffled grid says so in its header, with Reshuffle beside it | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3291 | LR-BEHAV-LOCALIZE: the translation report keeps same-named helpers of different files apart and reads a slider's text (stacked on #2907) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3294 | LR-FILT-SORT: Previous Shuffle and a Reshuffle shortcut (stacked on #3288) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
+| 3295 | MENU-BAR: merge the native menu's identical quit/about/settings branches (clippy::if_same_then_else) | SKIP | clippy-only | (r6 PR) |
+| 3296 | Issue #3293: README no longer lists an MCP mask helper | SKIP | not immediately valuable to fork users | (r6 PR) |
+| 3297 | Issue #3251: People card badge shows the full photo count | SKIP | UI badge | (r6 PR) |
+| 3298 | Issue #3272: AI masks are enlarged along the photo's edges, no outline under a raised Exposure | SKIP | large pipeline mask refinement (guided filter in the render path); perf and look need a measured run | (r6 PR) |
+| 3301 | CI: simplify the detail prefetch texture guard | SKIP | clippy-only | (r6 PR) |
+| 3304 | #3270: exports of preview size develop the full sensor | SKIP | export source level change (memory/time), overlaps 3281; fork's export path diverged | (r6 PR) |
+| 3305 | ci(deps): bump storytold/craft-common-actions/.github/workflows/windows-arm64.yml from 8bb4e5ab95443171104ad88113fe1ef9b0e5ce3f to fa5ef18780cf5e7d5d3b8de068de56cffc83cac5 in the actions group | SKIP | upstream CI dependency bump | (r6 PR) |
+| 3306 | LR-FILT-SORT: the header's Reshuffle reads as a button beside the Shuffled label (stacked on #3290) | SKIP | UI/menu/accessibility change in fork-owned ui-egui or native menu; fork redesigned these | (r6 PR) |
