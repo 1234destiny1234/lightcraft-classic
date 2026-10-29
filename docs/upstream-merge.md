@@ -34,6 +34,8 @@ git remote add upstream ../lightcraft  # only if it is missing
      replaced), label renames, upstream's own CI and packaging, its docs and What's New, features that conflict with
      the fork's behaviour (e.g. the fork's drop rule: photo files at once, a folder opens the review).
    - When unsure, ask whether a user of the fork would notice the difference. If not, skip it.
+   - **Watchlist:** PRs in [`upstream-pr-reviews/watchlist.md`](upstream-pr-reviews/watchlist.md) are taken without a
+     fresh review once upstream approves them or merges them; check them in each review.
 3. **Port by cherry-pick**, one commit (or a small related group) at a time:
    ```sh
    git cherry-pick -x <hash>                            # -x records "(cherry picked from commit …)"
