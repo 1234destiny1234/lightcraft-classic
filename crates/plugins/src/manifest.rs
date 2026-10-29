@@ -38,6 +38,9 @@ pub const HOST_FEATURES: &[&str] = &[
     // `settings` in the manifest, `settings.get` / `settings.set`, dialogs that remember their
     // values (`remember`), and the `command.prepare` / `settings.prepare` hooks
     "settings",
+    // `libraryAdd` in the permissions and the `library.add` host call; `source` in the `command`
+    // and `command.prepare` requests
+    "libraryAdd",
 ];
 
 /// The manifest a plug-in returns from `lcc_manifest`.
