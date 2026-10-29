@@ -188,6 +188,13 @@ impl LensDb {
         self.best_lens(lens_make, name, camera, |l| l.names_exactly(name))
     }
 
+    /// The profile of `camera`'s built-in lens for EXIF lens text such as a [`spec_name`] ("6-72mm f/2.7-3.5"): only
+    /// profiles for the camera's own mount are considered, so another maker's lens with the same specification can't
+    /// win (as it could in [`find_lens`](Self::find_lens)'s match by name).
+    pub fn find_built_in_lens(&self, lens_model: &str, camera: &Camera) -> Option<&Profile> {
+        self.find_fixed_lens(&tokens(lens_model), camera)
+    }
+
     fn best_lens(&self, lens_make: Option<&str>, lens_model: &str, camera: Option<&Camera>, eligible: impl Fn(&Profile) -> bool) -> Option<&Profile> {
         let exif = tokens(lens_model);
         if exif.is_empty() {
