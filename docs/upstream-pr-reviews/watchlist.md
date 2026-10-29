@@ -23,5 +23,5 @@ Checked every 15 minutes while a release or merge round is running, otherwise at
 Check with:
 
 ```sh
-gh pr view <n> --repo storytold/lightcraft --json state,isDraft,reviewDecision,mergedAt
+gh pr view <n> --repo <upstream repo> --json state,isDraft,reviewDecision,mergedAt
 ```
