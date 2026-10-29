@@ -241,3 +241,36 @@ fn the_peoples_search_narrows_the_cards_by_name() {
     assert_eq!(h.app.ui.people_search, "");
     assert!(cards(&h).contains(&"person:Jane Doe".to_string()) && cards(&h).contains(&"person:John Roe".to_string()));
 }
+
+/// Issue #538: the pickers' cameras, lenses and keywords are listed again only when metadata changes. A rating
+/// rebuilt them from every photo, which made scrolling a large library crawl while the filter bar showed and
+/// anything else in the catalog changed. Each value is listed once, whatever other spellings sort between.
+#[test]
+fn picker_values_survive_changes_to_other_things() {
+    use lcc_catalog::{Op, Photo, PhotoId, Source};
+    let mut s = lcc_engine::Session::new();
+    for (i, camera) in ["NIKON Z 6_2", "Canon EOS R6", "NIKON Z 6_2", "nikon z 6_2", "NIKON Z 6_2"].into_iter().enumerate() {
+        let n = i as u64 + 1;
+        let mut p = Photo::new(
+            PhotoId(n),
+            Source::File { path: format!("/filter-values/{n}.jpg") },
+            &format!("{n}.jpg"),
+            "JPEG",
+            60,
+            40,
+            "2026-01-01T00:00:00",
+        );
+        p.meta.camera = camera.to_string();
+        s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    }
+    let mut app = LccApp::new(s, Services { png: None, ..Default::default() });
+    let before = app.caches.filter_values(&app.session.catalog);
+    assert_eq!(before.cameras, ["Canon EOS R6", "NIKON Z 6_2", "nikon z 6_2"]);
+    app.session.catalog.apply(Op::SetRating { id: PhotoId(1), rating: 4 }).unwrap();
+    let after = app.caches.filter_values(&app.session.catalog);
+    assert!(std::sync::Arc::ptr_eq(&before, &after), "a rating changes no camera, lens or keyword");
+    let mut meta = app.session.catalog.photo(PhotoId(2)).unwrap().meta.clone();
+    meta.camera = "ILCE-1".into();
+    app.session.catalog.apply(Op::SetMeta { id: PhotoId(2), meta: Box::new(meta) }).unwrap();
+    assert_eq!(app.caches.filter_values(&app.session.catalog).cameras, ["ILCE-1", "NIKON Z 6_2", "nikon z 6_2"]);
+}

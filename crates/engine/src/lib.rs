@@ -302,6 +302,8 @@ pub struct Session {
     /// Undo steps committed in this session, ever (the history drops its oldest past 1000, so
     /// its length can't tell how many steps a command just made; see [`Session::commits`]).
     commits: u64,
+    /// Undo steps the history has dropped past its 1000 ([`Session::undo_mark`]).
+    undo_dropped: u64,
     pub redo: Vec<UndoEntry>,
     /// Exact filesystem repairs from discarded history; catalog inverses stay discarded.
     pub(crate) pending_sidecar_repairs: Vec<rename::SidecarMove>,
@@ -580,6 +582,7 @@ impl Session {
             total: None,
             undo: Vec::new(),
             commits: 0,
+            undo_dropped: 0,
             redo: Vec::new(),
             pending_sidecar_repairs: Vec::new(),
             interaction: None,
@@ -789,6 +792,7 @@ impl Session {
         self.commits = self.commits.wrapping_add(1);
         if self.undo.len() > 1000 {
             let mut dropped = self.undo.remove(0);
+            self.undo_dropped = self.undo_dropped.wrapping_add(1);
             self.pending_sidecar_repairs.append(&mut dropped.retry_sidecars);
         }
         for mut dropped in self.redo.drain(..) {
@@ -903,6 +907,13 @@ impl Session {
     /// several steps compares before and after to merge them ([`Session::merge_undo`]).
     pub fn commits(&self) -> u64 {
         self.commits
+    }
+
+    /// Where the undo history stands, counting the steps it dropped past its cap: the difference
+    /// between two marks is how many undo steps were added in between, after any a command folded
+    /// into one ([`Session::merge_undo`]), which [`Session::commits`] still counts apart.
+    pub(crate) fn undo_mark(&self) -> u64 {
+        (self.undo.len() as u64).wrapping_add(self.undo_dropped)
     }
 
     pub fn merge_undo(&mut self, n: usize, label: &str) {
@@ -1812,6 +1823,8 @@ mod tests_organize;
 mod tests_persist;
 #[cfg(test)]
 mod tests_plugin_filters;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_plugin_library;
 #[cfg(test)]
 mod tests_prefs;
 #[cfg(test)]
