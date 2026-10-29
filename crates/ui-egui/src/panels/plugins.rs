@@ -142,7 +142,11 @@ fn begin_install(app: &mut LccApp, s: &mut State, path: &str) -> Result<(), Stri
     }
     let info = app.session.execute("plugin.inspectFile", &json!({"path": path})).map_err(|e| e.to_string())?;
     let grant = info["installed"]["granted"].clone();
-    let grant = if grant.is_object() { grant } else { json!({"catalog": false, "metadataWrite": false, "network": [], "fs": [], "programs": []}) };
+    let grant = if grant.is_object() {
+        grant
+    } else {
+        json!({"catalog": false, "metadataWrite": false, "libraryAdd": false, "network": [], "fs": [], "programs": []})
+    };
     s.pending = Some(Pending { path: path.to_string(), info, grant });
     s.open = true;
     Ok(())
@@ -806,7 +810,7 @@ enum Row {
 
 fn permission_rows(req: &Value) -> Vec<Row> {
     let mut v = Vec::new();
-    for k in ["catalog", "metadataWrite"] {
+    for k in ["catalog", "metadataWrite", "libraryAdd"] {
         if req[k].as_bool() == Some(true) {
             v.push(Row::Flag(k));
         }
@@ -831,6 +835,7 @@ impl Row {
                 }
             }
             Row::Flag("catalog") => tr("Read the catalog").to_string(),
+            Row::Flag("libraryAdd") => tr("Add files made from photos to the library").to_string(),
             Row::Flag(_) => tr("Write photo metadata").to_string(),
             Row::Host(h) => format!("{} {}", tr("Connect to"), h.as_str().unwrap_or("")),
             Row::Root(r) => {
