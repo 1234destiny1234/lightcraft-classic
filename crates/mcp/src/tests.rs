@@ -177,7 +177,7 @@ fn a_preset_depth_is_judged_against_the_format_written() {
     let base = std::env::temp_dir().join(format!("lc-mcp-preset-depth-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(&base).unwrap();
-    b.session.export_presets.push(lcc_engine::export::ExportPreset { name: "Deep".into(), params: json!({"bitDepth": 16}) });
+    b.session.export_presets.push(lcc_engine::export::ExportPreset { name: "Deep".into(), params: json!({"bitDepth": 16}), ..Default::default() });
     b.call("app.export", json!({"preset": "Deep", "path": base.join("output").to_string_lossy(), "longEdge": 32})).unwrap();
     let bytes = std::fs::read(base.join("output")).unwrap();
     assert!(bytes.starts_with(b"\x89PNG") && bytes[24] == 16, "a 16-bit PNG: {:?}", bytes.get(..25));

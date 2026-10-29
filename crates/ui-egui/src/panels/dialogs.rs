@@ -2238,7 +2238,7 @@ fn export_body(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, id: egui:
 /// Loads the export preset `name` into the dialog. Where to export (the destination mode and the
 /// folder) stays as set unless the preset says.
 #[allow(clippy::too_many_arguments)]
-fn load_export_preset(
+pub(crate) fn load_export_preset(
     app: &LccApp,
     name: &str,
     opts: &mut lcc_engine::export::ExportOptions,
@@ -2259,6 +2259,14 @@ fn load_export_preset(
     *resize = o.resize.unwrap_or_default();
     *limit_kb = o.limit_kb.unwrap_or(0);
     *opts = o;
+}
+
+/// If the Export dialog is open, select and load the export preset `name` into it.
+pub(crate) fn apply_export_preset_to_open_dialog(app: &mut LccApp, ctx: &egui::Context, name: &str) {
+    let Some(Dialog::Export { mut opts, mut full_size, mut resize, preset_name, mut limit_kb, mut dir }) = app.ui.dialog.clone() else { return };
+    load_export_preset(app, name, &mut opts, &mut full_size, &mut resize, &mut limit_kb, &mut dir);
+    app.ui.dialog = Some(Dialog::Export { opts, full_size, resize, preset_name, limit_kb, dir });
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("export-preset-picked"), name.to_string()));
 }
 
 /// The dialog's settings as preset params, with the folder when the export goes to a specific
@@ -2360,8 +2368,12 @@ fn export_presets(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, max_h:
         }
     });
     ui.horizontal(|ui| {
-        if crate::widgets::text_button(ui, "exportImportPresets", crate::i18n::tr("Import…"), false).clicked() {
-            let _ = app.run("file.importPresets", json!({}));
+        if crate::widgets::text_button(ui, "exportImportPresets", crate::i18n::tr("Import…"), false).clicked()
+            && let Ok(v) = app.run("file.importPresets", json!({}))
+            && let Some(first) = v["exportPresets"].as_array().and_then(|a| a.iter().find(|r| r["skipped"] != true)).and_then(|r| r["name"].as_str())
+        {
+            load_export_preset(app, first, opts, full_size, resize, limit_kb, dir);
+            picked = first.to_string();
         }
         let any = presets.iter().any(|(_, b)| !*b);
         let r = ui.add_enabled_ui(any, |ui| crate::widgets::text_button(ui, "exportExportPresets", crate::i18n::tr("Export…"), false)).inner;
@@ -2431,7 +2443,6 @@ const EXPORT_GROUPS: [(&str, &[&str]); 7] = [
 pub(crate) fn export_screen(app: &mut LccApp, ctx: &egui::Context) {
     use lcc_engine::export::DestinationMode as D;
     let Some(Dialog::Export { mut opts, mut full_size, mut resize, mut preset_name, mut limit_kb, mut dir }) = app.ui.dialog.clone() else { return };
-    let at_start = app.ui.dialog.clone();
     let t = Tokens::get(ctx);
     let screen = ctx.content_rect();
     let roomy = screen.width() >= crate::settings_screen::ROOMY;
@@ -2588,7 +2599,7 @@ pub(crate) fn export_screen(app: &mut LccApp, ctx: &egui::Context) {
     });
     ctx.memory_mut(|m| m.set_modal_layer(shown.response.layer_id));
     // the rows may have closed Export or opened another dialog (a folder picker, Watermark…)
-    if app.ui.dialog != at_start {
+    if !matches!(app.ui.dialog, Some(Dialog::Export { .. })) {
         return;
     }
     let now = Some(Dialog::Export { opts, full_size, resize, preset_name, limit_kb, dir });
@@ -2623,6 +2634,7 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
     };
     let t = Tokens::get(ui.ctx());
     let ExportForm { opts, full_size, resize, preset_name, limit_kb, dir } = f;
+    let picked_id = egui::Id::new("export-preset-picked");
     if presets_here {
         let n = app.session.selection.ids.len().max(1);
         crate::dialog_frame::group_begin(ui, None);
@@ -2633,14 +2645,16 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
         // Preset: load a built-in or saved set of options into the dialog
         field(ui, "Preset", |ui| {
             let mut chosen = None;
-            let c = crate::widgets::combo_box("exportPreset").width(220.0).selected_text(crate::i18n::tr("Choose…")).show_ui(ui, |ui| {
+            let cur_picked = ui.data(|d| d.get_temp::<String>(picked_id)).unwrap_or_default();
+            let selected = if cur_picked.is_empty() { crate::i18n::tr("Choose…").to_string() } else { cur_picked.clone() };
+            let c = crate::widgets::combo_box("exportPreset").width(220.0).selected_text(selected).show_ui(ui, |ui| {
                 let mut builtin = true;
                 for (p, b) in app.session.all_export_presets() {
                     if builtin && !b {
                         ui.separator();
                     }
                     builtin = b;
-                    if ui.selectable_label(false, crate::i18n::builtin_label(&p.name, b)).clicked() {
+                    if ui.selectable_label(cur_picked.eq_ignore_ascii_case(&p.name), crate::i18n::builtin_label(&p.name, b)).clicked() {
                         chosen = Some(p.name);
                     }
                 }
@@ -2648,8 +2662,15 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
             crate::widgets::register(ui.ctx(), "combo:exportPreset", c.response.rect);
             if let Some(name) = chosen {
                 load_export_preset(app, &name, opts, full_size, resize, limit_kb, dir);
+                ui.data_mut(|d| d.insert_temp(picked_id, name));
             }
         });
+    }
+    let picked = ui.data(|d| d.get_temp::<String>(picked_id)).unwrap_or_default();
+    if let Some(p) = app.session.export_presets.iter().find(|p| p.name.eq_ignore_ascii_case(&picked)).filter(|p| !p.unmapped.is_empty()) {
+        let text = crate::i18n::tr_format!("Not carried over from “{}” (configure manually): {}", p.name, p.unmapped.join(", "));
+        let r = crate::dialog_frame::note(ui, egui::RichText::new(text).color(t.text_dim));
+        crate::widgets::register(ui.ctx(), "label:exportPresetUnmapped", r.rect);
     }
 
     // ---- Export Location
