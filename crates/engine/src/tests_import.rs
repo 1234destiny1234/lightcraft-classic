@@ -114,16 +114,16 @@ fn expand_report_subfolders_respects_inclusion_flag() {
     let nested_norm = nested_file.to_string_lossy().replace('\\', "/");
 
     // With subfolders: true -> both root and nested photos are discovered
-    let with_sub = crate::import::expand_report_subfolders(&[src_str.clone()], None, crate::walk::Limits::default(), true);
+    let with_sub = crate::import::expand_report_subfolders(std::slice::from_ref(&src_str), None, crate::walk::Limits::default(), true);
     let files_with_sub = slashes(with_sub.files);
     assert!(files_with_sub.contains(&root_norm));
     assert!(files_with_sub.contains(&nested_norm));
     assert_eq!(files_with_sub.len(), 2);
 
     // With subfolders: false -> only root photo is discovered; nested directory is excluded
-    let without_sub = crate::import::expand_report_subfolders(&[src_str.clone()], None, crate::walk::Limits::default(), false);
+    let without_sub = crate::import::expand_report_subfolders(std::slice::from_ref(&src_str), None, crate::walk::Limits::default(), false);
     let files_without_sub = slashes(without_sub.files);
-    assert_eq!(files_without_sub, vec![root_norm.clone()]);
+    assert_eq!(files_without_sub, vec![root_norm]);
     assert_eq!(without_sub.unsupported, 1, "notes.txt counted as unsupported, sidecar is ignored");
 
     let _ = std::fs::remove_dir_all(src);
@@ -142,22 +142,12 @@ fn expand_report_subfolders_honours_skip_in_non_recursive_mode() {
     let src_str = src.to_string_lossy().to_string();
 
     // With subfolders: false and skip: Some(&lib), files in lib are skipped
-    let e = crate::import::expand_report_subfolders(
-        &[src_str.clone()],
-        Some(&lib),
-        crate::walk::Limits::default(),
-        false,
-    );
+    let e = crate::import::expand_report_subfolders(std::slice::from_ref(&src_str), Some(&lib), crate::walk::Limits::default(), false);
     assert_eq!(e.files.len(), 1);
     assert!(e.files[0].replace('\\', "/").ends_with("root.jpg"));
 
     // If skip matches the scanned directory itself, nothing is expanded
-    let e_skip_self = crate::import::expand_report_subfolders(
-        &[src_str],
-        Some(&src),
-        crate::walk::Limits::default(),
-        false,
-    );
+    let e_skip_self = crate::import::expand_report_subfolders(std::slice::from_ref(&src_str), Some(&src), crate::walk::Limits::default(), false);
     assert_eq!(e_skip_self.files.len(), 0);
 
     let _ = std::fs::remove_dir_all(src);

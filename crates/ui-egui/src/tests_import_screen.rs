@@ -158,7 +158,6 @@ fn the_rail_lists_cards_and_the_watched_folder_and_picking_one_scans_it() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-
 #[test]
 fn dialog_import_with_path_and_paths_populates_candidates() {
     let tmp = std::env::temp_dir().join(format!("lcc-import-dialog-cmd-{}", std::process::id()));

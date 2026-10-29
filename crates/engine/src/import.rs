@@ -526,12 +526,7 @@ pub fn expand_report(paths: &[String], skip: Option<&Path>, limits: crate::walk:
 }
 
 /// [`expand_report`] with an option to include or exclude subfolders of directory paths.
-pub fn expand_report_subfolders(
-    paths: &[String],
-    skip: Option<&Path>,
-    limits: crate::walk::Limits,
-    subfolders: bool,
-) -> Expansion {
+pub fn expand_report_subfolders(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits, subfolders: bool) -> Expansion {
     expand_report_noting(paths, skip, limits, None, subfolders)
 }
 
@@ -551,11 +546,7 @@ fn expand_report_noting(
             continue;
         }
         if p.is_dir() {
-            let walk_limits = if subfolders {
-                limits
-            } else {
-                crate::walk::Limits { max_depth: 1, ..limits }
-            };
+            let walk_limits = if subfolders { limits } else { crate::walk::Limits { max_depth: 1, ..limits } };
             // XMP sidecars are read with their photos, not skipped: they are left out of the count
             let mut sidecars = 0usize;
             let keep = |f: &Path| {
@@ -900,12 +891,7 @@ pub fn scan_with(input: ScanInput, paths: &[String], progress: &ScanProgress) ->
 }
 
 /// [`scan_with`] with an option to include or exclude subfolders of directory paths.
-pub fn scan_with_subfolders(
-    input: ScanInput,
-    paths: &[String],
-    progress: &ScanProgress,
-    subfolders: bool,
-) -> ScanOutput {
+pub fn scan_with_subfolders(input: ScanInput, paths: &[String], progress: &ScanProgress, subfolders: bool) -> ScanOutput {
     let expansion = expand_report_subfolders(paths, input.skip.as_deref(), crate::walk::Limits::default(), subfolders);
     let mut out = scan_files(input, expansion.files, progress);
     out.truncated = expansion.truncated;

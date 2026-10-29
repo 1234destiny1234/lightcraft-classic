@@ -105,7 +105,8 @@ pub(crate) fn show(app: &mut LccApp, ctx: &egui::Context) {
         }
         ui.painter().text(pos2(b.right() + 12.0, header.center().y), Align2::LEFT_CENTER, crate::i18n::tr("Import"), t.semibold(17.0), t.text);
         // where the photos come from: "Source" and the summary (both translated), right-aligned
-        let from = if d.immich { crate::i18n::tr("Immich").to_string() } else { crate::import::source_summary_with_subfolders(&d.sources, d.subfolders) };
+        let from =
+            if d.immich { crate::i18n::tr("Immich").to_string() } else { crate::import::source_summary_with_subfolders(&d.sources, d.subfolders) };
         if header.width() > 520.0 && !from.is_empty() {
             let g = ui.painter().layout(from, t.font(12.0), t.text_label, header.width() * 0.4);
             let x = header.right() - 16.0 - g.size().x;
