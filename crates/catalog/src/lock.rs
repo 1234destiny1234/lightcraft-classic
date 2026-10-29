@@ -163,7 +163,7 @@ impl Drop for LibraryLock {
     fn drop(&mut self) {
         if self.held {
             let path = self.dir.join(OWNER);
-            let ours = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<LockOwner>(&b).ok()).is_some_and(|o| o == self.owner);
+            let ours = crate::safe_file::read_no_follow(&path).ok().and_then(|b| serde_json::from_slice::<LockOwner>(&b).ok()).is_some_and(|o| o == self.owner);
             if ours {
                 let _ = std::fs::remove_file(&path);
             }
