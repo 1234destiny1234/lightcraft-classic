@@ -656,7 +656,7 @@ mod tests {
     }
 
     fn white_level(dng: &[u8]) -> Value {
-        let tiff = lightcraft_tiff::Tiff::parse(dng).expect("the DNG parses");
+        let tiff = lcc_tiff::Tiff::parse(dng).expect("the DNG parses");
         tiff.ifds[0].value(t::WHITE_LEVEL).cloned().expect("WhiteLevel is written")
     }
 
@@ -664,7 +664,7 @@ mod tests {
     /// spec doesn't allow and libtiff ignores ("Incompatible type for WhiteLevel").
     #[test]
     fn float_white_level_is_written_as_long() {
-        let dng = write_rendered_dng(2, 2, &[0.25; 12], &lightcraft_color::SRGB, &Default::default(), None).expect("writes");
+        let dng = write_rendered_dng(2, 2, &[0.25; 12], &lcc_color::SRGB, &Default::default(), None).expect("writes");
         assert_eq!(white_level(&dng), Value::Long(vec![1, 1, 1]));
     }
 
@@ -685,7 +685,7 @@ mod tests {
             white: vec![0.5],
             active_area: full,
             crop: full,
-            orientation: lightcraft_geom::Orientation::Normal,
+            orientation: lcc_geom::Orientation::Normal,
             color: crate::ColorData::default(),
             wb_multipliers: None,
             linearized: false,
