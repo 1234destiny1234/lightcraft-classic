@@ -57,7 +57,7 @@ commands:
                   docs/changelog/unreleased/ entries and that docs/whats-new.md is upstream's as last recorded;
                   --upstream records it after an upstream merge; --release gathers the changelog entries into
                   docs/changelog/<version>.md and deletes them
-  deny            cargo deny check licenses (deny.toml), skipped with a message if cargo-deny is missing
+  deny            cargo deny check licenses sources (deny.toml), skipped with a message if cargo-deny is missing
   shortcuts       regenerate docs/manual/keyboard-shortcuts.md from the command registry (builds lcc-cli)
   docs [--check]  render README.md.in and docs/**/*.md.in ({{app}}, {{binary}}, … from brand.toml) into
                   the .md next to each; --check fails when one is out of date
@@ -557,7 +557,9 @@ fn cmd_bench_keywords(rest: &[&str]) -> Result<(), String> {
     run(c, "bench_keywords")
 }
 
-/// `cargo deny check licenses` with deny.toml; a clear skip when cargo-deny isn't installed (CI installs it).
+/// `cargo deny check licenses sources` with deny.toml: every dependency's licence is allowed, and every
+/// crate comes from crates.io or a git repository `deny.toml` names. A clear skip when cargo-deny isn't
+/// installed (CI installs it).
 fn cmd_deny() -> Result<(), String> {
     let installed = cargo().args(["deny", "--version"]).output().is_ok_and(|o| o.status.success());
     if !installed {
@@ -565,8 +567,8 @@ fn cmd_deny() -> Result<(), String> {
         return Ok(());
     }
     let mut c = cargo();
-    c.args(["deny", "check", "licenses"]);
-    run(c, "cargo deny check licenses")
+    c.args(["deny", "check", "licenses", "sources"]);
+    run(c, "cargo deny check licenses sources")
 }
 
 /// The app's environment variable `<PREFIX>_<suffix>` (`env_prefix` from brand.toml), for the

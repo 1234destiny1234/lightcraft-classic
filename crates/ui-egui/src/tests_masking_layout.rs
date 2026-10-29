@@ -77,7 +77,8 @@ fn masking_long_names_and_describe_controls_stay_inside_the_panel() {
         for width in [250.0, 270.0, 520.0] {
             let (texts, widgets) = panel(width, 2.0, locale, true);
             let row = widgets.iter().find(|(id, _)| id == "mask:1").unwrap().1;
-            let name = texts.iter().find(|t| t.galley.job.text == LONG_NAME).unwrap();
+            // the name in the mask row (the panel also titles the mask's sliders with it, above)
+            let name = texts.iter().find(|t| t.galley.job.text == LONG_NAME && row.y_range().contains(t.pos.y + 1.0)).unwrap();
             assert!(name.galley.elided, "long mask names should be elided");
             assert!(
                 Rect::from_min_max(pos2(row.left() + 32.0, row.top()), pos2(row.right() - 28.0, row.bottom()))

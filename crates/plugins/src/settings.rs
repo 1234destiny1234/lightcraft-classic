@@ -73,7 +73,7 @@ impl SettingsStore {
     /// moves it aside).
     pub fn open(path: PathBuf) -> (SettingsStore, Option<String>) {
         let mut store = SettingsStore { path: Some(path.clone()), ..SettingsStore::default() };
-        let read = match crate::safe_io::read_checked(&path, MAX_SETTINGS_BYTES as u64) {
+        let read = match crate::safe_io::read_capped(&path, MAX_SETTINGS_BYTES as u64) {
             Ok(b) => serde_json::from_slice::<File>(&b)
                 .map_err(|e| e.to_string())
                 .and_then(|f| if f.format > FORMAT { Err(format!("written by a newer version (format {})", f.format)) } else { Ok(f) }),

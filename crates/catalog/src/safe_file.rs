@@ -585,7 +585,9 @@ mod tests {
             let _smb = full_sync_unsupported();
             write_atomic(&d.join("DSC_0001.xmp"), b"<x/>").unwrap();
         }
-        assert_eq!(plain_fsyncs_on_this_thread() - before, 2, "the file and its folder");
+        // (Windows can't open a folder to flush it: NTFS journals the rename, `sync_dir`)
+        let expected = if cfg!(windows) { 1 } else { 2 };
+        assert_eq!(plain_fsyncs_on_this_thread() - before, expected, "the file and its folder");
         assert_eq!(names(&d), vec!["DSC_0001.xmp"]);
         assert!(flush_unsupported(&enotsup()));
         assert!(!flush_unsupported(&io::Error::from(io::ErrorKind::StorageFull)));

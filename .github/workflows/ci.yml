@@ -166,6 +166,18 @@ jobs:
         if: env.FULL_CI == '1'
         with:
           tool: cargo-nextest
+      # A full run's debug test binaries fill mac0's disk (ld: errno 28, before 26.44.1); start clean when space is low.
+      - name: Free disk space
+        if: env.FULL_CI == '1' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          dir="${CARGO_TARGET_DIR:-target}"
+          free_gb=$(df -g "$HOME" | awk 'NR==2 {print $4}')
+          echo "free: ${free_gb} GB; target dir: $dir ($(du -sh "$dir" 2>/dev/null | cut -f1))"
+          if [ "${free_gb:-0}" -lt 40 ]; then
+            rm -rf "$dir/debug"
+            echo "removed $dir/debug; free now: $(df -g "$HOME" | awk 'NR==2 {print $4}') GB"
+          fi
       # clippy --all-targets already compiles everything the fast gate needs; the full run builds for the tests
       - name: build
         if: env.FULL_CI == '1'

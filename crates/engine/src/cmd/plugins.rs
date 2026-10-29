@@ -142,6 +142,10 @@ impl HostApi for SessionHost<'_> {
         self.0.execute("photo.setMeta", &Value::Object(p)).map_err(|e| e.to_string())
     }
 
+    fn library_add(&mut self, params: &Value) -> std::result::Result<Value, String> {
+        super::plugin_library::add(self.0, params)
+    }
+
     fn find_program(&mut self, program: &lcc_plugins::ProgramDecl) -> Vec<lcc_plugins::Found> {
         self.0.desktop.find_program(program)
     }
@@ -319,12 +323,21 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
     let command = str_param(p, "command").ok_or_else(|| bad(C, "missing `command`"))?;
     let args = p.get("args").cloned().unwrap_or(Value::Null);
     let selection: Vec<String> = s.targets(p)?.iter().map(|i| i.0.to_string()).collect();
+    let source = source_param(s, p, C)?;
     let lib = s.plugin_library.clone();
     let mut host = SessionHost(s);
-    let r = with_library(&lib, |m| m.run_command(id, command, &args, &selection, &mut host).map_err(|e| plugin_err(C, e)));
+    let r = with_library(&lib, |m| m.run_command_from(id, command, &args, &selection, &source, &mut host).map_err(|e| plugin_err(C, e)));
     // the command may have written the plug-in's own fields
     sync_fields(s);
     r
+}
+
+/// The `source` a command gets: the one in `p`, checked, else the Library source `s` shows.
+fn source_param(s: &Session, p: &Value, cmd: &str) -> Result<Value> {
+    match p.get("source") {
+        None | Some(Value::Null) => Ok(super::plugin_library::source(s)),
+        Some(v) => super::plugin_library::checked_source(v).map_err(|e| bad(cmd, e)),
+    }
 }
 
 fn commands(_: &mut Session, _: &Value) -> Result<Value> {
@@ -363,10 +376,11 @@ fn prepare(s: &mut Session, p: &Value) -> Result<Value> {
     let id = id_param(p, C)?;
     let command = str_param(p, "command").ok_or_else(|| bad(C, "missing `command`"))?;
     let selection: Vec<String> = s.targets(p)?.iter().map(|i| i.0.to_string()).collect();
+    let source = source_param(s, p, C)?;
     let lib = s.plugin_library.clone();
     let mut host = SessionHost(s);
     with_library(&lib, |m| {
-        Ok(match m.prepare_command(id, command, &selection, &mut host).map_err(|e| plugin_err(C, e))? {
+        Ok(match m.prepare_command_from(id, command, &selection, &source, &mut host).map_err(|e| plugin_err(C, e))? {
             lcc_plugins::Prepared::Dialog { fields, error } => {
                 let values = m.command_values(id, command, &fields);
                 json!({"dialog": fields_with_values(&fields, &values), "error": error})
@@ -592,14 +606,25 @@ impl ExportHooks {
 /// A catalog request a plug-in made from a worker thread ([`relay_host`]), answered on the thread that owns
 /// the session with [`HostRequest::answer`].
 pub struct HostRequest {
-    /// `None`: `metadata.setStandard`; else the catalog read.
-    method: Option<String>,
+    /// The host call: a catalog read, `metadata.setStandard` or `library.add`.
+    method: Relayed,
     params: Value,
     reply: std::sync::mpsc::Sender<std::result::Result<Value, String>>,
     /// Who got to the request first: the session's thread taking it (`TAKEN`) or a caller
     /// that gave up waiting (`ABANDONED`), so a request is never run after its caller was
     /// told it failed.
     state: std::sync::Arc<std::sync::atomic::AtomicU8>,
+}
+
+/// A host call [`RelayHost`] hands to the session's thread.
+#[derive(Clone, Debug)]
+pub(super) enum Relayed {
+    /// A catalog read (`catalog.query`, …).
+    Catalog(String),
+    /// `metadata.setStandard`.
+    SetMetadata,
+    /// `library.add`.
+    LibraryAdd,
 }
 
 const WAITING: u8 = 0;
@@ -616,8 +641,9 @@ impl HostRequest {
         }
         let mut host = SessionHost(s);
         let r = match &self.method {
-            Some(m) => host.catalog(m, &self.params),
-            None => host.set_metadata(&self.params),
+            Relayed::Catalog(m) => host.catalog(m, &self.params),
+            Relayed::SetMetadata => host.set_metadata(&self.params),
+            Relayed::LibraryAdd => host.library_add(&self.params),
         };
         let _ = self.reply.send(r);
     }
@@ -636,7 +662,7 @@ impl RelayHost {
         RelayHost(tx, desktop)
     }
 
-    fn ask(&self, method: Option<String>, params: &Value) -> std::result::Result<Value, String> {
+    fn ask(&self, method: Relayed, params: &Value) -> std::result::Result<Value, String> {
         let (reply, rx) = std::sync::mpsc::channel();
         let state = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(WAITING));
         self.0.send(HostRequest { method, params: params.clone(), reply, state }).map_err(|_| "the catalog is closed".to_string())?;
@@ -645,7 +671,7 @@ impl RelayHost {
 
     /// [`RelayHost::ask`], giving up after `limit` unless the session's thread has already taken
     /// the request (then its answer is awaited: it may have written already).
-    pub(super) fn ask_within(&self, method: Option<String>, params: &Value, limit: std::time::Duration) -> std::result::Result<Value, String> {
+    pub(super) fn ask_within(&self, method: Relayed, params: &Value, limit: std::time::Duration) -> std::result::Result<Value, String> {
         use std::sync::atomic::Ordering;
         let (reply, rx) = std::sync::mpsc::channel();
         let state = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(WAITING));
@@ -666,11 +692,15 @@ impl RelayHost {
 
 impl HostApi for RelayHost {
     fn catalog(&mut self, method: &str, params: &Value) -> std::result::Result<Value, String> {
-        self.ask(Some(method.to_string()), params)
+        self.ask(Relayed::Catalog(method.to_string()), params)
     }
 
     fn set_metadata(&mut self, params: &Value) -> std::result::Result<Value, String> {
-        self.ask(None, params)
+        self.ask(Relayed::SetMetadata, params)
+    }
+
+    fn library_add(&mut self, params: &Value) -> std::result::Result<Value, String> {
+        self.ask(Relayed::LibraryAdd, params)
     }
 
     fn find_program(&mut self, program: &lcc_plugins::ProgramDecl) -> Vec<lcc_plugins::Found> {
@@ -700,6 +730,10 @@ impl HostApi for HookSession<'_> {
 
     fn set_metadata(&mut self, params: &Value) -> std::result::Result<Value, String> {
         self.0.set_metadata(params)
+    }
+
+    fn library_add(&mut self, params: &Value) -> std::result::Result<Value, String> {
+        self.0.library_add(params)
     }
 
     fn find_program(&mut self, program: &lcc_plugins::ProgramDecl) -> Vec<lcc_plugins::Found> {
@@ -919,8 +953,8 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "plugin.grant", "Set Plug-in Permissions", [], None, "{id, grant} — replaces the grant (revokes what it leaves out, programs included; never more than requested). Granted `programs` may be repeated (kept) or left out (revoked), never added or widened: only the user allows those, in the Plugin Manager (an error, nothing changes) → granted", always, set_grant),
         cmd!(query "plugin.log", "Plug-in Log", [], None, "{id} → [lines]", always, log),
         cmd!(query "plugin.commands", "Plug-in Commands", [], None, "{} → [{plugin, pluginName, command, label, menu, dialog, prepare, values: what the dialog opens with (the last-run values of fields that remember, else defaults)}] of enabled plug-ins", always, commands),
-        cmd!(query "plugin.prepare", "Prepare Plug-in Command", [], None, "{plugin, command, ids?} — asks a command with `prepare` how to run on ids / the selection (others: their dialog as declared) → {dialog: [field + value], error: why the plug-in's own options are missing | null} | {run: args} | {message}; runs nothing", always, prepare),
-        cmd!(query "plugin.run", "Run Plug-in Command", [], None, "{plugin, command, args?: dialog values, ids?} — runs a plug-in menu command on ids / the selection → its result; args given are remembered for its dialog. A command with `prepare` is asked first: a message → {message, ran: false} and nothing runs; its own args are used when `args` is missing; args are checked against its dialog as prepared", always, run),
+        cmd!(query "plugin.prepare", "Prepare Plug-in Command", [], None, "{plugin, command, ids?, source?: {kind: album|smartAlbum|folder|allPhotos|other, id?, name?, path?} (default: the Library source shown)} — asks a command with `prepare` how to run on ids / the selection (others: their dialog as declared) → {dialog: [field + value], error: why the plug-in's own options are missing | null} | {run: args} | {message}; runs nothing", always, prepare),
+        cmd!(query "plugin.run", "Run Plug-in Command", [], None, "{plugin, command, args?: dialog values, ids?, source?: as plugin.prepare} — runs a plug-in menu command on ids / the selection, telling it the Library source it was started from (`source`, default: the one shown) → its result; args given are remembered for its dialog. A command with `prepare` is asked first: a message → {message, ran: false} and nothing runs; its own args are used when `args` is missing; args are checked against its dialog as prepared", always, run),
         cmd!(query "plugin.settings", "Plug-in Settings", [], None, "{id} → {id, fields: [field + value], values: {key: value}, error: why the plug-in's own options are missing | null}; kept for the whole app, defaults for what was never set", always, settings),
         cmd!(query "plugin.setSettings", "Set Plug-in Settings", [], None, "{id, values: {key: value (null: the default)}} — each value checked against its field (numbers clamped); an unknown key or a value that doesn't fit changes nothing → {id, values}", always, set_settings),
         cmd!(query "plugin.suggestMetadata", "Suggest Metadata (Plug-ins)", [], None, "{ids?} — asks metadata providers about the photos → [{plugin, ok: {suggestions}} | {plugin, error}]; writes nothing", always, suggest),
@@ -934,14 +968,14 @@ pub fn specs() -> Vec<CommandSpec> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// The manager is process-wide: tests that install plug-ins take turns, so one test's export
     /// hooks never hold another's plug-in busy.
     static TURN: Mutex<()> = Mutex::new(());
 
-    fn turn() -> MutexGuard<'static, ()> {
+    pub(crate) fn turn() -> MutexGuard<'static, ()> {
         TURN.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -1551,7 +1585,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&job).unwrap(), "1\n", "the files are written before the start");
         let started = desktop.requests();
         assert!(
-            matches!(started.as_slice(), [crate::desktop::Request::StartProgram { args, tmp, .. }] if args == &[job.display().to_string()] && tmp == &folder),
+            matches!(started.as_slice(), [crate::desktop::Request::StartProgram { args, tmp, .. }] if args == &[format!("{}/job.txt", folder.display())] && tmp == &folder),
             "{started:?}"
         );
         let rows: Vec<_> = s.activity.list().into_iter().filter(|t| t.kind == "pluginProgram").collect();
@@ -1757,14 +1791,15 @@ mod tests {
         let id = s.visible_cloned()[0].0;
         let (host, requests) = relay_host(&s);
         let late = json!({"ids": [id.to_string()], "title": "Too late"});
-        let e = host.ask_within(None, &late, std::time::Duration::from_millis(20)).unwrap_err();
+        let e = host.ask_within(Relayed::SetMetadata, &late, std::time::Duration::from_millis(20)).unwrap_err();
         assert!(e.contains("didn't answer"), "{e}");
         requests.recv().unwrap().answer(&mut s);
         let title = s.execute("photo.inspect", &json!({"id": id})).unwrap()["meta"]["title"].clone();
         assert_ne!(title, "Too late", "the abandoned write was not made");
 
         // taken in time: the answer comes back even when it arrives after the limit
-        let worker = std::thread::spawn(move || host.ask_within(Some("catalog.stats".into()), &json!({}), std::time::Duration::from_secs(2)));
+        let worker =
+            std::thread::spawn(move || host.ask_within(Relayed::Catalog("catalog.stats".into()), &json!({}), std::time::Duration::from_secs(2)));
         let taken = requests.recv_timeout(std::time::Duration::from_secs(20)).unwrap();
         use std::sync::atomic::Ordering;
         assert!(taken.state.compare_exchange(WAITING, TAKEN, Ordering::AcqRel, Ordering::Acquire).is_ok(), "taken before the limit");
