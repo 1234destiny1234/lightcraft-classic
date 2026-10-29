@@ -3,7 +3,7 @@
 Non-merge commits on upstream `main` that the fork lacked, judged one by one (policy: no merges, cherry-pick what
 helps; `docs/upstream-merge.md`).
 
-**Reviewed up to:** upstream/main `07bc2008d9457603bb77f6b3de33a901db75a8c4` (2026-10-28, r5: rows below from 7ebbb17a8). Before that: `c9860ea7a3fa367451acd9d8cf23538c345192c6` (2026-10-27): nothing new taken (r4): the unlisted commits after `c7961df10` are upstream file-layout refactors (they only move files, and would conflict with every fork file they touch), and the docking follow-ups stay deferred as below. Before that: `c7961df10` against Chromaforge main `be53dd149` (previous pass: `522beb0c3` against `a52c9de11`) (first pass: `31ec62cd0`, 2026-10-25).
+**Reviewed up to:** upstream/main `77c0a6adfa7db6e4f79b80843c0c578e5f16dee1` (2026-10-29, r6: ca69e74b6 taken, the rest of the 57 commits are clippy refactors, installer and release work; PRs 3192-3306 are in open-2930-up.md). Before that: upstream/main `07bc2008d9457603bb77f6b3de33a901db75a8c4` (2026-10-28, r5: rows below from 7ebbb17a8). Before that: `c9860ea7a3fa367451acd9d8cf23538c345192c6` (2026-10-27): nothing new taken (r4): the unlisted commits after `c7961df10` are upstream file-layout refactors (they only move files, and would conflict with every fork file they touch), and the docking follow-ups stay deferred as below. Before that: `c7961df10` against Chromaforge main `be53dd149` (previous pass: `522beb0c3` against `a52c9de11`) (first pass: `31ec62cd0`, 2026-10-25).
 
 Taken commits are cherry-picked with `-x`; crate and app-struct names were rewritten to the fork's, upstream's file
 `format` tag for print templates went into `crates/engine/src/legacy.rs` (as for slideshow templates), and doc rows
@@ -85,6 +85,63 @@ Taken commits are cherry-picked with `-x`; crate and app-struct names were rewri
 | 30d0a3705 | Add a single-photo export benchmark (#3168) | taken | branch `upr/export-perf-3168` |
 | 3ce8dbc55 | Drop copies and libm calls from 8-bit export encoding (#3168) | taken | hand port to the fork's `export.rs`; hash-pinned tests replaced by behavioural ones |
 | 93487af3b | Cut serial work from raw development and GPU transfers (#3168) | deferred | conflicts with the fork's checked GPU buffer creation and raw memory check; needs a hand port and a GPU run |
+| ca69e74b6 | fix(raw): check opcode byte counts without overflow | taken | hand port (opcode tests live in opcodes.rs here); test kept as a hostile-input check |
+| ea9130676 | feat(installer): default to a per-user the app folder | skipped | upstream Windows installer |
+| bf8692098 | fix(installer): address scope and ARM64 review feedback | skipped | upstream Windows installer |
+| 148cc09be | fix(installer): harden install-policy checks and packaging-lint workflow | skipped | upstream Windows installer |
+| 3d40cf08e | docs(installer): describe the per-user default install location and scope | skipped | upstream Windows installer |
+| 51ecbfece | docs(installer): note that the 32-bit all-users folder is Program Files (x86); tidy wording | skipped | upstream Windows installer |
+| ea5db140f | docs(installer): say that silent installs are per-user and when the scope page appears | skipped | upstream Windows installer |
+| 79f662a58 | fix(installer): resolve the wizard scope and folder correctly | skipped | upstream Windows installer |
+| b0485b042 | fix(installer): check the exact architecture-specific machine folder | skipped | upstream Windows installer |
+| 97eb5fdb8 | ci: use storytold/craft-common-actions at the merged installer-policy commit | skipped | upstream Windows installer |
+| 59d482578 | test(installer): cover the compiled folder searches, resolver chains and wizard folder replay | skipped | upstream Windows installer |
+| 5dea67e34 | docs(installer): say that an upgrade reuses the recorded folder even if it was deleted | skipped | upstream Windows installer |
+| 37b2e523a | Merge pull request #3104 from Jeremy8776/feat/install-scope-policy | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 56b5c8b07 | Scan the whole repository again in SonarCloud (#3224) | skipped | upstream release, packaging or CI |
+| 96c319030 | chore(clippy): enforce workspace lint rules | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| c7ef259f3 | refactor(heif): isolate SPS VUI parsing | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 59083081a | fix(sysmem): inherit workspace Clippy denies | skipped | workspace lint inheritance; no user-visible gain, conflicts with fork manifests |
+| 32e487456 | docs: explain workspace lint inheritance | skipped | upstream docs |
+| 38c323221 | refactor(meta): isolate descriptive metadata merging | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| c1766c016 | refactor(scenes): model water lighting parameters | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 2c7d98b5e | refactor(raw): separate DNG metadata and opcode parsing | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 196a0c1a4 | docs: require lint inheritance for new crates | skipped | upstream docs |
+| 2f42ff894 | refactor(pipeline): group pixel finish parameters | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| a3da2d104 | refactor(denoise): model Bayer tile regions | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 694b237f0 | refactor(faces): model crop and plane shift inputs | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| de6cb3cd4 | refactor(codecs): separate TIFF sample encoders | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 33252920e | refactor(denoise): model installation requests | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| e8f52cc07 | refactor(print): define blit rectangles | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 9e1483388 | refactor(import): separate Lightroom collection staging | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 9c1ea7311 | refactor(gpu): extract neural plan validation | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 47839a61d | refactor(bench): dispatch specialized render modes | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 4d8369b09 | test(engine): factor complex regression scenarios | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| c9d44f780 | style(engine): expand module imports explicitly | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| b298c79a7 | docs: correct clippy indexing guidance | skipped | upstream docs |
+| eeb63636e | docs: clarify crate lint attribute placement | skipped | upstream docs |
+| 5b5ddc390 | fix(engine): import denoise model and gpu names explicitly | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 6774d1419 | refactor(ui-egui): replace wildcard imports with explicit lists | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 71bf82f7b | refactor(ui-egui): split run_ui_command into parts and per-command functions | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 2f3002bc5 | refactor(ui-egui): split preset import and find-missing commands | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 63755f8a2 | refactor(ui-egui): split the global shortcut dispatcher | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 627804c16 | refactor(ui-egui): split import finish and print settings | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 335defee4 | refactor(ui-egui): one function per dialog body | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 8c3dd7ebd | refactor(ui-egui): split dialog frame into title, buttons and confirm | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| b74612513 | refactor(ui-egui): split the Export dialog body into sections | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 7b4236bc8 | refactor(ui-egui): pass related arguments as small structs | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 620826cac | refactor(ui-egui): shorten functions that format localized messages | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 4ed9a5c86 | refactor(ui-egui): split the grid cell and context menu | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| f858578f8 | refactor(ui-egui): split the detail view, mask overlay and denoise panel | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| ce3ce0777 | refactor(ui-egui): split the top bar and slider widget | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| f6489e60d | refactor(app): import prefs and GPU crash names explicitly | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 6e5423255 | test: factor long UI and MCP scenarios into helpers | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 307ecb981 | fix(ui-egui): keep the Export dialog's original spacing before the preset row | skipped | clippy/lint refactor of code the fork has restructured or fork-owned UI |
+| 59a5d00c6 | Merge pull request #3111 from dylanmtaylor/sonar/enforce-clippy-standards | skipped | workspace lint inheritance; no user-visible gain, conflicts with fork manifests |
+| aaf532c52 | macOS packaging: retry stapler when Apple's CloudKit drops the connection | skipped | upstream release, packaging or CI |
+| e381c1ae6 | Release 0.15.0 | skipped | upstream release, packaging or CI |
+| e2d18b5fb | Grant network access so update checks can reach GitHub (#3269) | skipped | upstream release, packaging or CI |
+| 77c0a6adf | Honor CARGO_BUILD_TARGET in FreeBSD packaging for aarch64 release builds (#3275) | skipped | upstream release, packaging or CI |
 
 ### egui 0.37 (deferred, 2026-10-26)
 
