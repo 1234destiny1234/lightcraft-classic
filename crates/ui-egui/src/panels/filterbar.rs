@@ -61,7 +61,7 @@ fn toggle(ui: &mut egui::Ui, id: &str, on: bool, tip: &str, draw: impl FnOnce(&e
 /// A dropdown showing `current`; `items` lists its (label, filter patch, selected) rows. It runs only while the
 /// dropdown is open: a metadata picker lists every camera, lens or keyword of the library, and building those rows
 /// on every frame made scrolling the grid under the bar stutter in a large library (issue #538).
-fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: bool, items: impl FnOnce() -> Vec<(String, Value, bool)>) {
+fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: bool, items: impl FnOnce(&mut LccApp) -> Vec<(String, Value, bool)>) {
     let t = Tokens::get(ui.ctx());
     let r = crate::widgets::dropdown(
         ui,
@@ -102,7 +102,7 @@ fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: 
             ui.separator();
         }
         let needle = query.to_lowercase();
-        let items = items();
+        let items = items(app);
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
             for (n, (label, patch, sel)) in items.iter().enumerate() {
                 // the "Any …" row (a patch that only clears: nulls and empty lists) always stays
@@ -173,7 +173,7 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         RatingOp::Exactly => "=",
         RatingOp::AtMost => "≤",
     };
-    picker(app, ui, "ratingOp", op_label, false, || {
+    picker(app, ui, "ratingOp", op_label, false, |_| {
         [("≥  at least", "atLeast", RatingOp::AtLeast), ("=  exactly", "exactly", RatingOp::Exactly), ("≤  at most", "atMost", RatingOp::AtMost)]
             .into_iter()
             .map(|(l, k, op)| (l.to_string(), json!({"ratingOp": k}), f.rating_op == op))
@@ -245,7 +245,7 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         Some(_) => "Merged",
         None => kind_label,
     };
-    picker(app, ui, "kind", kind_label, f.kind.is_some() || f.merged.is_some(), || {
+    picker(app, ui, "kind", kind_label, f.kind.is_some() || f.merged.is_some(), |_| {
         [
             ("All types", Value::Null, None),
             ("Photos", json!("image"), Some(MediaKind::Image)),
@@ -266,7 +266,7 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         Some(true) => "Edited",
         Some(false) => "Unedited",
     };
-    picker(app, ui, "edited", edited_label, f.edited.is_some(), || {
+    picker(app, ui, "edited", edited_label, f.edited.is_some(), |_| {
         [("Edited or not", Value::Null, None), ("Edited", json!(true), Some(true)), ("Unedited", json!(false), Some(false))]
             .into_iter()
             .map(|(l, v, e)| (l.to_string(), json!({"edited": v}), f.edited == e))
@@ -279,7 +279,7 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
             Some(_) => "Not in Immich",
             None => "Immich: any",
         };
-        picker(app, ui, "immich", current, f.immich.is_some(), || {
+        picker(app, ui, "immich", current, f.immich.is_some(), |_| {
             [
                 ("Immich: any", Value::Null),
                 ("In Immich", json!("linked")),
@@ -296,7 +296,6 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
 
     // metadata pickers
     let ui: &mut egui::Ui = if two_rows { &mut row2 } else { &mut row1 };
-    let values = app.caches.filter_values(&app.session.catalog);
     // several values of one picker show any of them (issue #213); a value set elsewhere (the Keyword List
     // in the sidebar sets one keyword) counts as chosen, and the first toggle here moves it into the list
     for (id, key, list_key, all_label, current, list) in [
@@ -312,8 +311,10 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         };
         let shown = if shown.chars().count() > 22 { format!("{}…", shown.chars().take(21).collect::<String>()) } else { shown };
         let active = !chosen.is_empty();
-        let values = values.clone();
-        let items = move || {
+        let items = move |app: &mut LccApp| {
+            // the library's values, asked for only while the menu is open: listing them again after a metadata change
+            // goes through every photo
+            let values = app.caches.filter_values(&app.session.catalog);
             let all = match id {
                 "camera" => &values.cameras,
                 "lens" => &values.lenses,
@@ -348,7 +349,7 @@ pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
         (None, Some(label)) => label,
         (None, None) => "Faces".to_string(),
     };
-    picker(app, ui, "faces", &shown_faces, f.faces.is_some(), move || face_items);
+    picker(app, ui, "faces", &shown_faces, f.faces.is_some(), move |_| face_items);
 
     // the Metadata columns' switch (issue #218)
     let on = !app.ui.filter_columns.is_empty();

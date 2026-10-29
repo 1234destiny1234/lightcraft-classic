@@ -92,7 +92,10 @@ fn host_calls_follow_the_grant() {
     assert!(e.to_string().contains("permission `catalog`"), "{e}");
     // a grant beyond the request is cut back to it
     let g = m
-        .set_grant("test.plugin", Permissions { catalog: true, metadata_write: true, network: vec!["x.com".into()], fs: vec![], programs: vec![] })
+        .set_grant(
+            "test.plugin",
+            Permissions { catalog: true, metadata_write: true, network: vec!["x.com".into()], fs: vec![], programs: vec![], ..Default::default() },
+        )
         .unwrap();
     assert_eq!(g, Permissions { catalog: true, ..Default::default() });
 }
@@ -105,6 +108,7 @@ fn unrequested_capabilities_are_refused() {
     let write = serde_json::json!({"method": "fs.writeText", "params": {"path": scratch, "text": "y"}}).to_string();
     for (req, needle) in [
         (r#"{"method":"metadata.setStandard","params":{}}"#, "metadataWrite"),
+        (r#"{"method":"library.add","params":{"path":"/x/a.tif","from":"1"}}"#, "libraryAdd"),
         (r#"{"method":"http.request","params":{"url":"https://example.com/"}}"#, "network"),
         (read.as_str(), "not inside a folder"),
         (write.as_str(), "not inside a folder"),
@@ -547,4 +551,57 @@ fn an_update_keeps_a_narrowed_program_grant_and_unticks_a_widened_one() {
     // and a program the old grant never had is not granted by an update
     m.install_bytes_by_user(&version(&PROGRAMS.replace(r#""linuxExe":"other2""#, r#""linuxExe":"other""#)), None, false).unwrap();
     assert_eq!(granted(&m), ["conv"]);
+}
+
+/// Sends its whole request to the host as `catalog.query`'s params (`{"method":"catalog.query",
+/// "params":<request>}`, built in front of and behind the request) and answers `{"message":"seen"}`:
+/// the host sees what each call was given.
+fn request_echo(manifest: &str) -> Vec<u8> {
+    let prefix = r#"{"method":"catalog.query","params":"#;
+    let reply = r#"{"ok":{"message":"seen"}}"#;
+    let handle = format!(
+        r#"(local.set $n (i32.const 0))
+    (block $done (loop $copy
+      (br_if $done (i32.ge_u (local.get $n) (i32.const {pl})))
+      (i32.store8 (i32.add (i32.sub (local.get $ptr) (i32.const {pl})) (local.get $n)) (i32.load8_u (i32.add (i32.const 4096) (local.get $n))))
+      (local.set $n (i32.add (local.get $n) (i32.const 1)))
+      (br $copy)))
+    (i32.store8 (i32.add (local.get $ptr) (local.get $len)) (i32.const 125))
+    (drop (call $call (i32.sub (local.get $ptr) (i32.const {pl})) (i32.add (local.get $len) (i32.const {pl1}))))
+    (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))"#,
+        pl = prefix.len(),
+        pl1 = prefix.len() + 1,
+        rl = reply.len()
+    );
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    module(manifest, 1, &handle, &format!(r#"(data (i32.const 4096) "{}")"#, esc(prefix)), reply)
+}
+
+/// Records the params of every catalog read.
+#[derive(Default)]
+struct Seen(Vec<Value>);
+
+impl lcc_plugins::HostApi for Seen {
+    fn catalog(&mut self, _: &str, params: &Value) -> Result<Value, String> {
+        self.0.push(params.clone());
+        Ok(json!([]))
+    }
+}
+
+/// A command and its prepare step get the Library source the command was started from; without
+/// one (an older caller), the request has no `source`.
+#[test]
+fn commands_and_prepare_steps_get_their_source() {
+    let manifest = r#"{"id":"test.plugin","name":"Test","version":"1.0.0","requires":["libraryAdd"],"permissions":{"catalog":true},"commands":[{"id":"go","label":"Go"},{"id":"ask","label":"Ask","prepare":true}]}"#;
+    let mut m = Manager::in_memory();
+    m.install_bytes(&request_echo(manifest), Some(all()), false).unwrap();
+    let album = json!({"kind": "album", "id": "7", "name": "Trip"});
+    let mut host = Seen::default();
+    m.run_command_from("test.plugin", "go", &json!({}), &["1".into()], &album, &mut host).unwrap();
+    assert_eq!(host.0.len(), 1);
+    assert_eq!((host.0[0]["hook"].as_str(), &host.0[0]["source"]), (Some("command"), &album), "the command gets its source");
+    m.prepare_command_from("test.plugin", "ask", &["1".into()], &album, &mut host).unwrap();
+    assert_eq!((host.0[1]["hook"].as_str(), &host.0[1]["source"]), (Some("command.prepare"), &album), "the prepare step gets it too");
+    m.run_command("test.plugin", "go", &json!({}), &[], &mut host).unwrap();
+    assert!(host.0[2].get("source").is_none(), "no source given, none sent: {}", host.0[2]);
 }
