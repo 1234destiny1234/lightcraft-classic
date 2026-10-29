@@ -283,6 +283,70 @@ fn scale_100k_grid_frames() {
     }
 }
 
+/// Issue #538 (ignored, run with `cargo test --release -p lcc-ui-egui scale_filter_bar -- --ignored --nocapture`):
+/// wheel-scroll frames on a 68k-photo library with cameras, lenses and keywords, with the Library Filter bar shown
+/// and hidden: on a still catalog, while a rating changes every frame, and while a photo's title does.
+#[test]
+#[ignore]
+fn scale_filter_bar_scroll() {
+    use std::time::Instant;
+    let ms = |t: Instant| t.elapsed().as_secs_f64() * 1e3;
+    let mut session = library_of(68_000);
+    for i in 0..68_000u64 {
+        let id = PhotoId(i + 1);
+        let Some(mut meta) = session.catalog.photo(id).map(|p| p.meta.clone()) else { continue };
+        meta.camera = format!("Camera {}", i % 25);
+        meta.lens = format!("Lens {} mm f/{}", 10 + i % 180, 1 + i % 8);
+        meta.keywords = (0..4).map(|k| format!("keyword {}", (i * 7 + k * 131) % 3000)).collect();
+        session.catalog.apply(Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
+    }
+    let app = LccApp::new(session, Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1600.0, 1000.0], 1.0);
+    h.app.ui.view = ViewMode::PhotoGrid;
+    h.app.ui.thumb_size = 160.0;
+    h.settle(SETTLE);
+    let canvas = h.app.canvas_rect.expect("grid drawn");
+    h.request("ui.move", json!({"x": canvas.center().x, "y": canvas.center().y}), T);
+    let mut rows = Vec::new();
+    for bar in [true, false] {
+        for churn in ["still", "rating", "title"] {
+            h.app.ui.filter_bar = bar;
+            h.settle(SETTLE);
+            let t = Instant::now();
+            for i in 0..30u64 {
+                let id = PhotoId(1 + i % 2);
+                match churn {
+                    "rating" => {
+                        h.app.session.catalog.apply(Op::SetRating { id, rating: (i % 5) as u8 }).unwrap();
+                    }
+                    "title" => {
+                        let mut meta = h.app.session.catalog.photo(id).unwrap().meta.clone();
+                        meta.title = format!("title {i}");
+                        h.app.session.catalog.apply(Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
+                    }
+                    _ => {}
+                }
+                h.request("ui.scroll", json!({"dy": if i % 2 == 0 { -400.0 } else { 400.0 }}), T);
+                h.step();
+            }
+            rows.push((bar, churn, ms(t) / 30.0));
+        }
+    }
+    for (bar, churn, v) in &rows {
+        eprintln!("filter bar {} | {churn:<6} changes | wheel-scroll frame: {v:.1} ms", if *bar { "shown " } else { "hidden" });
+    }
+    // what opening a metadata picker costs after a metadata change: the cameras, lenses and keywords listed again
+    let t = Instant::now();
+    let values = h.app.caches.filter_values(&h.app.session.catalog);
+    eprintln!(
+        "picker values listed again: {:.1} ms ({} cameras, {} lenses, {} keywords)",
+        ms(t),
+        values.cameras.len(),
+        values.lenses.len(),
+        values.keywords.len()
+    );
+}
+
 /// Issue #144: a double-click opens the loupe in Library by default (as in Lightroom Classic) and
 /// Develop when the preference is on; the setting survives a save/load of the settings.
 #[test]
