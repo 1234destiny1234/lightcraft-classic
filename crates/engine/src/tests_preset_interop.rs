@@ -200,6 +200,152 @@ fn lightroom_export_preset_maps_every_listed_setting() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Lightroom Classic `.lrtemplate` export preset files saved on disk store their keys without the
+/// `LR_` prefix (e.g. `format`, `jpeg_quality`, `size_doConstrain`, `outputSharpeningOn`,
+/// `embeddedMetadataOption`, `renamingTokensOn`, `tokens`, `collisionHandling`, `useWatermark`)
+/// alongside `export_bitDepth = 16`. Importing such a preset preserves every supported setting and
+/// clearly lists every unsupported setting.
+#[test]
+fn unprefixed_lightroom_classic_export_presets_retain_supported_settings_and_list_unsupported_ones() {
+    use crate::export::{
+        Conflict, DestinationMode, ExportFormat, MetadataPolicy, OutputSpace, ResizeMode, SharpenAmount, SharpenFor, TiffCompression,
+    };
+    let dir = temp_dir("export-lr-unprefixed");
+    let out = dir.join("exports");
+    std::fs::create_dir_all(&out).unwrap();
+    let jpeg_template = format!(
+        r#"s = {{
+	id = "3A1B0C55-0000-0000-0000-000000000099",
+	internalName = "Gallery Web",
+	title = "Gallery Web",
+	type = "Export",
+	value = {{
+		collisionHandling = "overwrite",
+		embeddedMetadataOption = "allExceptCameraInfo",
+		exportFiltersFromPlugins = {{
+			"com.example.plugin",
+		}},
+		exportServiceProvider = "com.adobe.ag.export.file",
+		export_bitDepth = 16,
+		export_colorSpace = "AdobeRGB",
+		export_destinationPathPrefix = "{folder}",
+		export_destinationPathSuffix = "Gallery",
+		export_destinationType = "specificFolder",
+		export_postProcessing = "openInPhotoshop",
+		export_useSubfolder = true,
+		extensionCase = "uppercase",
+		format = "JPEG",
+		includeVideoFiles = false,
+		initialSequenceNumber = 5,
+		jpeg_limitSize = 1200,
+		jpeg_quality = 0.85,
+		jpeg_useLimitSize = true,
+		outputSharpeningLevel = 3,
+		outputSharpeningMedia = "glossy",
+		outputSharpeningOn = true,
+		reimportExportedPhoto = true,
+		removeFaceMetadata = false,
+		removeLocationMetadata = true,
+		renamingTokensOn = true,
+		size_doConstrain = true,
+		size_doNotEnlarge = true,
+		size_maxHeight = 1080,
+		size_maxWidth = 1920,
+		size_resizeType = "wh",
+		size_resolution = 240,
+		size_resolutionUnits = "inch",
+		size_units = "pixels",
+		tokenCustomString = "Gallery",
+		tokens = "{{{{custom_token}}}}_{{{{image_filename_number_suffix}}}}-{{{{date_YYYYMMDD}}}}-{{{{naming_sequenceNumber_3Digits}}}}",
+		useWatermark = true,
+	}},
+	version = 0,
+}}
+"#,
+        folder = out.to_string_lossy().replace('\\', "\\\\")
+    );
+    let tiff_template = r#"s = {
+	id = "3A1B0C55-0000-0000-0000-000000000100",
+	internalName = "Print Master TIFF",
+	title = "Print Master TIFF",
+	type = "Export",
+	value = {
+		collisionHandling = "skip",
+		exportServiceProvider = "com.adobe.ag.export.file",
+		export_bitDepth = 16,
+		export_colorSpace = "ProPhotoRGB",
+		export_destinationType = "sourceFolder",
+		format = "TIFF",
+		minimizeEmbeddedMetadata = true,
+		outputSharpeningLevel = "standard",
+		outputSharpeningMedia = "matte",
+		outputSharpeningOn = true,
+		renamingTokensOn = false,
+		size_doConstrain = true,
+		size_doNotEnlarge = false,
+		size_maxHeight = 8,
+		size_maxWidth = 10,
+		size_resizeType = "dimensions",
+		size_resolution = 300,
+		size_resolutionUnits = "inch",
+		size_units = "inch",
+		tiff_compressionMethod = "compressionMethod_LZW",
+	},
+	version = 0,
+}
+"#;
+    let f1 = write(&dir.join("Gallery Web.lrtemplate"), &jpeg_template);
+    let f2 = write(&dir.join("Print Master TIFF.lrtemplate"), tiff_template);
+    let mut s = Session::new();
+    let r = s.execute("preset.import", &json!({"paths": [f1, f2]})).unwrap();
+    let rows = r["exportPresets"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{r}");
+
+    // 1. Gallery Web JPEG preset: dormant export_bitDepth = 16 does not reject JPEG, and all settings carry over
+    let params1 = s.export_params(&json!({"preset": "Gallery Web"})).unwrap();
+    let opts1 = ExportOptions::from_params(&params1).unwrap();
+    assert_eq!(opts1.format, ExportFormat::Jpeg);
+    assert_eq!(opts1.quality, 85);
+    assert_eq!(opts1.limit_kb, Some(1200));
+    assert_eq!(opts1.color_space, OutputSpace::AdobeRgb);
+    assert_eq!(opts1.ppi, 240);
+    let resize1 = opts1.resize.expect("resizing preserved");
+    assert_eq!(resize1.mode, ResizeMode::WidthHeight);
+    assert_eq!((resize1.value as u32, resize1.height, resize1.dont_enlarge), (1920, 1080, true));
+    assert_eq!((opts1.sharpen, opts1.sharpen_amount), (SharpenFor::Glossy, SharpenAmount::High));
+    assert_eq!((opts1.metadata, opts1.remove_location), (MetadataPolicy::AllExceptCamera, true));
+    assert_eq!(opts1.naming, "{custom}_{num}-{date:%Y%m%d}-{seq:3}");
+    assert_eq!((opts1.custom_text.as_str(), opts1.start_number), ("Gallery", 5));
+    assert_eq!(opts1.destination_mode, DestinationMode::SpecificFolder);
+    assert_eq!(opts1.subfolder, "Gallery");
+    assert_eq!(opts1.conflict, Conflict::Overwrite);
+    assert_eq!(params1["dir"].as_str(), Some(out.to_string_lossy().as_ref()));
+
+    // Unsupported settings are clearly listed on the import report and on the stored preset
+    let unmapped1: Vec<&str> = rows[0]["unmapped"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+    for expected in ["watermark", "plug-in", "after export", "add to this catalog", "person info", "uppercase", "video"] {
+        assert!(unmapped1.iter().any(|u| u.contains(expected)), "missing `{expected}` in {unmapped1:?}");
+    }
+
+    // 2. Print Master TIFF preset: 16-bit LZW TIFF, inch Dimensions sizing, minimizeEmbeddedMetadata -> Copyright
+    let params2 = s.export_params(&json!({"preset": "Print Master TIFF"})).unwrap();
+    let opts2 = ExportOptions::from_params(&params2).unwrap();
+    assert_eq!(opts2.format, ExportFormat::Tiff);
+    assert_eq!(opts2.bit_depth, Some(16));
+    assert_eq!(opts2.tiff_compression, TiffCompression::Lzw);
+    assert_eq!(opts2.color_space, OutputSpace::ProPhoto);
+    assert_eq!(opts2.ppi, 300);
+    let resize2 = opts2.resize.expect("inch dimensions sizing preserved");
+    assert_eq!(resize2.mode, ResizeMode::Dimensions);
+    assert_eq!((resize2.value as u32, resize2.height, resize2.dont_enlarge), (3000, 2400, false));
+    assert_eq!((opts2.sharpen, opts2.sharpen_amount), (SharpenFor::Matte, SharpenAmount::Standard));
+    assert_eq!(opts2.metadata, MetadataPolicy::Copyright);
+    assert_eq!(opts2.destination_mode, DestinationMode::SameAsOriginal);
+    assert_eq!(opts2.conflict, Conflict::Skip);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn naming_tokens_map_or_are_reported() {
     let (n, unknown) = export_preset_files::lr_naming("{{image_name}}_{{date_YYYY}}{{date_MM}}{{date_DD}}-{{naming_sequenceNumber_4Digits}}");
