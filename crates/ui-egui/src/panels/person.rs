@@ -63,20 +63,24 @@ pub fn parse(v: &Value) -> PersonPage {
     }
 }
 
-/// The page for `name`, asked for again only when the catalog changed, or (while the scan runs) at most once a second
-/// as it learns more faces.
+/// The page for `name`, asked for again only when the catalog or the view changed, or (while the scan runs) at most
+/// once a second as it learns more faces.
 fn page_for(app: &mut LccApp, name: &str, now: f64) -> Arc<PersonPage> {
     let (rev, indexed) = (app.session.catalog.revision, app.caches.faces_indexed);
-    if let Some((n, r, i, at, page)) = &app.caches.person_page
+    let view = app.session.view_stamp();
+    if let Some((n, v, r, i, at, page)) = &app.caches.person_page
         && n == name
+        && *v == view
         && *r == rev
         && (*i == indexed || now - *at < 1.0)
     {
         return page.clone();
     }
-    let v = app.session.execute("faces.person", &json!({"name": name})).unwrap_or(Value::Null);
+    // their faces, and the look-alikes among them, in the photos the library shows (the folder, album or year picked
+    // on the left, and the filter bar): the page follows the sidebar selection (#685)
+    let v = app.session.execute("faces.person", &json!({"name": name, "scope": "view"})).unwrap_or(Value::Null);
     let page = Arc::new(parse(&v));
-    app.caches.person_page = Some((name.to_string(), rev, indexed, now, page.clone()));
+    app.caches.person_page = Some((name.to_string(), view, rev, indexed, now, page.clone()));
     page
 }
 
@@ -252,8 +256,8 @@ pub(crate) fn handle_bulk_key(app: &mut LccApp, ctx: &egui::Context) -> bool {
     if !ctx.input(|i| i.modifiers == egui::Modifiers::NONE && i.key_pressed(egui::Key::A)) {
         return false;
     }
-    let Some((cached_name, cached_revision, _, _, page)) = &app.caches.person_page else { return false };
-    if *cached_name != name || *cached_revision != app.session.catalog.revision {
+    let Some((cached_name, cached_view, cached_revision, _, _, page)) = &app.caches.person_page else { return false };
+    if *cached_name != name || *cached_view != app.session.view_stamp() || *cached_revision != app.session.catalog.revision {
         return false;
     }
     let page = page.clone();
@@ -312,26 +316,32 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, name: &str) {
     });
     ui.add_space(6.0);
     if page.total == 0 {
-        super::empty_message(
-            ui,
-            ui.available_rect_before_wrap(),
-            "No faces by that name",
-            "They may have been renamed or removed. Go back to People",
-        );
+        // the page shows the photos the library shows: a person with faces elsewhere is not renamed or removed (#685)
+        let (title, body) = if super::view_narrowed(&app.session) {
+            (
+                "No faces in these photos",
+                "They may be in the rest of the library: choose All Photos, or clear the filter, to see everyone. Go back to People",
+            )
+        } else {
+            ("No faces by that name", "They may have been renamed or removed. Go back to People")
+        };
+        super::empty_message(ui, ui.available_rect_before_wrap(), title, body);
         return;
     }
     let dismissed = &app.ui.dismissed_faces;
     let more: Vec<&Face> = page.more.iter().filter(|f| !dismissed.contains(&(f.photo, f.index))).collect();
-    // what the "More" section says when it has no faces to show
+    // what the "More" section says when it has no faces to show: with a model the faces already embedded are ranked even
+    // with the scan switched off, so only a missing model has nothing to look with (#685)
     let recognising = app.caches.faces_active || page.ready;
-    // with a model installed the button switches recognition on; without one it opens Settings ▸ Faces
-    let step = if recognising { super::faces::Setup::Running } else { super::faces::setup(app, ui.ctx()) };
-    let note: Option<String> = if step == super::faces::Setup::TurnOn {
-        Some(format!("Face recognition is off. Turn it on to find more photos of {shown_name}."))
-    } else if !recognising {
+    let note: Option<String> = if !recognising {
         Some(format!("Face recognition needs a model, in Settings, to find more photos of {shown_name}."))
     } else if more.is_empty() && page.pending > 0 {
         Some(format!("Looking through your photos… {} left", page.pending))
+    } else if more.is_empty() && super::view_narrowed(&app.session) {
+        Some(crate::i18n::tr_format!(
+            "No other faces look like {} in these photos. Choose All Photos, or clear the filter, to look everywhere.",
+            shown_name
+        ))
     } else if more.is_empty() {
         Some(format!("No other faces look like {shown_name} yet. Faces appear here as your photos are scanned."))
     } else {
@@ -387,15 +397,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, name: &str) {
         ui.painter().text(pos2(area.left() + PAD, area.top() + more_top + 36.0), Align2::LEFT_CENTER, sub, t.font(12.0), t.text_dim);
         if !recognising {
             let r = Rect::from_min_size(pos2(area.left() + PAD + 330.0, area.top() + more_top + 8.0), vec2(120.0, 24.0));
-            let label = if step == super::faces::Setup::TurnOn { "Turn on" } else { "Open Settings" };
-            let b = ui.put(r, egui::Button::new(label));
+            let b = ui.put(r, egui::Button::new("Open Settings"));
             register(ui.ctx(), "faces:setup", b.rect);
             if b.clicked() {
-                if step == super::faces::Setup::TurnOn {
-                    super::faces::take_step(app, ui.ctx(), step);
-                } else {
-                    let _ = app.run("app.settings", json!({"tab": "faces"}));
-                }
+                let _ = app.run("app.settings", json!({"tab": "faces"}));
             }
         }
         let grid_top = more_top + SECTION_H;

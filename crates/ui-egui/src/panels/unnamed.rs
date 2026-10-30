@@ -58,22 +58,25 @@ pub fn parse(v: &Value) -> Unnamed {
     }
 }
 
-/// The unnamed faces, asked for again only when the catalog changed, or (while the scan runs and learns more faces) at
-/// most every few seconds, since putting look-alikes together looks at every pair.
+/// The unnamed faces, asked for again only when the catalog or the view changed, or (while the scan runs and learns
+/// more faces) at most every few seconds, since putting look-alikes together looks at every pair.
 pub fn faces(app: &mut LccApp, now: f64) -> Arc<Unnamed> {
     let (rev, indexed) = (app.session.catalog.revision, app.caches.faces_indexed);
-    if let Some((r, i, at, list)) = &app.caches.unnamed
+    let view = app.session.view_stamp();
+    if let Some((v, r, i, at, list)) = &app.caches.unnamed
+        && *v == view
         && *r == rev
         && (*i == indexed || now - *at < 3.0)
     {
         return list.clone();
     }
-    let v = app.session.execute("faces.unnamed", &json!({})).unwrap_or(Value::Null);
+    // the queue follows what the library shows: the folder, album or year picked on the left, and the filter bar (#685)
+    let v = app.session.execute("faces.unnamed", &json!({"scope": "view"})).unwrap_or(Value::Null);
     let list = Arc::new(parse(&v));
     // what was selected and has since been named (or removed) is no longer selected
     let present: std::collections::HashSet<(u64, usize)> = list.faces.iter().map(|f| (f.photo, f.index)).collect();
     app.ui.unnamed_selected.retain(|k| present.contains(k));
-    app.caches.unnamed = Some((rev, indexed, now, list.clone()));
+    app.caches.unnamed = Some((view, rev, indexed, now, list.clone()));
     list
 }
 
@@ -118,7 +121,7 @@ pub fn naming_bar(app: &mut LccApp, ui: &mut egui::Ui) {
     };
     // the name the named faces suggest, when every selected face has the same one
     let suggested: Option<String> = {
-        let list = app.caches.unnamed.as_ref().map(|c| c.3.clone());
+        let list = app.caches.unnamed.as_ref().map(|c| c.4.clone());
         list.and_then(|l| {
             let names: std::collections::BTreeSet<Option<&str>> =
                 l.faces.iter().filter(|f| app.ui.unnamed_selected.contains(&(f.photo, f.index))).map(|f| f.suggestion.as_deref()).collect();
@@ -203,6 +206,8 @@ pub fn section_header(app: &mut LccApp, ui: &mut egui::Ui, list: &Unnamed, at: e
         "Turn on face recognition in Settings to find the faces in your photos.".to_string()
     } else if list.faces.is_empty() && app.caches.faces_pending > 0 {
         format!("Looking through your photos… {} left", app.caches.faces_pending)
+    } else if list.faces.is_empty() && super::view_narrowed(&app.session) {
+        crate::i18n::tr("No unnamed faces in these photos. Choose All Photos, or clear the filter, to look everywhere.").to_string()
     } else if list.faces.is_empty() {
         "No unnamed faces. Faces found in your photos appear here until you name them.".to_string()
     } else if list.ordered {

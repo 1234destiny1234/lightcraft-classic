@@ -262,22 +262,44 @@ fn rename_person(s: &mut Session, p: &Value) -> Result<Value> {
 /// Most faces `faces.unnamed` lists.
 const MAX_UNNAMED: usize = 3000;
 
+/// The photos the face queues show faces of: `None` for `scope: "all"` (the whole library), else the ids of the photos
+/// the library shows — its source (a folder, an album, Picks) and its filter bar (a year in By Date, a keyword, a
+/// rating) — which is what the People view counts ([`Session::visible_filter`], #685).
+fn view_set(s: &Session, scope: &str, cmd: &str) -> Result<Option<std::collections::HashSet<u64>>> {
+    match scope {
+        "all" => Ok(None),
+        "view" => {
+            let ids = s.catalog.query(&s.visible_filter(), &lcc_catalog::Sort::default());
+            Ok(Some(ids.into_iter().map(|id| id.0).collect()))
+        }
+        other => Err(bad(cmd, format!("scope is \"view\" or \"all\", not {other:?}"))),
+    }
+}
+
+/// The `scope` a face query asked for (`"all"` when it says nothing: every caller from before it existed).
+fn scope_of(p: &Value) -> &str {
+    p.get("scope").and_then(Value::as_str).unwrap_or("all")
+}
+
 /// How the unnamed faces were laid out.
 struct Arranged {
     /// Faces that look alike are next to each other (only the ones already embedded can be).
     ordered: bool,
-    /// Recognition is on and a model is loaded.
+    /// A recognition model is chosen and installed.
     ready: bool,
     /// A name for some faces, when the faces already named say so with confidence: `(photo, index)` to `(name, score)`.
     suggestions: std::collections::HashMap<(u64, usize), (String, f32)>,
 }
 
-/// `faces.unnamed {limit?: 600}`: the faces nobody has named, to be named a group at a time. With recognition running,
-/// faces that look alike are next to each other, and a face the named faces recognise carries the name they suggest.
+/// `faces.unnamed {limit?: 600, scope?: "all" | "view"}`: the faces nobody has named, to be named a group at a time. With
+/// a recognition model chosen, faces that look alike are next to each other, and a face the named faces recognise
+/// carries the name they suggest. `scope: "view"` keeps it to the photos the view shows, so the queue follows the
+/// sidebar (#685).
 fn unnamed(s: &mut Session, p: &Value) -> Result<Value> {
     let limit = p.get("limit").and_then(Value::as_u64).map_or(600, |n| usize::try_from(n).unwrap_or(600)).clamp(1, MAX_UNNAMED);
+    let allowed = view_set(s, scope_of(p), "faces.unnamed")?;
     let mut all: Vec<(u64, usize, lcc_geom::Rect)> = Vec::new();
-    for ph in s.catalog.photos().filter(|ph| ph.in_library()) {
+    for ph in s.catalog.photos().filter(|ph| ph.in_library() && allowed.as_ref().is_none_or(|a| a.contains(&ph.id.0))) {
         for (index, r) in ph.meta.regions.iter().enumerate() {
             if r.kind == lcc_meta::RegionKind::Face && r.name.is_none() {
                 all.push((ph.id.0, index, r.rect));
@@ -303,9 +325,9 @@ fn unnamed(s: &mut Session, p: &Value) -> Result<Value> {
 struct Similar {
     /// `{photo, index, rect, score}` of unnamed faces, the most alike first.
     items: Vec<serde_json::Value>,
-    /// Recognition is on and a model is loaded, so an empty list means "none yet" rather than "not looking".
+    /// A recognition model is chosen and installed, so an empty list means "none yet" rather than "not looking".
     ready: bool,
-    /// Photos the background scan has still to do.
+    /// Photos the background scan has still to do (0 while it is switched off: nothing is on its way).
     pending: usize,
 }
 
@@ -316,15 +338,18 @@ fn rect_json(r: &lcc_geom::Rect) -> Value {
 /// Most confirmed faces `faces.person` lists.
 const MAX_CONFIRMED: usize = 5000;
 
-/// `faces.person {name, more?}`: the faces named `name` (case-insensitively) across the library, and, when recognition is
-/// running, the unnamed faces that look most like them, to be confirmed one by one.
+/// `faces.person {name, more?, scope?: "all" | "view"}`: the faces named `name` (case-insensitively) across the library, and, when
+/// recognition is running, the unnamed faces that look most like them, to be confirmed one by one. `scope: "view"` keeps
+/// the confirmed faces and the look-alikes to the photos the view shows (#685); the person's own faces outside it are
+/// still what the look-alikes are compared with.
 fn person(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "faces.person";
     let name = p.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing `name`"))?;
     let key = name.to_lowercase();
     let limit = p.get("more").and_then(Value::as_u64).map_or(120, |n| usize::try_from(n).unwrap_or(120)).min(1000);
     let (mut shown, mut total, mut confirmed) = (name.to_string(), 0usize, Vec::new());
-    for ph in s.catalog.photos().filter(|ph| ph.in_library()) {
+    let allowed = view_set(s, scope_of(p), C)?;
+    for ph in s.catalog.photos().filter(|ph| ph.in_library() && allowed.as_ref().is_none_or(|a| a.contains(&ph.id.0))) {
         for (index, r) in ph.meta.regions.iter().enumerate() {
             let Some(n) = r.name.as_deref().filter(|n| r.kind == lcc_meta::RegionKind::Face && n.trim().to_lowercase() == key) else {
                 continue;
@@ -338,7 +363,7 @@ fn person(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
     }
-    let similar = if total > 0 { imp::similar(s, &key, limit) } else { Similar { items: Vec::new(), ready: false, pending: 0 } };
+    let similar = if total > 0 { imp::similar(s, &key, limit, allowed.as_ref()) } else { Similar { items: Vec::new(), ready: false, pending: 0 } };
     Ok(
         json!({"name": shown, "total": total, "confirmed": confirmed, "more": similar.items, "ready": similar.ready, "pendingPhotos": similar.pending}),
     )
@@ -781,15 +806,13 @@ mod imp {
     /// The unnamed faces that look most like the person whose lower-cased name is `key`, best first, at most `limit`: each
     /// is scored like a suggestion (the mean of its two closest faces of theirs) and kept above four fifths of the
     /// model's suggestion bar, since a person looks at these before anything is named. Only faces already embedded can be
-    /// found; `ready` says whether recognition is running at all.
-    pub fn similar(s: &mut Session, key: &str, limit: usize) -> Similar {
+    /// found; `ready` says whether there is a model to rank them with, which is not the same as the scan being on.
+    pub fn similar(s: &mut Session, key: &str, limit: usize, allowed: Option<&std::collections::HashSet<u64>>) -> Similar {
         let none = Similar { items: Vec::new(), ready: false, pending: 0 };
         let Some(dir) = s.face_models_dir.clone() else { return none };
-        if !enabled_cached(s, &dir) {
-            return none;
-        }
-        let Ok(embedder) = current_with(s, "faces.person", false) else { return none };
-        let pending = s.faces.queue.len() + s.faces.in_flight.len();
+        let Some(threshold) = chosen_bar(s, &dir) else { return none };
+        // what the scan has left to do, when it is running: with it off, nothing is on its way
+        let pending = if enabled_cached(s, &dir) { s.faces.queue.len() + s.faces.in_flight.len() } else { 0 };
         let (mut gallery, mut candidates): (Vec<Arc<[f32]>>, Vec<(u64, usize, Rect, Arc<[f32]>)>) = (Vec::new(), Vec::new());
         for ph in s.catalog.photos().filter(|ph| ph.in_library()) {
             for (index, r) in ph.meta.regions.iter().enumerate().filter(|(_, r)| r.kind == RegionKind::Face) {
@@ -797,7 +820,10 @@ mod imp {
                 match r.name.as_deref() {
                     Some(n) if n.trim().to_lowercase() == key => gallery.push(e.clone()),
                     Some(_) => {}
-                    None => candidates.push((ph.id.0, index, r.rect, e.clone())),
+                    // a look-alike outside the view is not offered: the page follows the sidebar selection (#685);
+                    // the person's own faces above stay the whole measure of what they look like
+                    None if allowed.is_none_or(|a| a.contains(&ph.id.0)) => candidates.push((ph.id.0, index, r.rect, e.clone())),
+                    None => {}
                 }
             }
         }
@@ -805,7 +831,7 @@ mod imp {
         if gallery.is_empty() {
             return ready;
         }
-        let bar = embedder.manifest().thresholds.match_cosine.unwrap_or(DEFAULT_THRESHOLD) * 0.8;
+        let bar = threshold * 0.8;
         let refs: Vec<(&str, &[f32])> = gallery.iter().map(|e| ("person", &e[..])).collect();
         let mut scored: Vec<(f32, u64, usize, Rect)> = candidates
             .into_iter()
@@ -863,10 +889,7 @@ mod imp {
     pub fn arrange_unnamed(s: &mut Session, all: &mut Vec<(u64, usize, Rect)>, limit: usize) -> super::Arranged {
         let none = super::Arranged { ordered: false, ready: false, suggestions: Default::default() };
         let Some(dir) = s.face_models_dir.clone() else { return none };
-        if !enabled_cached(s, &dir) {
-            return none;
-        }
-        let Ok(embedder) = current_with(s, "faces.unnamed", false) else { return none };
+        let Some(threshold) = chosen_bar(s, &dir) else { return none };
         let (mut embedded, mut plain) = (Vec::new(), Vec::new());
         for f in all.drain(..) {
             match s.faces.index.get(f.0, &f.2) {
@@ -892,7 +915,6 @@ mod imp {
             })
             .collect();
         let refs: Vec<(&str, &[f32])> = gallery.iter().map(|(n, e)| (n.as_str(), &e[..])).collect();
-        let threshold = embedder.manifest().thresholds.match_cosine.unwrap_or(DEFAULT_THRESHOLD);
         let mut suggestions = std::collections::HashMap::new();
         if !refs.is_empty() {
             for ((photo, index, _), e) in ordered.iter().take(limit) {
@@ -906,6 +928,24 @@ mod imp {
         all.extend(beyond.into_iter().map(|(f, _)| f));
         all.extend(plain);
         super::Arranged { ordered: grouped, ready: true, suggestions }
+    }
+
+    /// The bar the chosen recognition model suggests at, from its installed manifest, looked up at most once a second;
+    /// `None` when no model is chosen and installed. The model itself is never loaded for this: putting look-alikes in
+    /// order and naming a face's candidates only rank the faces the scan already embedded, so both work with recognition
+    /// switched off, which only starts and stops the scan (#685).
+    fn chosen_bar(s: &mut Session, dir: &std::path::Path) -> Option<f32> {
+        if let Some((t, bar)) = s.faces.bar_seen
+            && t.elapsed() < RECHECK
+        {
+            return Some(bar);
+        }
+        let bar = read_settings(dir).embedder.and_then(|id| {
+            let m = installed_models(dir).into_iter().find(|i| i.manifest.id == id)?;
+            Some(m.manifest.thresholds.match_cosine.unwrap_or(DEFAULT_THRESHOLD))
+        });
+        s.faces.bar_seen = bar.map(|b| (Instant::now(), b));
+        bar
     }
 
     /// Whether face recognition is switched on, looked up at most once a second.
@@ -1139,13 +1179,13 @@ mod imp {
             put(&mut s, b, 0.1, unit(&[(0, 0.95), (1, 0.05)])); // looks just like Ann
             put(&mut s, b, 0.5, unit(&[(1, 1.0)])); // looks like Bob, not Ann
             put(&mut s, c, 0.3, unit(&[(0, 0.8), (1, 0.6)])); // somewhat like Ann
-            let r = similar(&mut s, "ann", 10);
+            let r = similar(&mut s, "ann", 10, None);
             assert!(r.ready);
             let found: Vec<(u64, u64)> = r.items.iter().map(|i| (i["photo"].as_u64().unwrap(), i["index"].as_u64().unwrap())).collect();
             assert_eq!(found, vec![(b.0, 0), (c.0, 0)], "best first; the face that looks like Bob is left out");
             assert!(r.items[0]["score"].as_f64().unwrap() > r.items[1]["score"].as_f64().unwrap());
-            assert_eq!(similar(&mut s, "ann", 1).items.len(), 1, "capped");
-            assert!(similar(&mut s, "nobody", 10).items.is_empty());
+            assert_eq!(similar(&mut s, "ann", 1, None).items.len(), 1, "capped");
+            assert!(similar(&mut s, "nobody", 10, None).items.is_empty());
             let _ = std::fs::remove_dir_all(&d);
         }
     }
@@ -1174,7 +1214,7 @@ mod imp {
         Ok(serde_json::json!({"active": false}))
     }
 
-    pub fn similar(_: &mut Session, _: &str, _: usize) -> super::Similar {
+    pub fn similar(_: &mut Session, _: &str, _: usize, _: Option<&std::collections::HashSet<u64>>) -> super::Similar {
         super::Similar { items: Vec::new(), ready: false, pending: 0 }
     }
 
@@ -1237,7 +1277,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Unnamed Faces",
             [],
             None,
-            "{limit?: 600} → {total, faces: [{photo, index, rect, view, suggestion: {name, score} | null}], ordered, ready} — the faces nobody has named; with recognition running, look-alikes are next to each other and a face the named ones recognise carries the name they suggest. `view` is the box to show the face by. Name them with `faces.nameFaces`",
+            "{limit?: 600, scope?: \"all\" | \"view\"} → {total, faces: [{photo, index, rect, view, suggestion: {name, score} | null}], ordered, ready} — the faces nobody has named (`scope: \"view\": only those in the photos the view shows); with a recognition model chosen, look-alikes are next to each other (the scan can be switched off) and a face the named ones recognise carries the name they suggest. `view` is the box to show the face by. Name them with `faces.nameFaces`",
             super::always,
             unnamed
         ),
@@ -1255,7 +1295,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Faces of a Person",
             [],
             None,
-            "{name, more?: 120} → {name, total, confirmed: [{photo, index, rect}], more: [{photo, index, rect, score}], ready, pendingPhotos} — the faces named `name` across the library, and the unnamed faces that look most like them (best first, already embedded ones only, once recognition is on); confirm one with `faces.setName`",
+            "{name, more?: 120, scope?: \"all\" | \"view\"} → {name, total, confirmed: [{photo, index, rect}], more: [{photo, index, rect, score}], ready, pendingPhotos} — the faces named `name` across the library (`scope: \"view\"`: only those in the photos the view shows), and the unnamed faces in the view that look most like them (best first, already embedded ones only, once a model is chosen; the scan can be off); confirm one with `faces.setName`",
             super::always,
             person
         ),

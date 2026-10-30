@@ -242,6 +242,50 @@ fn the_peoples_search_narrows_the_cards_by_name() {
     assert!(cards(&h).contains(&"person:Jane Doe".to_string()) && cards(&h).contains(&"person:John Roe".to_string()));
 }
 
+/// #685: People Mode counts the photos the library shows, so an album picked on the left leaves the cards of the people
+/// in it (as it already left the unnamed faces and a person's More faces).
+#[test]
+fn the_peoples_cards_follow_the_album_picked_on_the_left() {
+    use lcc_catalog::Op;
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
+    let mut ids: Vec<_> = h.app.session.catalog.photos().map(|p| p.id).collect();
+    ids.sort();
+    let (first, second) = (ids[0], ids[1]);
+    for (id, name) in [(first, "Jane Doe"), (second, "John Roe")] {
+        let mut meta = h.app.session.catalog.photo(id).unwrap().meta.clone();
+        meta.regions = vec![lcc_meta::Region {
+            rect: lcc_geom::Rect { x0: 0.3, y0: 0.2, x1: 0.55, y1: 0.6 },
+            kind: lcc_meta::RegionKind::Face,
+            name: Some(name.to_string()),
+            description: None,
+        }];
+        h.app.session.commit("setup", Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
+    }
+    let cards = |h: &Headless| -> Vec<String> { h.app.widgets.iter().filter(|(w, _)| w.starts_with("person:")).map(|(w, _)| w.clone()).collect() };
+    // an album holding the first of the two photos, not the other
+    let mut album = None;
+    for a in h.app.session.catalog.albums() {
+        if a.photos.contains(&first) && !a.photos.contains(&second) {
+            album = Some(a.id);
+            break;
+        }
+    }
+    let album = album.expect("a demo album holds one of the two photos and not the other");
+    ok(&mut h, "engine.execute", json!({"command": "view.people"}));
+    let both = cards(&h);
+    assert!(both.contains(&"person:Jane Doe".to_string()) && both.contains(&"person:John Roe".to_string()), "{both:?}");
+    // the album picked on the left leaves the person in it
+    ok(&mut h, "engine.execute", json!({"command": "library.source", "params": {"kind": "album", "id": album}}));
+    ok(&mut h, "engine.execute", json!({"command": "view.people"}));
+    let one = cards(&h);
+    assert!(one.contains(&"person:Jane Doe".to_string()) && !one.contains(&"person:John Roe".to_string()), "{one:?}");
+    // the whole library puts both back
+    ok(&mut h, "engine.execute", json!({"command": "library.source", "params": {"kind": "all"}}));
+    ok(&mut h, "engine.execute", json!({"command": "view.people"}));
+    assert_eq!(cards(&h).len(), both.len(), "every card again");
+}
+
 /// Issue #538: the pickers' cameras, lenses and keywords are listed again only when metadata changes. A rating
 /// rebuilt them from every photo, which made scrolling a large library crawl while the filter bar showed and
 /// anything else in the catalog changed. Each value is listed once, whatever other spellings sort between.

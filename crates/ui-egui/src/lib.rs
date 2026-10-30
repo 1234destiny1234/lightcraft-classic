@@ -2391,10 +2391,10 @@ pub struct Caches {
     pub last_move: f64,
     /// Name suggestions for the photo in the loupe: (photo, catalog revision, faces indexed, suggestions by region).
     pub face_hints: Option<(u64, u64, u64, std::sync::Arc<panels::faces::Hints>)>,
-    /// The open person page: (name, catalog revision, faces indexed, when it was asked for, the page).
-    pub person_page: Option<(String, u64, u64, f64, std::sync::Arc<panels::person::PersonPage>)>,
-    /// The unnamed faces: (catalog revision, faces indexed, when it was asked for, the list).
-    pub unnamed: Option<(u64, u64, f64, std::sync::Arc<panels::unnamed::Unnamed>)>,
+    /// The open person page: (name, the view it is for, catalog revision, faces indexed, when it was asked for, the page).
+    pub person_page: Option<(String, String, u64, u64, f64, std::sync::Arc<panels::person::PersonPage>)>,
+    /// The unnamed faces: (the view they are for, catalog revision, faces indexed, when it was asked for, the list).
+    pub unnamed: Option<(String, u64, u64, f64, std::sync::Arc<panels::unnamed::Unnamed>)>,
     /// The most photos the face scan has had left at once since it last finished (the progress bar's whole).
     pub faces_peak: u64,
     person_names: Option<(u64, std::sync::Arc<Vec<String>>)>,
