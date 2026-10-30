@@ -149,14 +149,26 @@ pub enum Downscale {
     /// Lanczos-3: keeps the detail a smaller output can hold, as a dedicated downscale does
     /// (exports, #2970). Its slight overshoot at hard edges stays below the output sharpening's.
     Sharp,
+    /// Interactive previews: [`Sharp`](Self::Sharp) for a full-quality render that shrinks its
+    /// source at least [`SHARP_PREVIEW_SHRINK`]×, so sharpening judged in the loupe looks as it will
+    /// export; [`Smooth`](Self::Smooth) otherwise (drafts keep their budget, and a near-1:1 view
+    /// gains nothing from the wider filter).
+    Preview,
 }
 
+/// How much a full-quality preview must shrink its source before it uses the export's filter
+/// ([`Downscale::Preview`]).
+pub const SHARP_PREVIEW_SHRINK: f64 = 2.0;
+
 impl Downscale {
-    pub fn filter(self) -> lcc_raster::resample::Filter {
-        match self {
-            Downscale::Smooth => lcc_raster::resample::Filter::Mitchell,
-            Downscale::Sharp => lcc_raster::resample::Filter::Lanczos3,
-        }
+    /// The filter of a render of `quality` that shrinks its source `shrink`× (output px per source px, inverted).
+    pub fn filter_for(self, quality: Quality, shrink: f64) -> lcc_raster::resample::Filter {
+        let sharp = match self {
+            Downscale::Smooth => false,
+            Downscale::Sharp => true,
+            Downscale::Preview => quality == Quality::Full && shrink >= SHARP_PREVIEW_SHRINK,
+        };
+        if sharp { lcc_raster::resample::Filter::Lanczos3 } else { lcc_raster::resample::Filter::Mitchell }
     }
 }
 
@@ -509,9 +521,10 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
     }
     let s = &*settings;
     let mut frame = frame_for(src, info, s, req.apply_crop);
-    frame.downscale = req.downscale.filter();
-    let whole_frame = frame.clone();
     let (full_w, full_h) = frame.fit(req.max_w, req.max_h);
+    let shrink = frame.crop.rect_px(frame.ow, frame.oh).width() / full_w.max(1) as f64;
+    frame.downscale = req.downscale.filter_for(req.quality, shrink);
+    let whole_frame = frame.clone();
     // sizes and scale are those of the whole output; a window only narrows what is drawn
     let px_per_long = frame.px_per_long(full_w);
     let mut fixed_air = None;
