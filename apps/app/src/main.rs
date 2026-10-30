@@ -1150,6 +1150,17 @@ fn main() -> eframe::Result {
             Err(e) => log::warn!("could not copy the previous settings folder: {e}"),
         }
     }
+    // a Windows copy unpacked from the zip, before anything is opened: a version a zip update
+    // started waits here until the one it replaced has ended (however long quitting takes); a new
+    // version that never came up on its last start is undone and the previous one started instead
+    let after_update = match lcc_engine::update::on_start() {
+        lcc_engine::update::Start::Undone(previous) => {
+            log::warn!("this version did not come up after its update; {} was put back and started", previous.display());
+            return Ok(());
+        }
+        lcc_engine::update::Start::AfterUpdate => true,
+        lcc_engine::update::Start::Go => false,
+    };
     // the start after an update: delete the previous AppImage, log a swap that failed (in the
     // background; the start never waits for it). Not in a run that keeps no settings (--memory,
     // <PREFIX>_NO_PREFS): its updater stages in the temp folder, not the settings folder's.
@@ -1197,6 +1208,16 @@ fn main() -> eframe::Result {
         Launch::Ask => Launch::Ask,
         Launch::Open { alt_asks, .. } => Launch::Open { dir: library_dir.clone(), alt_asks: alt_asks && welcome.is_none() },
     };
+    // relaunched by a zip update while a copy started by hand (the new version too) already has the
+    // library open: that one is in use, so this one ends quietly instead of asking about the library
+    if after_update
+        && let Launch::Open { dir: Some(dir), .. } = &launch
+        && lcc_engine::update::library_in_use(dir)
+    {
+        log::info!("{} is already open in another copy of the new version; this relaunch ends here", dir.display());
+        lcc_engine::update::release_start();
+        return Ok(());
+    }
     // GPU compute: off if the preference says so, or if the last launch died creating the device
     // (issue #136) — before anything can create it
     let gpu_crash = gpu_crash_check(in_memory).or_else(|| gpu_lost_check_at(gpu_lost_marker_path().as_deref(), in_memory));
@@ -1284,6 +1305,8 @@ fn main() -> eframe::Result {
                 // HDR display: SDR unless the surface, platform and display all allow HDR
                 let display = hdr_display::report(cc.wgpu_render_state.as_ref());
                 let mut app = LccApp::new(session, services(cc, app_log_file.as_deref()));
+                // the window and the app are up: a zip update that put this version here worked
+                lcc_engine::update::confirm_update();
                 app.hdr_display_sdr = !display.is_hdr();
                 if let Some(ui) = prefs {
                     app.ui = ui;

@@ -130,6 +130,18 @@ impl Request {
             .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
             .unwrap_or_default()
     }
+    /// The Library source the command was started from (`hook == "command"` or
+    /// `"command.prepare"`): `{kind: "album" | "smartAlbum", id, name, quick?}`, `{kind: "folder",
+    /// path}`, `{kind: "allPhotos"}` or `{kind: "other", name}`; null from an older app.
+    pub fn source(&self) -> &Value {
+        self.get("source")
+    }
+    /// The album the command was started from, when it can hold photos (`source` is an `album`):
+    /// its id, for `host::library_add`.
+    pub fn source_album(&self) -> Option<&str> {
+        let s = self.source();
+        (s.get("kind").and_then(Value::as_str) == Some("album")).then(|| s.get("id").and_then(Value::as_str)).flatten()
+    }
     pub fn get(&self, key: &str) -> &Value {
         self.0.get(key).unwrap_or(&Value::Null)
     }
@@ -328,6 +340,15 @@ pub mod host {
     /// waiting. `bundle_id` picks one of the entry's versions (macOS).
     pub fn program_start(program: &str, args: &[&str], files: Value, bundle_id: Option<&str>) -> Result<Value, String> {
         call("program.start", json!({"program": program, "args": args, "files": files, "bundleId": bundle_id}))
+    }
+
+    /// Adds the file at `path`, made from photo `from`, to the library (`libraryAdd` permission).
+    /// `path` must be in the folder of `from`'s original or below it. With `stack`, it is stacked
+    /// on `from`; with `album`, it goes in that album, which must be a regular album holding
+    /// `from`. A file the library already has is read again if it changed. → `{photo, added,
+    /// reloaded}`
+    pub fn library_add(path: &str, from: &str, stack: bool, album: Option<&str>) -> Result<Value, String> {
+        call("library.add", json!({"path": path, "from": from, "stack": stack, "album": album}))
     }
 
     /// An HTTP request (needs the URL's host in the `network` permission) →

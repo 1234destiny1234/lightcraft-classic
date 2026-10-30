@@ -483,9 +483,12 @@ impl Updater {
     /// The options a check runs with (the user's prerelease choice included, and the feed override
     /// when one is set).
     pub fn options(&self) -> lcc_updater::Options {
+        // asked once per check: Windows Installer, and a probe file beside the program
+        let copy = lcc_updater::copy_kind();
         lcc_updater::Options {
             prerelease: self.prefs.prerelease,
-            portable: std::env::current_exe().ok().and_then(|exe| exe.parent().map(portable_in)).unwrap_or(false),
+            portable: takes_portable_zip(&copy),
+            copy,
             manifest_url: self.manifest_url.clone(),
             extra_origin: self.extra_origin.clone(),
             ..Default::default()
@@ -788,14 +791,49 @@ fn stage_for(dir: Option<&Path>) -> PathBuf {
 
 /// Tidy up after an update, once per app start, on a thread of its own so the start never waits
 /// for it: log why the last AppImage swap did not happen, if it didn't, and delete the previous
-/// AppImage (`<file>.old` beside `$APPIMAGE`) a successful one left. Nothing to do on other
-/// installs. Never fails: what it can't do is logged.
+/// AppImage (`<file>.old` beside `$APPIMAGE`) or the previous files of a Windows zip copy
+/// (`<file>.update-old`) a successful one left. Nothing to do on other installs. Never fails: what
+/// it can't do is logged.
 pub fn clean_up_after_update() {
     let stage = stage_for(crate::config::config_dir().as_deref());
     let spawned = std::thread::Builder::new().name("update-cleanup".into()).spawn(move || lcc_updater::clean_up_after_update(&stage));
     if let Err(e) = spawned {
         log::warn!("updates: could not start the clean-up after an update: {e}");
     }
+}
+
+/// What a starting copy does after [`on_start`].
+pub use lcc_updater::Start;
+
+/// At the start of a Windows copy unpacked from the zip, before the library is opened
+/// ([`lcc_updater::on_start`]): a version a zip update started waits until the one it replaced has
+/// ended; a new version that never came up on its last start is undone, and the previous one
+/// started ([`lcc_updater::Start::Undone`]: this process ends at once). Anywhere else: `Go`.
+pub fn on_start() -> lcc_updater::Start {
+    lcc_updater::on_start()
+}
+
+/// Once the app is up (its first frame, its library open): a zip update that put this version in
+/// place worked, so the previous files go ([`lcc_updater::confirm_update`]). On a thread of its
+/// own; nothing to do on other installs.
+pub fn confirm_update() {
+    let spawned = std::thread::Builder::new().name("update-confirm".into()).spawn(lcc_updater::confirm_update);
+    if let Err(e) = spawned {
+        log::warn!("updates: could not confirm the update: {e}");
+    }
+}
+
+/// A start of a new version a zip update put in place that ends on purpose before it is up (its
+/// library is open in another copy): its start is taken back, so the next start doesn't undo the
+/// update ([`lcc_updater::release_start`]).
+pub fn release_start() {
+    lcc_updater::release_start();
+}
+
+/// Whether another process has the library in `dir` open (its lock is held). A version a zip
+/// update started while a copy started by hand already runs ends quietly instead of asking.
+pub fn library_in_use(dir: &Path) -> bool {
+    matches!(lcc_catalog::lock::LibraryLock::acquire(dir, lcc_brand::DISPLAY_NAME), Err(lcc_catalog::lock::LockError::InUse(_)))
 }
 
 fn load_prefs(dir: &Path) -> Prefs {
@@ -811,6 +849,18 @@ fn load_prefs(dir: &Path) -> Prefs {
             log::warn!("updates: {} could not be read ({e}); the defaults are used", path.display());
             Prefs::default()
         }
+    }
+}
+
+/// Whether this copy (`copy`) updates from the portable zip rather than an installer: any copy on
+/// Windows the MSI did not install (it was unpacked from the zip, with or without `portable.txt`),
+/// and any other copy with a portable marker beside it. A copy the MSI installed always takes the
+/// MSI; when Windows Installer can't say, the marker decides, as before Windows Installer was asked.
+fn takes_portable_zip(copy: &lcc_updater::CopyKind) -> bool {
+    match copy {
+        lcc_updater::CopyKind::Msi => false,
+        lcc_updater::CopyKind::Zip { .. } => true,
+        lcc_updater::CopyKind::Other => std::env::current_exe().ok().and_then(|exe| exe.parent().map(portable_in)).unwrap_or(false),
     }
 }
 
@@ -928,7 +978,7 @@ fn staged_json(s: &Staged) -> Value {
 
 /// The install plan of a staged file, as the dialog words it.
 pub fn plan(s: &Staged) -> lcc_updater::Plan {
-    lcc_updater::plan(s.kind.to_crate(), &s.path, &s.version)
+    lcc_updater::plan(s.kind.to_crate(), &s.path, &s.version, &lcc_updater::copy_kind())
 }
 
 /// Apply a staged update; a manual install shows the file through `desktop`. The returned
@@ -939,7 +989,9 @@ pub fn install(s: &Staged, desktop: &dyn crate::desktop::Desktop) -> Result<Inst
     // download checked it is deleted, not installed
     lcc_updater::recheck(&downloaded(s)).map_err(|e| e.to_string())?;
     let mut reveal = |f: &std::path::Path| desktop.reveal(f);
-    let outcome = lcc_updater::install_with(s.kind.to_crate(), &downloaded(s), &s.version, &mut reveal).map_err(|e| e.to_string())?;
+    // the copy's kind once more, right before anything changes
+    let copy = lcc_updater::copy_kind();
+    let outcome = lcc_updater::install_with(s.kind.to_crate(), &downloaded(s), &s.version, &copy, &mut reveal).map_err(|e| e.to_string())?;
     Ok(Installed { version: s.version.clone(), message: outcome.message, exit: outcome.exit })
 }
 

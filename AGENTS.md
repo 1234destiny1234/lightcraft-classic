@@ -77,7 +77,9 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   device-local heaps, the DXGI budget, Metal's working set — so the HDR zoom cache is only offered where it fits;
   `None` elsewhere). **`crates/android-host`** (JNI: adopt the Java VM and activity handles
   android-activity gives the Android app, for its pickers and links) **`crates/winspool`** (Win32 GDI / winspool calls on Windows: list the system's printers and draw rendered pages on
-  one, for printing through the Windows print spooler; reports unsupported elsewhere) **and `apps/android`'s `android_main`** (the
+  one, for printing through the Windows print spooler; reports unsupported elsewhere) **`crates/winmsi`** (two msi.dll
+  calls, `MsiEnumClientsW` and `MsiGetComponentPathW`: ask Windows Installer where each product that has a component keeps
+  its key file, so the updater tells an MSI install from a copy unpacked from the portable zip; reports unsupported elsewhere) **and `apps/android`'s `android_main`** (the
   `#[unsafe(no_mangle)]` entry point android-activity looks up; nothing else). Every other production crate root has `#![forbid(unsafe_code)]`. A new
   unsafe need goes in an isolated, well-tested helper crate like it: `// SAFETY:` on every block, a safe API, a safe
   fallback where possible, and a line here naming it.
@@ -158,7 +160,8 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   build their bytes in code.
 - Every PR that adds an algorithm has a **"Sources:"** line naming what it was built from: a paper, a prose spec, or
   "own design".
-- No GPL/LGPL/AGPL/MPL dependency may enter the build; `cargo deny` enforces the licence allow-list.
+- No GPL/LGPL/AGPL/MPL dependency may enter the build; `cargo deny` enforces the licence allow-list. It also checks
+  that every crate comes from crates.io or a git repository listed under `[sources] allow-git` in `deny.toml`.
 - Licence: the workspace is MIT (`LICENSE`, `license = "MIT"`); `crates/segment` and `crates/fetch` stay Apache-2.0
   only, with their own `LICENSE-APACHE`. Keep the upstream notices in `LICENSE` and `NOTICE`.
 

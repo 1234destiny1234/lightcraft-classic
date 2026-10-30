@@ -230,3 +230,26 @@ fn a_link_at_the_lock_file_is_never_created_or_locked_through() {
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+/// A library folder that was moved away while open, with another library put at its path (a share
+/// mounted over the mount point), keeps that library's owner note when the lock is dropped: the note
+/// names another holder, so it isn't ours to remove (issue #3240). Unix only: Windows refuses to
+/// rename a folder while the lock file inside it is open, so the swap can't happen there.
+#[cfg(unix)]
+#[test]
+fn dropping_the_lock_keeps_an_owner_note_that_names_someone_else() {
+    let _serial = serial();
+    let dir = temp_dir("swapped");
+    let moved = dir.with_extension("moved");
+    let _ = std::fs::remove_dir_all(&moved);
+    let l = LibraryLock::acquire(&dir, lcc_brand::DISPLAY_NAME).unwrap();
+    assert!(l.held());
+    std::fs::rename(&dir, &moved).unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+    let other = br#"{"pid":999999,"host":"elsewhere","program":"other","version":"0.2.0","since":1}"#;
+    std::fs::write(dir.join(OWNER), other).unwrap();
+    drop(l);
+    assert_eq!(std::fs::read(dir.join(OWNER)).unwrap(), other, "another holder's note stays");
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&moved);
+}

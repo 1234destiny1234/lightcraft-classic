@@ -5,6 +5,7 @@
 //! |-----------------------|-----------------------------|-----------------------------------------|
 //! | `catalog.query`, `photo.inspect`, `catalog.stats`, `keyword.list` | `catalog` | [`HostApi::catalog`] |
 //! | `metadata.setStandard`| `metadataWrite`             | [`HostApi::set_metadata`]               |
+//! | `library.add`         | `libraryAdd`                | [`HostApi::library_add`]                |
 //! | `ns.get`, `ns.set`, `ns.photos` | always (own namespace) | [`NamespaceStore`]               |
 //! | `settings.get`, `settings.set` | always (own settings) | [`SettingsStore`], checked against the manifest's `settings` |
 //! | `fs.readText`, `fs.list`, `fs.exists` | a readable root | std::fs                           |
@@ -45,6 +46,13 @@ pub trait HostApi {
     fn set_metadata(&mut self, params: &Value) -> Result<Value, String> {
         let _ = params;
         Err("metadata.setStandard: not available".into())
+    }
+    /// Adds a file a tool made to the library: `{path, from: photo id, stack?: bool, album?: id}`
+    /// → `{photo, added, reloaded}`. The host checks everything (the file is in the folder of
+    /// `from`'s original or below it, the album holds `from`) before it changes anything.
+    fn library_add(&mut self, params: &Value) -> Result<Value, String> {
+        let _ = params;
+        Err("library.add: not available".into())
     }
 
     /// Where `program` is installed on this system (none: not installed). Read-only; never
@@ -97,7 +105,7 @@ pub(crate) struct CallContext<'a> {
 /// Whether host call `method` with `p` changes something: refused in a read-only call.
 fn writes(method: &str, p: &Value) -> bool {
     match method {
-        "metadata.setStandard" | "ns.set" | "settings.set" | "fs.writeText" | "fs.writeBytes" | "fs.remove" | "program.start" => true,
+        "metadata.setStandard" | "library.add" | "ns.set" | "settings.set" | "fs.writeText" | "fs.writeBytes" | "fs.remove" | "program.start" => true,
         // a request that may change something on the server
         "http.request" => {
             let m = p.get("method").and_then(Value::as_str).unwrap_or("GET");
@@ -138,6 +146,15 @@ impl CallContext<'_> {
                     return Err(denied("metadataWrite"));
                 }
                 self.host.set_metadata(p)
+            }
+            "library.add" => {
+                if !self.perms.library_add {
+                    return Err(denied("libraryAdd"));
+                }
+                if !p.is_object() {
+                    return Err("library.add: params must be {path, from, stack?, album?}".into());
+                }
+                self.host.library_add(p)
             }
             "ns.get" => Ok(self.store.get(str_arg(p, "photo")?)),
             "ns.set" => {

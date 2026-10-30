@@ -65,8 +65,24 @@ download it for this system and install it; the app restarts afterwards. Things 
   the releases page instead, and tell the project.
 - "This build can't verify updates": the build was made without an update key (a fork or a build from
   source). It still tells you when a new version is out; download it from the releases page.
-- A tarball or zip (Linux riscv64, FreeBSD, or a Windows portable build) is downloaded and its folder shown:
-  quit the app and unpack it over the installation yourself.
+- A Windows copy unpacked from the portable zip (with or without `portable.txt`) updates itself: the new zip is
+  unpacked beside the program, its files replace the copy's own, and the new version starts once the app has quit.
+  Only the zip's files are replaced; `portable.txt`, the portable data folder and anything else you put there stay.
+  - If you cancel quitting (a task still running, say), the new version waits and starts when the window does
+    close. A copy you start by hand meanwhile is already the new version.
+  - The previous files are kept as `<file>.update-old` until the new version is up. If it doesn't come up (it
+    stops before its window shows), its next start puts the previous files back and starts the previous version;
+    the new version's files are then deleted as `<file>.update-failed`. Starting the app again while the new
+    version is still coming up (a large library opening) doesn't count as a failure.
+  - The updater keeps its record of an update in `.<binary>-update.json` beside the program, and leaves a small
+    hidden `.<binary>-update.json.lock` there for good.
+  - The restart doesn't carry over the command-line arguments the app was started with (`--library`, files to
+    import), as after the MSI: the library last used opens.
+  - A copy under Program Files, or in a folder it can't write to, gets the zip and its folder shown instead. A copy
+    the MSI installed (Windows Installer is asked, for every product that has the app's component) always updates
+    through the MSI.
+- A tarball (Linux riscv64, FreeBSD) is downloaded and its folder shown: quit the app and unpack it over the
+  installation yourself.
 - "Check for updates when the app starts" is off until you turn it on (Settings → General, the welcome dialog
   of a first start, or the update dialog); Help → Check for Updates… always works by hand. The setting lives in
   the app's own settings folder (`updates.json`), not in a catalog. Runs that keep no settings (`--memory`,
