@@ -1302,6 +1302,23 @@ fn hdr_soft_proofs_match() {
     }
 }
 
+/// Non-finite and huge source values (a corrupt raw, an overflowing edit) through process V5's hue clip render as on
+/// the CPU, where the GPU can represent them: the guards for a NaN or infinite brightest or darkest channel match.
+#[test]
+fn non_finite_colours_match_cpu() {
+    if !gpu() {
+        return;
+    }
+    let vals = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 1e30, -1e30, 4.0, 0.2];
+    let src = Arc::new(Rgb32f::from_fn(343, 7, |x, _| [vals[x % 7], vals[(x / 7) % 7], vals[(x / 49) % 7]]));
+    let info = SourceInfo { raw: true, ..Default::default() };
+    let mut s = DevelopSettings::default();
+    s.light.exposure = 1.0;
+    check("non-finite, SDR", &src, &info, &s, &RenderRequest::fit(343, 7));
+    s.hdr.enabled = true;
+    check_hdr("non-finite, HDR", &src, &info, &s, 343, 7);
+}
+
 /// Colours pushed past white (process V5 keeps their hue, older processes move them toward their luminance) match
 /// the CPU's on every process.
 #[test]

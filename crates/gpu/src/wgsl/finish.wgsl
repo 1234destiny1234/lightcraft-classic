@@ -699,15 +699,31 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // `finish::hue_clip` (process V5): the brightest channel limited to `peak`, the darkest kept (all three `peak` when it
 // is above too), the middle one in its place between them
 fn hue_clip(c: vec3<f32>, peak: f32) -> vec3<f32> {
-    let hi = max(c.x, max(c.y, c.z));
-    if (!(hi > peak)) {
+    // Rust's `f32::max` / `min` skip a NaN operand; WGSL's are undefined for it, so do it by hand
+    let hi = nan_max(c.x, nan_max(c.y, c.z));
+    if (is_nan(hi) || !(hi > peak) || !is_finite(peak)) {
         return c;
     }
-    let lo = min(c.x, min(c.y, c.z));
-    if (lo >= peak) {
+    let lo = nan_min(c.x, nan_min(c.y, c.z));
+    if (lo >= peak || !is_finite(lo)) {
         return vec3<f32>(peak);
     }
     return vec3<f32>(lo) + (c - vec3<f32>(lo)) * ((peak - lo) / (hi - lo));
+}
+
+// NaN and infinity tests on the bits (a compiler may fold `v != v` away)
+fn is_nan(v: f32) -> bool {
+    let b = bitcast<u32>(v);
+    return (b & 0x7f800000u) == 0x7f800000u && (b & 0x007fffffu) != 0u;
+}
+fn is_finite(v: f32) -> bool {
+    return (bitcast<u32>(v) & 0x7f800000u) != 0x7f800000u;
+}
+fn nan_max(a: f32, b: f32) -> f32 {
+    return select(select(max(a, b), a, is_nan(b)), b, is_nan(a));
+}
+fn nan_min(a: f32, b: f32) -> f32 {
+    return select(select(min(a, b), a, is_nan(b)), b, is_nan(a));
 }
 
 // `finish::HUE_FADE_FROM` and `HUE_FADE_EV` (keep in step)
