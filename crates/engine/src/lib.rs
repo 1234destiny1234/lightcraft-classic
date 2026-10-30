@@ -1306,10 +1306,25 @@ impl Session {
         self.shelved_filter.is_some()
     }
 
+    /// What tells one view from another: the source, the filter, the sort, and the folder a browsing or library-folder
+    /// view shows. For a frontend caching something per view that [`Session::visible`] does not already cache — the face
+    /// queues do (`panels::unnamed`, `panels::person`) — so going from one folder or album to another asks again. The
+    /// catalog revision is not part of it.
+    pub fn view_stamp(&self) -> String {
+        format!("{:?}|{:?}|{:?}|{:?}|{:?}", self.source, self.filter, self.sort, self.browse, self.library_folder)
+    }
+
+    /// The filter that picks the photos the library shows ([`Session::visible`]) without a person constraint: the source
+    /// (a folder, an album, Picks) and the filter bar. What People Mode counts — its cards and both face queues — so a
+    /// card's own person does not empty the faces under it (#685).
+    pub fn visible_filter(&self) -> Filter {
+        let base = Filter { person: None, people: Vec::new(), ..self.filter.clone() };
+        self.view_filter(self.source, &base)
+    }
+
     /// Photos shown in the grid/filmstrip for the current source, filter and sort.
     pub fn visible(&mut self) -> &[PhotoId] {
-        let mut key =
-            (self.catalog.revision, format!("{:?}|{:?}|{:?}|{:?}|{:?}", self.source, self.filter, self.sort, self.browse, self.library_folder));
+        let mut key = (self.catalog.revision, self.view_stamp());
         // What a held view is told apart by: what is shown and how, and for a smart album its rules (rules that were
         // changed ask something else). Not the checks of Missing Photos below: they fill the view in, they are
         // no other view.

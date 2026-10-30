@@ -65,7 +65,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let now = ui.input(|i| i.time);
     let thumb = app.ui.thumb_size;
-    let people = app.caches.people(&app.session.catalog, &app.session.filter);
+    // the cards count the photos the library shows — the left side's folder, album or year, and the filter bar — as the
+    // faces under them and a person's page do (#685)
+    let shown = app.session.visible_filter();
+    let people = app.caches.people(&app.session.catalog, &shown);
     // the search box, at the right of the header: the cards below keep only the names that hold what is typed
     // (case aside); emptied, every person is back
     let query = app.ui.people_search.trim().to_lowercase();
