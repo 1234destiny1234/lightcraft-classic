@@ -647,8 +647,11 @@ pub fn hdr_histogram_cached(src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSet
 }
 
 fn hdr_histogram_with(s: &DevelopSettings, req: &RenderRequest, render: impl FnOnce(&RenderRequest) -> Rendered) -> Option<Histogram> {
-    // a drag's drafts keep their own histogram: a second render per tick would slow them down
-    if !s.hdr.enabled || req.depth != OutputDepth::U8 || req.window.is_some() || req.proof.is_some() || req.quality == Quality::Draft {
+    // a drag's loupe-sized drafts keep their own histogram (a second render per tick would slow
+    // them down); a small draft (the drag's own histogram request, `HDR_HISTOGRAM_DRAG_EDGE`) gets
+    // a draft-grade HDR pass of its size
+    let small = req.max_w.max(req.max_h) <= HDR_HISTOGRAM_DRAG_EDGE;
+    if !s.hdr.enabled || req.depth != OutputDepth::U8 || req.window.is_some() || req.proof.is_some() || (req.quality == Quality::Draft && !small) {
         return None;
     }
     let k = (HDR_HISTOGRAM_EDGE as f64 / req.max_w.max(req.max_h).max(1) as f64).min(1.0);
