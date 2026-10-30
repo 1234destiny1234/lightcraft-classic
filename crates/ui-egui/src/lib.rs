@@ -236,6 +236,8 @@ mod tests_libtools;
 #[cfg(test)]
 mod tests_lightroom_destination;
 #[cfg(test)]
+mod tests_loading_cell;
+#[cfg(test)]
 mod tests_mask_effects;
 #[cfg(test)]
 mod tests_mask_sections;
@@ -253,6 +255,8 @@ mod tests_midi;
 mod tests_module_help;
 #[cfg(test)]
 mod tests_modules;
+#[cfg(test)]
+mod tests_mouse_nav;
 #[cfg(test)]
 mod tests_offline;
 #[cfg(test)]
@@ -634,6 +638,10 @@ pub struct LccApp {
     synthetic_mods: egui::Modifiers,
     /// Clear `synthetic_mods` on the next frame.
     synthetic_mods_release: bool,
+    /// The mouse's Back / Forward buttons (`Extra1` / `Extra2`) pressed since the last UI pass.
+    /// [`Self::raw_input_hook`] takes their events out of egui's input, so no widget treats them
+    /// as a press (a slider would jump to the pointer, issue #3303); the shortcuts read them here.
+    pub(crate) nav_buttons: Vec<egui::PointerButton>,
     styled: bool,
     /// The language the installed fonts were built for: the CJK fallback order follows the UI
     /// language's script, so switching language reinstalls them.
@@ -859,6 +867,7 @@ impl LccApp {
             pending_camera_roll: None,
             synthetic_mods: egui::Modifiers::NONE,
             synthetic_mods_release: false,
+            nav_buttons: vec![],
             styled: false,
             font_language: i18n::Locale::En,
             chinese_font: None,
@@ -1916,7 +1925,24 @@ impl LccApp {
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
         modern::before_input(self, raw);
         self.synthetic_input(raw);
+        self.take_nav_buttons(raw);
         modern::after_input(self, raw);
+    }
+
+    /// Take the mouse's Back / Forward button events (`Extra1` / `Extra2`) out of `raw` and keep
+    /// their presses for the next UI pass's shortcuts (issue #3303). egui treats any pressed
+    /// button as the start of a click or drag: left in, Back pressed over a slider would set it
+    /// to the pointer, on the photo navigation is about to switch to.
+    fn take_nav_buttons(&mut self, raw: &mut egui::RawInput) {
+        raw.events.retain(|event| match event {
+            egui::Event::PointerButton { button: button @ (egui::PointerButton::Extra1 | egui::PointerButton::Extra2), pressed, .. } => {
+                if *pressed {
+                    self.nav_buttons.push(*button);
+                }
+                false
+            }
+            _ => true,
+        });
     }
 
     fn synthetic_input(&mut self, raw: &mut egui::RawInput) {
