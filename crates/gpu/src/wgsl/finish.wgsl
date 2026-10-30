@@ -609,12 +609,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var r: vec3<f32>;
     if (pu(F_PROOF) != 0u) {
         let q0 = mul3(mat_at(F_PROOF_M), d);
-        let tq = gamut_scale(q0, vec3<f32>(pf(F_PROOF_Y), pf(F_PROOF_Y + 1u), pf(F_PROOF_Y + 2u)), 1.0);
+        let tq = gamut_scale(q0, vec3<f32>(pf(F_PROOF_Y), pf(F_PROOF_Y + 1u), pf(F_PROOF_Y + 2u)), peak);
         if (pu(F_PROOF_DEST_WARN) != 0u && out_of_gamut(q0, tq)) {
             warn = 1u;
         }
         let py = vec3<f32>(pf(F_PROOF_Y), pf(F_PROOF_Y + 1u), pf(F_PROOF_Y + 2u));
-        r = mul3(mat_at(F_PROOF_OUT), keep_hue_in_gamut(q0, gamut_apply(q0, py, tq, 1.0), py, 1.0));
+        r = mul3(mat_at(F_PROOF_OUT), keep_hue_in_gamut(q0, gamut_apply(q0, py, tq, peak), py, peak));
     } else {
         r = mul3(mat_at(F_OUT_M), d);
     }
