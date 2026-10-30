@@ -63,20 +63,24 @@ pub fn parse(v: &Value) -> PersonPage {
     }
 }
 
-/// The page for `name`, asked for again only when the catalog changed, or (while the scan runs) at most once a second
-/// as it learns more faces.
+/// The page for `name`, asked for again only when the catalog or the view changed, or (while the scan runs) at most
+/// once a second as it learns more faces.
 fn page_for(app: &mut LccApp, name: &str, now: f64) -> Arc<PersonPage> {
     let (rev, indexed) = (app.session.catalog.revision, app.caches.faces_indexed);
-    if let Some((n, r, i, at, page)) = &app.caches.person_page
+    let view = app.session.view_stamp();
+    if let Some((n, v, r, i, at, page)) = &app.caches.person_page
         && n == name
+        && *v == view
         && *r == rev
         && (*i == indexed || now - *at < 1.0)
     {
         return page.clone();
     }
-    let v = app.session.execute("faces.person", &json!({"name": name})).unwrap_or(Value::Null);
+    // their faces, and the look-alikes among them, in the photos the library shows (the folder, album or year picked
+    // on the left, and the filter bar): the page follows the sidebar selection (#685)
+    let v = app.session.execute("faces.person", &json!({"name": name, "scope": "view"})).unwrap_or(Value::Null);
     let page = Arc::new(parse(&v));
-    app.caches.person_page = Some((name.to_string(), rev, indexed, now, page.clone()));
+    app.caches.person_page = Some((name.to_string(), view, rev, indexed, now, page.clone()));
     page
 }
 
@@ -252,8 +256,8 @@ pub(crate) fn handle_bulk_key(app: &mut LccApp, ctx: &egui::Context) -> bool {
     if !ctx.input(|i| i.modifiers == egui::Modifiers::NONE && i.key_pressed(egui::Key::A)) {
         return false;
     }
-    let Some((cached_name, cached_revision, _, _, page)) = &app.caches.person_page else { return false };
-    if *cached_name != name || *cached_revision != app.session.catalog.revision {
+    let Some((cached_name, cached_view, cached_revision, _, _, page)) = &app.caches.person_page else { return false };
+    if *cached_name != name || *cached_view != app.session.view_stamp() || *cached_revision != app.session.catalog.revision {
         return false;
     }
     let page = page.clone();
@@ -312,12 +316,13 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, name: &str) {
     });
     ui.add_space(6.0);
     if page.total == 0 {
-        super::empty_message(
-            ui,
-            ui.available_rect_before_wrap(),
-            "No faces by that name",
-            "They may have been renamed or removed. Go back to People",
-        );
+        // the page shows the photos the library shows: a person with faces elsewhere is not renamed or removed (#685)
+        let (title, body) = if super::view_narrowed(&app.session) {
+            ("No faces of them in these photos", "Choose All Photos, or clear the filter, to see everyone. Go back to People")
+        } else {
+            ("No faces by that name", "They may have been renamed or removed. Go back to People")
+        };
+        super::empty_message(ui, ui.available_rect_before_wrap(), title, body);
         return;
     }
     let dismissed = &app.ui.dismissed_faces;
@@ -332,6 +337,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, name: &str) {
         Some(format!("Face recognition needs a model, in Settings, to find more photos of {shown_name}."))
     } else if more.is_empty() && page.pending > 0 {
         Some(format!("Looking through your photos… {} left", page.pending))
+    } else if more.is_empty() && super::view_narrowed(&app.session) {
+        Some(format!("No other faces look like {shown_name} in these photos. Choose All Photos, or clear the filter, to look everywhere."))
     } else if more.is_empty() {
         Some(format!("No other faces look like {shown_name} yet. Faces appear here as your photos are scanned."))
     } else {

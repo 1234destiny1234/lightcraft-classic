@@ -343,6 +343,54 @@ fn faces_person_lists_a_persons_faces_and_looks_for_more_only_while_recognition_
     let _ = std::fs::remove_dir_all(&d);
 }
 
+/// #685: in People Mode the unnamed faces and a person's look-alikes follow what the library shows — the album, folder
+/// or year picked on the left, or the filter bar — and stay the whole library for a caller that asks for no scope.
+#[test]
+fn face_queues_follow_the_view_when_asked_and_the_whole_library_by_default() {
+    let d = temp("scope");
+    let (mut s, _) = setup(&d, 64);
+    s.execute("faces.index", &json!({"budgetMs": 0})).unwrap();
+    let (a, b) = two_photos(&s);
+    set_regions(&mut s, a, vec![region(0.1, Some("Ann")), region(0.5, None)]);
+    set_regions(&mut s, b, vec![region(0.1, None), region(0.5, None)]);
+    s.faces.index.insert(a.0, &region(0.1, None).rect, unit64(&[(0, 1.0)]));
+    s.faces.index.insert(a.0, &region(0.5, None).rect, unit64(&[(1, 1.0)]));
+    s.faces.index.insert(b.0, &region(0.1, None).rect, unit64(&[(0, 0.98), (2, 0.2)]));
+    s.faces.index.insert(b.0, &region(0.5, None).rect, unit64(&[(1, 0.99), (2, 0.2)]));
+    let unnamed = |s: &mut Session, scope: Value| s.execute("faces.unnamed", &json!({"scope": scope})).unwrap();
+    let person = |s: &mut Session, scope: Value| s.execute("faces.person", &json!({"name": "Ann", "scope": scope})).unwrap();
+    let photos = |r: &Value| -> Vec<u64> { r["faces"].as_array().unwrap().iter().map(|f| f["photo"].as_u64().unwrap()).collect() };
+    // no scope asked for is the whole library: what every caller before this command's `scope` saw
+    let r = s.execute("faces.unnamed", &json!({})).unwrap();
+    assert_eq!((r["total"].clone(), r["ordered"].clone()), (json!(3), json!(true)), "{r}");
+    assert_eq!(unnamed(&mut s, json!("all"))["total"], json!(3));
+    assert_eq!(person(&mut s, json!("all"))["more"].as_array().unwrap().len(), 2);
+    // a demo album holding the first of the two photos: only its faces, in both queues
+    let album = s.catalog.albums().find(|al| al.photos.contains(&a) && !al.photos.contains(&b)).map(|al| al.id);
+    let album = album.expect("a demo album holds one of the two photos and not the other");
+    s.source = crate::LibrarySource::Album(album);
+    let r = unnamed(&mut s, json!("view"));
+    assert_eq!((r["total"].clone(), photos(&r)), (json!(1), vec![a.0]), "{r}");
+    let r = person(&mut s, json!("view"));
+    // their own faces inside the view are what the look-alikes are compared with; b is not in the view, so it is not offered
+    assert_eq!((r["total"].clone(), r["confirmed"].as_array().unwrap().len(), r["more"].as_array().unwrap().len()), (json!(1), 1, 0), "{r}");
+    // the filter bar narrows them too, and the all-library queue is back when the view is
+    s.source = crate::LibrarySource::All;
+    s.filter.only = vec![b];
+    let r = unnamed(&mut s, json!("view"));
+    assert_eq!((r["total"].clone(), photos(&r)), (json!(2), vec![b.0, b.0]), "{r}");
+    assert_eq!(person(&mut s, json!("view"))["total"], json!(0), "Ann is not in the view");
+    s.filter.only.clear();
+    assert_eq!(unnamed(&mut s, json!("view"))["total"], json!(3));
+    assert_eq!(person(&mut s, json!("view"))["more"].as_array().unwrap().len(), 2);
+    // a scope that is neither of the two is an error, not a quiet whole-library answer (`null`, or nothing at all, is "all")
+    for bad in [json!("everything"), json!("")] {
+        assert!(s.execute("faces.unnamed", &json!({"scope": bad})).is_err(), "{bad}");
+        assert!(s.execute("faces.person", &json!({"name": "Ann", "scope": bad})).is_err(), "{bad}");
+    }
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 fn unit64(parts: &[(usize, f32)]) -> Vec<f32> {
     let mut v = vec![0.0f32; 64];
     for (i, x) in parts {

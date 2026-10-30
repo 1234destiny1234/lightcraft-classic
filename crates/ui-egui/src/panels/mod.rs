@@ -140,6 +140,12 @@ pub fn toast(app: &mut LccApp, ctx: &egui::Context) {
     ctx.request_repaint_after(std::time::Duration::from_millis(30));
 }
 
+/// Whether the library shows less than everything — a folder, an album, a year in By Date, Picks, or the filter bar —
+/// so a face queue that is empty may be empty because of it (#685).
+pub fn view_narrowed(session: &lcc_engine::Session) -> bool {
+    session.source != lcc_engine::LibrarySource::All || session.filter != lcc_catalog::Filter::default()
+}
+
 /// Paint a centred, dimmed message (empty states).
 pub fn empty_message(ui: &egui::Ui, rect: Rect, title: &str, body: &str) {
     let t = Tokens::get(ui.ctx());
