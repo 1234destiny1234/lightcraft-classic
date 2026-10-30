@@ -112,7 +112,7 @@ impl Setup {
     /// The sentence and the button label that offer the next step; none when there is nothing to do.
     pub fn prompt(self) -> Option<(&'static str, &'static str)> {
         match self {
-            Setup::TurnOn => Some(("Face recognition is off. Turn it on to get name suggestions and see look-alike faces together.", "Turn on")),
+            Setup::TurnOn => Some(("Face recognition is off. Turn it on to scan new photos; the faces found so far stay suggested.", "Turn on")),
             Setup::GetModel => {
                 Some(("Face recognition needs a model to suggest names: a one-time download, in Settings.", "Set up face recognition"))
             }

@@ -207,7 +207,7 @@ pub fn section_header(app: &mut LccApp, ui: &mut egui::Ui, list: &Unnamed, at: e
     } else if list.faces.is_empty() && app.caches.faces_pending > 0 {
         format!("Looking through your photos… {} left", app.caches.faces_pending)
     } else if list.faces.is_empty() && super::view_narrowed(&app.session) {
-        "No unnamed faces in these photos. Choose All Photos, or clear the filter, to look everywhere.".to_string()
+        crate::i18n::tr("No unnamed faces in these photos. Choose All Photos, or clear the filter, to look everywhere.").to_string()
     } else if list.faces.is_empty() {
         "No unnamed faces. Faces found in your photos appear here until you name them.".to_string()
     } else if list.ordered {
