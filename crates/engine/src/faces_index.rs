@@ -598,6 +598,10 @@ pub(crate) struct FacesState {
     pub checked: Option<std::time::Instant>,
     /// Whether recognition was switched on when last looked up, and when.
     pub enabled_seen: Option<(std::time::Instant, bool)>,
+    /// The bar the chosen recognition model suggests at, and when it was read: the queues rank the faces the scan already
+    /// embedded without loading the model, so they work with recognition switched off (#685). Only a bar that was found is
+    /// kept, so a model that is chosen a moment later is seen by the next call.
+    pub bar_seen: Option<(std::time::Instant, f32)>,
     pub worker: Option<crate::faces_worker::Worker>,
     /// After a failure to load the chosen model, the background pump leaves it alone until then.
     pub retry_at: Option<std::time::Instant>,

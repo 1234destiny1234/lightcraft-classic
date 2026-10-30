@@ -292,7 +292,7 @@ fn the_background_pump_saves_what_it_embeds_for_the_next_launch() {
 }
 
 #[test]
-fn faces_person_lists_a_persons_faces_and_looks_for_more_only_while_recognition_runs() {
+fn faces_person_lists_a_persons_faces_and_looks_for_more_scan_or_no_scan() {
     let d = temp("person");
     let (mut s, _) = setup(&d, 64);
     s.execute("faces.index", &json!({"budgetMs": 0})).unwrap();
@@ -325,14 +325,18 @@ fn faces_person_lists_a_persons_faces_and_looks_for_more_only_while_recognition_
     let more = r["more"].as_array().unwrap();
     assert_eq!((more.len(), more[0]["photo"].clone(), more[0]["index"].clone()), (1, json!(b.0), json!(0)), "{r}");
     assert!(more[0]["score"].as_f64().unwrap() > 0.9);
+    // with the scan switched off the same face is offered: the switch starts and stops looking for faces in new photos,
+    // it does not take away the review of what was already embedded (#685)
+    s.execute("faces.enable", &json!({"enabled": false})).unwrap();
+    let r = s.execute("faces.person", &json!({"name": "Ann"})).unwrap();
+    assert_eq!((r["total"].clone(), r["ready"].clone(), r["pendingPhotos"].clone()), (json!(2), json!(true), json!(0)), "{r}");
+    let more = r["more"].as_array().unwrap();
+    assert_eq!((more.len(), more[0]["photo"].clone(), more[0]["index"].clone()), (1, json!(b.0), json!(0)), "{r}");
+    s.execute("faces.enable", &json!({"enabled": true})).unwrap();
     // confirming it moves it from one list to the other (and is one undo step)
     s.execute("faces.setName", &json!({"id": b.0, "index": 0, "name": "Ann"})).unwrap();
     let r = s.execute("faces.person", &json!({"name": "Ann"})).unwrap();
     assert_eq!((r["total"].clone(), r["more"].as_array().unwrap().len()), (json!(3), 0));
-    // switched off, the faces are still listed but nothing is searched for
-    s.execute("faces.enable", &json!({"enabled": false})).unwrap();
-    let r = s.execute("faces.person", &json!({"name": "Ann"})).unwrap();
-    assert_eq!((r["total"].clone(), r["ready"].clone(), r["more"].as_array().unwrap().len()), (json!(3), json!(false), 0));
     // nobody by that name, and bad input, are plain answers and errors
     let r = s.execute("faces.person", &json!({"name": "Nobody"})).unwrap();
     assert_eq!((r["total"].clone(), r["confirmed"].as_array().unwrap().len(), r["ready"].clone()), (json!(0), 0, json!(false)));
@@ -487,11 +491,13 @@ fn unnamed_faces_come_with_look_alikes_together_and_the_name_the_named_ones_sugg
     // a limit cuts the list, not the count
     let r = s.execute("faces.unnamed", &json!({"limit": 2})).unwrap();
     assert_eq!((r["total"].clone(), r["faces"].as_array().unwrap().len()), (json!(5), 2));
-    // switched off, the faces are still listed, in photo order, without suggestions
+    // with the scan switched off the faces are still listed, look-alikes together and named as before: the switch starts
+    // and stops looking for faces in new photos, it does not take away what was already embedded (#685)
     s.execute("faces.enable", &json!({"enabled": false})).unwrap();
     let r = s.execute("faces.unnamed", &json!({})).unwrap();
-    assert_eq!((r["total"].clone(), r["ordered"].clone(), r["ready"].clone()), (json!(5), json!(false), json!(false)));
-    assert!(r["faces"].as_array().unwrap().iter().all(|f| f["suggestion"].is_null()));
+    assert_eq!((r["total"].clone(), r["ordered"].clone(), r["ready"].clone()), (json!(5), json!(true), json!(true)), "{r}");
+    let faces = r["faces"].as_array().unwrap();
+    assert_eq!(faces.iter().find(|f| at(f) == (b.0, 0)).unwrap()["suggestion"]["name"], "Ann", "still suggested");
     for odd in [json!({"limit": 0}), json!({"limit": "x"}), json!({"limit": u64::MAX})] {
         assert!(s.execute("faces.unnamed", &odd).is_ok(), "{odd}");
     }

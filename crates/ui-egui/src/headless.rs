@@ -1641,14 +1641,9 @@ mod tests {
             pending: 0,
         };
         let set_page = |h: &mut Headless| {
-            h.app.caches.person_page = Some((
-                "Jane Doe".into(),
-                h.app.session.view_stamp(),
-                h.app.session.catalog.revision,
-                h.app.caches.faces_indexed,
-                0.0,
-                Arc::new(page.clone()),
-            ));
+            let (rev, indexed, view) = (h.app.session.catalog.revision, h.app.caches.faces_indexed, h.app.session.view_stamp());
+            let page = Arc::new(page.clone());
+            h.app.caches.person_page = Some(("Jane Doe".into(), view, rev, indexed, 0.0, page));
             h.step();
         };
         h.app.ui.dismissed_faces.insert((ids[4].0, 0));

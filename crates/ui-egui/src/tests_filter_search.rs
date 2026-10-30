@@ -262,26 +262,27 @@ fn the_peoples_cards_follow_the_album_picked_on_the_left() {
         }];
         h.app.session.commit("setup", Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
     }
-    let cards =
-        |h: &Headless| -> Vec<String> { h.app.widgets.iter().filter(|(w, _)| w.starts_with("person:")).map(|(w, _)| w.clone()).collect() };
+    let cards = |h: &Headless| -> Vec<String> { h.app.widgets.iter().filter(|(w, _)| w.starts_with("person:")).map(|(w, _)| w.clone()).collect() };
     // an album holding the first of the two photos, not the other
-    let album = h
-        .app
-        .session
-        .catalog
-        .albums()
-        .find(|a| a.photos.contains(&first) && !a.photos.contains(&second))
-        .map(|a| a.id)
-        .expect("a demo album holds one of the two photos and not the other");
+    let mut album = None;
+    for a in h.app.session.catalog.albums() {
+        if a.photos.contains(&first) && !a.photos.contains(&second) {
+            album = Some(a.id);
+            break;
+        }
+    }
+    let album = album.expect("a demo album holds one of the two photos and not the other");
     ok(&mut h, "engine.execute", json!({"command": "view.people"}));
     let both = cards(&h);
     assert!(both.contains(&"person:Jane Doe".to_string()) && both.contains(&"person:John Roe".to_string()), "{both:?}");
     // the album picked on the left leaves the person in it
     ok(&mut h, "engine.execute", json!({"command": "library.source", "params": {"kind": "album", "id": album}}));
+    ok(&mut h, "engine.execute", json!({"command": "view.people"}));
     let one = cards(&h);
     assert!(one.contains(&"person:Jane Doe".to_string()) && !one.contains(&"person:John Roe".to_string()), "{one:?}");
     // the whole library puts both back
     ok(&mut h, "engine.execute", json!({"command": "library.source", "params": {"kind": "all"}}));
+    ok(&mut h, "engine.execute", json!({"command": "view.people"}));
     assert_eq!(cards(&h).len(), both.len(), "every card again");
 }
 
