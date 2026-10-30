@@ -128,7 +128,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
     (
         "File",
         &[
-            "file.addPhotos",
+            "dialog.import",
             "file.addFolder",
             "@Import from Device",
             "@More Imports",
